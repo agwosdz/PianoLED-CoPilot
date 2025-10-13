@@ -156,8 +156,10 @@ setup_python_env() {
 }
 
 build_frontend() {
-    run_on_pi "cd $PROJECT_DIR/frontend && npm install"
-    run_on_pi "cd $PROJECT_DIR/frontend && npm run build"
+    # Skip npm install and build on Pi due to memory constraints
+    # Frontend should be built locally and copied to the Pi
+    echo "⚠️  Skipping frontend build on Pi (memory constrained)"
+    echo "   Frontend files should be built locally and copied to $PROJECT_DIR/frontend/build"
 }
 
 create_env_config() {

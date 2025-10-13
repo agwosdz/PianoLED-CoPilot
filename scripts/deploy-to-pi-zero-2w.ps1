@@ -167,8 +167,10 @@ function Set-PythonEnv {
 }
 
 function Build-Frontend {
-    Invoke-OnPi "cd $PROJECT_DIR/frontend && npm install"
-    Invoke-OnPi "cd $PROJECT_DIR/frontend && npm run build"
+    # Skip npm install and build on Pi due to memory constraints
+    # Frontend should be built locally and copied to the Pi
+    Write-Host "⚠️  Skipping frontend build on Pi (memory constrained)" -ForegroundColor Yellow
+    Write-Host "   Frontend files should be built locally and copied to $PROJECT_DIR/frontend/build" -ForegroundColor White
 }
 
 function New-EnvConfig {
