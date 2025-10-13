@@ -12,7 +12,24 @@ class TestPlaybackService:
         """Set up test fixtures"""
         self.mock_led_controller = Mock()
         self.mock_midi_parser = Mock()
-        self.service = PlaybackService(led_controller=self.mock_led_controller, midi_parser=self.mock_midi_parser)
+        self.mock_settings_service = Mock()
+        
+        # Configure mock settings service to return test values
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'size'): '88-key',
+            ('led', 'led_count'): 30,  # Test with 30 LEDs
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
+        
+        self.service = PlaybackService(
+            led_controller=self.mock_led_controller, 
+            midi_parser=self.mock_midi_parser,
+            settings_service=self.mock_settings_service
+        )
     
     def test_initialization(self):
         """Test service initialization"""

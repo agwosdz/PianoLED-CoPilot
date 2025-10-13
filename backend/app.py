@@ -38,11 +38,6 @@ socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 from led_controller import LEDController
 from led_effects_manager import LEDEffectsManager
 try:
-    from midi_parser import MIDIParser
-    midi_parser = MIDIParser()
-except Exception:
-    midi_parser = None
-try:
     from midi_input_manager import MIDIInputManager
 except Exception:
     MIDIInputManager = None
@@ -78,6 +73,13 @@ def websocket_status_callback(status):
 # Initialize settings service first
 settings_service = SettingsService(websocket_callback=socketio.emit)
 
+# Initialize MIDI parser after settings service
+try:
+    from midi_parser import MIDIParser
+    midi_parser = MIDIParser(settings_service=settings_service)
+except Exception:
+    midi_parser = None
+
 # Initialize LED controller with error handling and settings service
 # Let the LED controller get its own LED count from settings service
 led_controller = None
@@ -102,7 +104,7 @@ except Exception as e:
 
 # Initialize services that depend on LED controller
 usb_midi_service = USBMIDIInputService(led_controller=led_controller, websocket_callback=socketio.emit, settings_service=settings_service) if USBMIDIInputService else None
-playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser) if PlaybackService and midi_parser else None
+playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
 midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller) if MIDIInputManager else None
 
 # Initialize MIDI input manager services
@@ -1511,7 +1513,7 @@ def handle_led_count_change(data):
                 if playback_service:
                     # Stop any ongoing playback
                     playback_service.stop()
-                playback_service = PlaybackService(led_controller=led_controller, num_leds=LED_COUNT, midi_parser=midi_parser)
+                playback_service = PlaybackService(led_controller=led_controller, num_leds=LED_COUNT, midi_parser=midi_parser, settings_service=settings_service)
                 playback_service.add_status_callback(websocket_status_callback)
                 logger.info(f"Playback service reinitialized with {LED_COUNT} LEDs")
             except Exception as e:

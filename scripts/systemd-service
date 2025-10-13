@@ -4,20 +4,13 @@ After=network.target sound.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/PianoLED-CoPilot/backend
+User=root
 Environment=PATH=/home/pi/PianoLED-CoPilot/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=VIRTUAL_ENV=/home/pi/PianoLED-CoPilot/backend/venv
 EnvironmentFile=/home/pi/PianoLED-CoPilot/.env
-ExecStart=/usr/bin/python3 /home/pi/PianoLED-CoPilot/backend/start.py
+ExecStart=/home/pi/PianoLED-CoPilot/backend/start_wrapper.sh
 Restart=always
 RestartSec=10
-
-# Security hardening (relaxed for home directory access)
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ReadWritePaths=/home/pi/PianoLED-CoPilot
 
 [Install]
 WantedBy=multi-user.target

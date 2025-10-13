@@ -239,89 +239,13 @@ EOF"
 }
 
 setup_systemd() {
-    run_on_pi "sudo tee /etc/systemd/system/piano-led-visualizer.service > /dev/null << EOF
-[Unit]
-Description=Piano LED Visualizer Backend
-After=network.target sound.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=$PROJECT_DIR/backend
-Environment=PATH=$PROJECT_DIR/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=VIRTUAL_ENV=$PROJECT_DIR/backend/venv
-EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$PROJECT_DIR/backend/venv/bin/python3 start.py
-Restart=always
-RestartSec=10
-
-# Security hardening
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ReadWritePaths=$PROJECT_DIR
-ProtectHome=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF"
+    copy_to_pi "scripts/systemd-service" "/tmp/"
+    run_on_pi "sudo mv /tmp/systemd-service /etc/systemd/system/piano-led-visualizer.service"
 }
 
 configure_nginx() {
-    run_on_pi "sudo tee /etc/nginx/sites-available/piano-led-visualizer > /dev/null << 'EOF'
-server {
-    listen 80 default_server;
-    server_name _;
-    root $PROJECT_DIR/frontend/build;
-    index index.html;
-
-    # Gzip compression
-    gzip on;
-    gzip_types text/css application/javascript application/json;
-
-    # Security headers
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-
-    # Frontend static files
-    location / {
-        try_files \$uri \$uri/ /index.html;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Backend API proxy
-    location /api/ {
-        proxy_pass http://localhost:5001;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    # Health check
-    location /health {
-        proxy_pass http://localhost:5001/health;
-        proxy_set_header Host \$host;
-        access_log off;
-    }
-
-    # WebSocket proxy for Socket.IO
-    location /socket.io/ {
-        proxy_pass http://localhost:5001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_buffering off;
-        proxy_cache off;
-    }
-}
-EOF"
-
+    copy_to_pi "scripts/nginx-config" "/tmp/"
+    run_on_pi "sudo mv /tmp/nginx-config /etc/nginx/sites-available/piano-led-visualizer"
     run_on_pi "sudo ln -sf /etc/nginx/sites-available/piano-led-visualizer /etc/nginx/sites-enabled/"
     run_on_pi "sudo rm -f /etc/nginx/sites-enabled/default"
 }
@@ -329,6 +253,7 @@ EOF"
 setup_permissions() {
     run_on_pi "sudo chown -R pi:pi $PROJECT_DIR"
     run_on_pi "sudo chmod +x $PROJECT_DIR/backend/start.py"
+    run_on_pi "sudo chmod +x $PROJECT_DIR/start_wrapper.sh"
 }
 
 configure_audio() {

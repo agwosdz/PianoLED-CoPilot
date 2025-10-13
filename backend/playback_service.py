@@ -70,35 +70,59 @@ class PlaybackStatus:
 class PlaybackService:
     """Service for coordinating MIDI playback with LED visualization"""
     
-    def __init__(self, led_controller: Optional[LEDController] = None, num_leds: int = None, midi_parser: Optional[MIDIParser] = None):
+    def __init__(self, led_controller: Optional[LEDController] = None, num_leds: Optional[int] = None, midi_parser: Optional[MIDIParser] = None, settings_service: Optional[Any] = None):
         """
         Initialize playback service with configurable piano specifications.
         
         Args:
             led_controller: LED controller instance
-            num_leds: Number of LEDs in the strip (optional, loaded from config if not provided)
+            num_leds: Number of LEDs in the strip (optional, loaded from settings if not provided)
             midi_parser: MIDI parser instance for file parsing
+            settings_service: Settings service instance for retrieving configuration
         """
         self._led_controller = led_controller
         
         # Load configuration
-        piano_size = get_config('piano_size', '88-key')
-        piano_specs = get_piano_specs(piano_size)
+        if settings_service:
+            piano_size = settings_service.get_setting('piano', 'size', '88-key')
+            piano_specs = self._get_piano_specs(piano_size)
+            self.num_leds = num_leds or settings_service.get_setting('led', 'led_count', 246)
+            self.led_orientation = settings_service.get_setting('led', 'led_orientation', 'normal')
+            
+            # Multi-LED mapping configuration
+            self.mapping_mode = settings_service.get_setting('led', 'mapping_mode', 'auto')
+            self.leds_per_key = settings_service.get_setting('led', 'leds_per_key', 3)
+            self.mapping_base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
+            self.key_mapping = settings_service.get_setting('led', 'key_mapping', {})
+        else:
+            # Fallback to config.py
+            try:
+                from config import get_config, get_piano_specs
+                piano_size = get_config('piano_size', '88-key')
+                piano_specs = get_piano_specs(piano_size)
+                self.num_leds = num_leds or piano_specs['keys']
+                self.led_orientation = get_config('led_orientation', 'normal')
+                
+                # Multi-LED mapping configuration
+                self.mapping_mode = get_config('mapping_mode', 'auto')
+                self.leds_per_key = get_config('leds_per_key', 3)
+                self.mapping_base_offset = get_config('mapping_base_offset', 0)
+                self.key_mapping = get_config('key_mapping', {})
+            except ImportError:
+                piano_specs = {'keys': 88, 'midi_start': 21, 'midi_end': 108}
+                self.num_leds = num_leds or 88
+                self.led_orientation = 'normal'
+                self.mapping_mode = 'auto'
+                self.leds_per_key = 3
+                self.mapping_base_offset = 0
+                self.key_mapping = {}
         
-        self.num_leds = num_leds or piano_specs['keys']
         self.min_midi_note = piano_specs['midi_start']
         self.max_midi_note = piano_specs['midi_end']
-        self.led_orientation = get_config('led_orientation', 'normal')
-        
-        # Load multi-LED mapping configuration
-        self.mapping_mode = get_config('mapping_mode', 'auto')
-        self.leds_per_key = get_config('leds_per_key', 3)
-        self.mapping_base_offset = get_config('mapping_base_offset', 0)
-        self.key_mapping = get_config('key_mapping', {})
         
         # Precompute key-to-LED mapping for performance
         self._precomputed_mapping = self._generate_key_mapping()
-        self._midi_parser = midi_parser or (MIDIParser() if MIDIParser else None)
+        self._midi_parser = midi_parser or (MIDIParser(settings_service=settings_service) if MIDIParser else None)
         
         # Playback state
         self._state = PlaybackState.IDLE
@@ -130,10 +154,18 @@ class PlaybackService:
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
         
-        logger.info(f"PlaybackService initialized with {num_leds} LEDs")
+        logger.info(f"PlaybackService initialized with {self.num_leds} LEDs")
     
-    @property
-    def state(self) -> PlaybackState:
+    def _get_piano_specs(self, piano_size: str) -> Dict[str, Any]:
+        """Get piano specifications based on size."""
+        specs = {
+            '88-key': {'keys': 88, 'midi_start': 21, 'midi_end': 108},
+            '76-key': {'keys': 76, 'midi_start': 28, 'midi_end': 103},
+            '61-key': {'keys': 61, 'midi_start': 36, 'midi_end': 96},
+            '49-key': {'keys': 49, 'midi_start': 36, 'midi_end': 84},
+            '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72}
+        }
+        return specs.get(piano_size, specs['88-key'])
         """Get current playback state"""
         return self._state
     

@@ -27,24 +27,49 @@ except ImportError:
 class MIDIParser:
     """Service for parsing MIDI files into timed note sequences for LED visualization."""
     
-    def __init__(self, led_count: int = None):
+    def __init__(self, led_count: int = None, settings_service=None):
         """
         Initialize MIDI parser with configurable piano specifications.
         
         Args:
-            led_count: Number of LEDs (optional, loaded from config if not provided)
+            led_count: Number of LEDs (optional, loaded from settings if not provided)
+            settings_service: Settings service instance for retrieving configuration
         """
         # Load configuration values
-        piano_size = get_config('piano_size', '88-key')
-        piano_specs = get_piano_specs(piano_size)
+        if settings_service:
+            piano_size = settings_service.get_setting('piano', 'size', '88-key')
+            piano_specs = self._get_piano_specs(piano_size)
+            self.led_count = led_count if led_count is not None else settings_service.get_setting('led', 'led_count', 246)
+            self.led_orientation = settings_service.get_setting('led', 'led_orientation', 'normal')
+        else:
+            # Fallback to config.py
+            try:
+                from config import get_config, get_piano_specs
+                piano_size = get_config('piano_size', '88-key')
+                piano_specs = get_piano_specs(piano_size)
+                self.led_count = led_count if led_count is not None else piano_specs['keys']
+                self.led_orientation = get_config('led_orientation', 'normal')
+            except ImportError:
+                piano_specs = {'keys': 88, 'midi_start': 21, 'midi_end': 108}
+                self.led_count = led_count if led_count is not None else 88
+                self.led_orientation = 'normal'
         
-        self.led_count = led_count if led_count is not None else piano_specs['keys']
         self.min_midi_note = piano_specs['midi_start']
         self.max_midi_note = piano_specs['midi_end']
         self.piano_size = piano_size
-        self.led_orientation = get_config('led_orientation', 'normal')
         
         logger.info(f"MIDI parser initialized for {piano_size} piano with {self.led_count} LEDs, MIDI range {self.min_midi_note}-{self.max_midi_note}, orientation: {self.led_orientation}")
+        
+    def _get_piano_specs(self, piano_size: str) -> Dict[str, Any]:
+        """Get piano specifications based on size."""
+        specs = {
+            '88-key': {'keys': 88, 'midi_start': 21, 'midi_end': 108},
+            '76-key': {'keys': 76, 'midi_start': 28, 'midi_end': 103},
+            '61-key': {'keys': 61, 'midi_start': 36, 'midi_end': 96},
+            '49-key': {'keys': 49, 'midi_start': 36, 'midi_end': 84},
+            '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72}
+        }
+        return specs.get(piano_size, specs['88-key'])
         
     def parse_file(self, file_path: str) -> Dict[str, Any]:
         """
