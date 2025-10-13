@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 from usb_midi_service import USBMIDIInputService
 from midi_parser import MIDIParser
 from playback_service import PlaybackService
@@ -12,6 +12,7 @@ class TestMIDIMappingConfiguration:
         """Set up test fixtures"""
         self.mock_led_controller = Mock()
         self.mock_websocket_callback = Mock()
+        self.mock_settings_service = Mock()
     
     @patch('usb_midi_service.get_config')
     @patch('usb_midi_service.get_piano_specs')
@@ -24,15 +25,26 @@ class TestMIDIMappingConfiguration:
         }.get(key, default)
         
         mock_get_specs.return_value = {
-            'num_keys': 88,
-            'min_midi_note': 21,
-            'max_midi_note': 108
+            'keys': 88,
+            'midi_start': 21,
+            'midi_end': 108
         }
         
-        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        # Mock settings service
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '88-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
+        
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
         
         # Verify configuration was loaded correctly
-        assert service.num_leds == 88
+        assert service.num_leds == 246  # Now uses settings service default
         assert service.min_midi_note == 21
         assert service.max_midi_note == 108
         assert service.led_orientation == 'normal'
@@ -48,15 +60,26 @@ class TestMIDIMappingConfiguration:
         }.get(key, default)
         
         mock_get_specs.return_value = {
-            'num_keys': 61,
-            'min_midi_note': 36,
-            'max_midi_note': 96
+            'keys': 61,
+            'midi_start': 36,
+            'midi_end': 96
         }
         
-        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        # Mock settings service
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '61-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'reversed',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
+        
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
         
         # Verify configuration was loaded correctly
-        assert service.num_leds == 61
+        assert service.num_leds == 246  # Now uses settings service default
         assert service.min_midi_note == 36
         assert service.max_midi_note == 96
         assert service.led_orientation == 'reversed'
@@ -72,18 +95,29 @@ class TestMIDIMappingConfiguration:
         }.get(key, default)
         
         mock_get_specs.return_value = {
-            'num_keys': 88,
-            'min_midi_note': 21,
-            'max_midi_note': 108
+            'keys': 88,
+            'midi_start': 21,
+            'midi_end': 108
         }
         
-        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        # Mock settings service
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '88-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
         
-        # Test mapping for different MIDI notes
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
+        
+        # Test mapping for different MIDI notes (with 246 LEDs)
         test_cases = [
             (21, 0),    # Lowest note (A0) -> LED 0
-            (60, 39),   # Middle C -> LED 39
-            (108, 87),  # Highest note (C8) -> LED 87
+            (65, 123),  # Middle range -> LED 123
+            (108, 245), # Highest note (C8) -> LED 245
         ]
         
         for midi_note, expected_led in test_cases:
@@ -101,17 +135,28 @@ class TestMIDIMappingConfiguration:
         }.get(key, default)
         
         mock_get_specs.return_value = {
-            'num_keys': 88,
-            'min_midi_note': 21,
-            'max_midi_note': 108
+            'keys': 88,
+            'midi_start': 21,
+            'midi_end': 108
         }
         
-        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        # Mock settings service
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '88-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'reversed',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
         
-        # Test mapping for different MIDI notes (reversed)
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
+        
+        # Test mapping for different MIDI notes (reversed with 246 LEDs)
         test_cases = [
-            (21, 87),   # Lowest note (A0) -> LED 87 (reversed)
-            (60, 48),   # Middle C -> LED 48 (reversed)
+            (21, 245),  # Lowest note (A0) -> LED 245 (reversed)
+            (65, 122),  # Middle range -> LED 122 (reversed)
             (108, 0),   # Highest note (C8) -> LED 0 (reversed)
         ]
         
@@ -130,12 +175,23 @@ class TestMIDIMappingConfiguration:
         }.get(key, default)
         
         mock_get_specs.return_value = {
-            'num_keys': 61,
-            'min_midi_note': 36,
-            'max_midi_note': 96
+            'keys': 61,
+            'midi_start': 36,
+            'midi_end': 96
         }
         
-        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        # Mock settings service
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '61-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
+        
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
         
         # Test notes outside range
         test_cases = [
@@ -153,17 +209,25 @@ class TestMIDIMappingConfiguration:
     def test_midi_parser_configuration(self, mock_get_specs):
         """Test MIDI parser uses correct piano configuration"""
         mock_get_specs.return_value = {
-            'num_keys': 76,
-            'min_midi_note': 28,
-            'max_midi_note': 103
+            'keys': 76,
+            'midi_start': 28,
+            'midi_end': 103
         }
         
+        # Mock settings service for MIDI parser
+        mock_settings = Mock()
+        mock_settings.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'size'): '76-key',
+            ('led', 'led_count'): 246
+        }.get((category, key), default)
+        
         with patch('midi_parser.get_config', return_value='76-key'):
-            parser = MIDIParser()
+            parser = MIDIParser(settings_service=mock_settings)
             
             # Verify parser loaded correct configuration
-            assert parser.led_count == 76
-            mock_get_specs.assert_called_once_with('76-key')
+            assert parser.led_count == 246  # Now uses settings service
+            # When settings_service is provided, it uses internal _get_piano_specs, not the global one
+            mock_get_specs.assert_not_called()
     
     @patch('playback_service.get_config')
     @patch('playback_service.get_piano_specs')
@@ -175,15 +239,23 @@ class TestMIDIMappingConfiguration:
         }.get(key, default)
         
         mock_get_specs.return_value = {
-            'num_keys': 49,
-            'min_midi_note': 36,
-            'max_midi_note': 84
+            'keys': 49,
+            'midi_start': 36,
+            'midi_end': 84
         }
         
-        service = PlaybackService(self.mock_led_controller)
+        # Mock settings service for playback service
+        mock_settings = Mock()
+        mock_settings.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'size'): '49-key',  # Note: using 'size' not 'piano_size'
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'reversed'
+        }.get((category, key), default)
+        
+        service = PlaybackService(self.mock_led_controller, settings_service=mock_settings)
         
         # Verify service loaded correct configuration
-        assert service.num_leds == 49
+        assert service.num_leds == 246  # Now uses settings service
         assert service.min_midi_note == 36
         assert service.max_midi_note == 84
         assert service.led_orientation == 'reversed'
@@ -196,14 +268,15 @@ class TestPianoSizeVariations:
         """Set up test fixtures"""
         self.mock_led_controller = Mock()
         self.mock_websocket_callback = Mock()
+        self.mock_settings_service = Mock()
     
     @pytest.mark.parametrize("piano_size,expected_specs", [
-        ("25-key", {"num_keys": 25, "min_midi_note": 60, "max_midi_note": 84}),
-        ("37-key", {"num_keys": 37, "min_midi_note": 48, "max_midi_note": 84}),
-        ("49-key", {"num_keys": 49, "min_midi_note": 36, "max_midi_note": 84}),
-        ("61-key", {"num_keys": 61, "min_midi_note": 36, "max_midi_note": 96}),
-        ("76-key", {"num_keys": 76, "min_midi_note": 28, "max_midi_note": 103}),
-        ("88-key", {"num_keys": 88, "min_midi_note": 21, "max_midi_note": 108}),
+        ("25-key", {"keys": 25, "midi_start": 60, "midi_end": 84}),
+        ("37-key", {"keys": 37, "midi_start": 48, "midi_end": 84}),
+        ("49-key", {"keys": 49, "midi_start": 36, "midi_end": 84}),
+        ("61-key", {"keys": 61, "midi_start": 36, "midi_end": 96}),
+        ("76-key", {"keys": 76, "midi_start": 28, "midi_end": 103}),
+        ("88-key", {"keys": 88, "midi_start": 21, "midi_end": 108}),
     ])
     @patch('usb_midi_service.get_config')
     @patch('usb_midi_service.get_piano_specs')
@@ -217,19 +290,30 @@ class TestPianoSizeVariations:
         
         mock_get_specs.return_value = expected_specs
         
-        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        # Mock settings service
+        self.mock_settings_service.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): piano_size,
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
+        
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
         
         # Verify configuration was loaded correctly
-        assert service.num_leds == expected_specs['num_keys']
-        assert service.min_midi_note == expected_specs['min_midi_note']
-        assert service.max_midi_note == expected_specs['max_midi_note']
+        assert service.num_leds == 246  # Now uses settings service default
+        assert service.min_midi_note == expected_specs['midi_start']
+        assert service.max_midi_note == expected_specs['midi_end']
         
-        # Test that first and last notes map correctly
-        first_led = service._map_note_to_led(expected_specs['min_midi_note'])
-        last_led = service._map_note_to_led(expected_specs['max_midi_note'])
+        # Test that first and last notes map correctly (with 246 LEDs)
+        first_led = service._map_note_to_led(expected_specs['midi_start'])
+        last_led = service._map_note_to_led(expected_specs['midi_end'])
         
         assert first_led == 0
-        assert last_led == expected_specs['num_keys'] - 1
+        assert last_led == 245  # 246 - 1
 
 
 class TestLEDOrientationMapping:
@@ -239,6 +323,7 @@ class TestLEDOrientationMapping:
         """Set up test fixtures"""
         self.mock_led_controller = Mock()
         self.mock_websocket_callback = Mock()
+        self.mock_settings_service = Mock()
     
     @patch('usb_midi_service.get_config')
     @patch('usb_midi_service.get_piano_specs')
@@ -246,10 +331,22 @@ class TestLEDOrientationMapping:
         """Test that orientation mapping is consistent across the range"""
         # Test with 61-key piano
         mock_get_specs.return_value = {
-            'num_keys': 61,
-            'min_midi_note': 36,
-            'max_midi_note': 96
+            'keys': 61,
+            'midi_start': 36,
+            'midi_end': 96
         }
+        
+        # Mock settings service for normal orientation
+        mock_settings_normal = Mock()
+        mock_settings_normal.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '61-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
         
         # Test normal orientation
         mock_get_config.side_effect = lambda key, default=None: {
@@ -257,7 +354,19 @@ class TestLEDOrientationMapping:
             'led_orientation': 'normal'
         }.get(key, default)
         
-        service_normal = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        service_normal = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, mock_settings_normal)
+        
+        # Mock settings service for reversed orientation
+        mock_settings_reversed = Mock()
+        mock_settings_reversed.get_setting.side_effect = lambda category, key, default=None: {
+            ('piano', 'piano_size'): '61-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'reversed',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }.get((category, key), default)
         
         # Test reversed orientation
         mock_get_config.side_effect = lambda key, default=None: {
@@ -265,7 +374,7 @@ class TestLEDOrientationMapping:
             'led_orientation': 'reversed'
         }.get(key, default)
         
-        service_reversed = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback)
+        service_reversed = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, mock_settings_reversed)
         
         # Test that mappings are exact opposites
         for midi_note in range(36, 97):  # All notes in range
@@ -274,4 +383,4 @@ class TestLEDOrientationMapping:
             
             if normal_led is not None and reversed_led is not None:
                 # Should be exact opposites
-                assert normal_led + reversed_led == 60  # 61 - 1 = 60
+                assert normal_led + reversed_led == 245  # 246 - 1 = 245

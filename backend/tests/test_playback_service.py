@@ -49,9 +49,11 @@ class TestPlaybackService:
         
         # Mock the MIDI parser to return parsed data
         mock_parsed_data = {
-            'notes': [
-                {'time': 0.0, 'note': 60, 'velocity': 80, 'duration': 0.5, 'channel': 0},
-                {'time': 0.5, 'note': 64, 'velocity': 80, 'duration': 0.5, 'channel': 0}
+            'events': [
+                {'time': 0, 'note': 60, 'velocity': 80, 'type': 'on'},
+                {'time': 500, 'note': 60, 'velocity': 0, 'type': 'off'},
+                {'time': 500, 'note': 64, 'velocity': 80, 'type': 'on'},
+                {'time': 1000, 'note': 64, 'velocity': 0, 'type': 'off'}
             ]
         }
         self.mock_midi_parser.parse_file.return_value = mock_parsed_data
@@ -175,4 +177,4 @@ class TestPlaybackService:
         
         # Verify LED controller was called
         assert self.mock_led_controller.turn_off_all.called
-        assert self.mock_led_controller.turn_on_led.called
+        assert self.mock_led_controller.set_multiple_leds.called

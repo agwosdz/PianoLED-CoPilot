@@ -166,6 +166,9 @@ class PlaybackService:
             '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72}
         }
         return specs.get(piano_size, specs['88-key'])
+    
+    @property
+    def state(self) -> PlaybackState:
         """Get current playback state"""
         return self._state
     
