@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 from contextlib import contextmanager
+from services.settings_validator import SettingsValidator
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class SettingsService:
     """
@@ -279,25 +281,29 @@ class SettingsService:
             True if successful, False otherwise
         """
         try:
-            # Validate the setting
-            if not self._validate_setting(category, key, value):
+            # Validate and normalize the setting
+            normalized_value, errors = SettingsValidator._validate_and_normalize_setting(category, key, value, 
+                SettingsValidator._get_category_schema(category).get(key, {}))
+            
+            if errors:
+                logger.error(f"Validation failed for {category}.{key}: {errors[0]}")
                 return False
             
-            data_type = self._get_data_type(value)
+            data_type = self._get_data_type(normalized_value)
             
             with self._get_db_connection() as conn:
                 conn.execute(
                     '''INSERT OR REPLACE INTO settings 
                        (category, key, value, data_type, updated_at) 
                        VALUES (?, ?, ?, ?, ?)''',
-                    (category, key, json.dumps(value), data_type, datetime.now().isoformat())
+                    (category, key, json.dumps(normalized_value), data_type, datetime.now().isoformat())
                 )
                 conn.commit()
             
             # Broadcast the change via WebSocket
-            self._broadcast_setting_change(category, key, value)
+            self._broadcast_setting_change(category, key, normalized_value)
             
-            logger.info(f"Setting updated: {category}.{key} = {value}")
+            logger.info(f"Setting updated: {category}.{key} = {normalized_value}")
             return True
             
         except Exception as e:
@@ -371,9 +377,16 @@ class SettingsService:
             True if all updates successful, False otherwise
         """
         try:
+            # Validate and normalize all settings
+            normalized_settings, errors = SettingsValidator.validate_and_normalize(settings)
+            
+            if errors:
+                logger.error(f"Settings validation failed: {errors}")
+                return False
+            
             updated_settings = []
             
-            for category, category_settings in settings.items():
+            for category, category_settings in normalized_settings.items():
                 for key, value in category_settings.items():
                     if self.set_setting(category, key, value):
                         updated_settings.append((category, key, value))
@@ -382,7 +395,7 @@ class SettingsService:
             if updated_settings:
                 self._broadcast_bulk_update(updated_settings)
             
-            return len(updated_settings) == sum(len(cat_settings) for cat_settings in settings.values())
+            return len(updated_settings) == sum(len(cat_settings) for cat_settings in normalized_settings.values())
             
         except Exception as e:
             logger.error(f"Error updating settings: {e}")
@@ -477,9 +490,12 @@ class SettingsService:
             settings = settings_data['settings']
             
             if validate:
-                if not self._validate_settings_bulk(settings):
-                    logger.error("Settings validation failed")
+                # Validate and normalize settings
+                normalized_settings, errors = SettingsValidator.validate_and_normalize(settings)
+                if errors:
+                    logger.error(f"Settings validation failed: {errors}")
                     return False
+                settings = normalized_settings
             
             return self.update_settings(settings)
             
@@ -488,64 +504,19 @@ class SettingsService:
             return False
     
     def _validate_setting(self, category: str, key: str, value: Any) -> bool:
-        """Validate a single setting against schema."""
-        try:
-            schema = self._get_default_settings_schema()
-            
-            if category not in schema or key not in schema[category]:
-                logger.warning(f"Unknown setting: {category}.{key}")
-                return True  # Allow unknown settings for flexibility
-            
-            setting_config = schema[category][key]
-            
-            # Type validation
-            expected_type = setting_config['type']
-            if not self._validate_type(value, expected_type):
-                logger.error(f"Type validation failed for {category}.{key}: expected {expected_type}, got {type(value).__name__}")
-                return False
-            
-            # Range validation for numbers
-            if expected_type == 'number':
-                if 'min' in setting_config and value < setting_config['min']:
-                    logger.error(f"Value {value} below minimum {setting_config['min']} for {category}.{key}")
-                    return False
-                if 'max' in setting_config and value > setting_config['max']:
-                    logger.error(f"Value {value} above maximum {setting_config['max']} for {category}.{key}")
-                    return False
-            
-            # Enum validation
-            if 'enum' in setting_config and value not in setting_config['enum']:
-                logger.error(f"Value {value} not in allowed values {setting_config['enum']} for {category}.{key}")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error validating setting {category}.{key}: {e}")
-            return False
+        """Validate a single setting using the centralized validator."""
+        normalized, errors = SettingsValidator._validate_and_normalize_setting(category, key, value, 
+            SettingsValidator._get_category_schema(category).get(key, {}))
+        return len(errors) == 0
     
     def _validate_type(self, value: Any, expected_type: str) -> bool:
-        """Validate value type."""
-        type_map = {
-            'string': str,
-            'number': (int, float),
-            'boolean': bool,
-            'array': list
-        }
-        
-        if expected_type not in type_map:
-            return True  # Unknown type, allow it
-        
-        expected_python_type = type_map[expected_type]
-        return isinstance(value, expected_python_type)
+        """Validate value type using the centralized validator."""
+        return SettingsValidator._validate_type(value, expected_type)
     
     def _validate_settings_bulk(self, settings: Dict[str, Dict[str, Any]]) -> bool:
-        """Validate multiple settings."""
-        for category, category_settings in settings.items():
-            for key, value in category_settings.items():
-                if not self._validate_setting(category, key, value):
-                    return False
-        return True
+        """Validate multiple settings using the centralized validator."""
+        normalized, errors = SettingsValidator.validate_and_normalize(settings)
+        return len(errors) == 0
     
     def _get_data_type(self, value: Any) -> str:
         """Get the data type string for a value."""
@@ -564,6 +535,26 @@ class SettingsService:
         """Broadcast a single setting change via WebSocket."""
         if self.websocket_callback:
             try:
+                # Use background task for non-critical setting updates to avoid blocking
+                import socketio
+                if hasattr(socketio, 'start_background_task'):
+                    # We're in a SocketIO context, use background task
+                    socketio.start_background_task(self._do_broadcast_setting_change, category, key, value)
+                else:
+                    # Fallback to direct call
+                    self.websocket_callback('settings:update', {
+                        'category': category,
+                        'key': key,
+                        'value': value,
+                        'timestamp': datetime.now().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"Error broadcasting setting change: {e}")
+
+    def _do_broadcast_setting_change(self, category: str, key: str, value: Any):
+        """Actual broadcast implementation for background task."""
+        if self.websocket_callback:
+            try:
                 self.websocket_callback('settings:update', {
                     'category': category,
                     'key': key,
@@ -571,10 +562,31 @@ class SettingsService:
                     'timestamp': datetime.now().isoformat()
                 })
             except Exception as e:
-                logger.error(f"Error broadcasting setting change: {e}")
-    
+                logger.error(f"Error in background broadcast of setting change: {e}")
+
     def _broadcast_bulk_update(self, updated_settings: List[tuple]):
         """Broadcast multiple setting changes via WebSocket."""
+        if self.websocket_callback:
+            try:
+                # Use background task for bulk updates to avoid blocking
+                import socketio
+                if hasattr(socketio, 'start_background_task'):
+                    socketio.start_background_task(self._do_broadcast_bulk_update, updated_settings)
+                else:
+                    # Fallback to direct call
+                    changes = [
+                        {'category': category, 'key': key, 'value': value}
+                        for category, key, value in updated_settings
+                    ]
+                    self.websocket_callback('settings:bulk_update', {
+                        'changes': changes,
+                        'timestamp': datetime.now().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"Error broadcasting bulk update: {e}")
+
+    def _do_broadcast_bulk_update(self, updated_settings: List[tuple]):
+        """Actual bulk broadcast implementation for background task."""
         if self.websocket_callback:
             try:
                 changes = [
@@ -586,14 +598,30 @@ class SettingsService:
                     'timestamp': datetime.now().isoformat()
                 })
             except Exception as e:
-                logger.error(f"Error broadcasting bulk update: {e}")
-    
+                logger.error(f"Error in background broadcast of bulk update: {e}")
+
     def _broadcast_settings_reset(self):
         """Broadcast settings reset event via WebSocket."""
+        if self.websocket_callback:
+            try:
+                # Use background task for reset notifications
+                import socketio
+                if hasattr(socketio, 'start_background_task'):
+                    socketio.start_background_task(self._do_broadcast_settings_reset)
+                else:
+                    # Fallback to direct call
+                    self.websocket_callback('settings:reset', {
+                        'timestamp': datetime.now().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"Error broadcasting settings reset: {e}")
+
+    def _do_broadcast_settings_reset(self):
+        """Actual reset broadcast implementation for background task."""
         if self.websocket_callback:
             try:
                 self.websocket_callback('settings:reset', {
                     'timestamp': datetime.now().isoformat()
                 })
             except Exception as e:
-                logger.error(f"Error broadcasting settings reset: {e}")
+                logger.error(f"Error in background broadcast of settings reset: {e}")

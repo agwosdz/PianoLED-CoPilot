@@ -12,8 +12,9 @@ from typing import Dict, Any, Optional, List
 from flask import Blueprint, request, jsonify
 from flask_socketio import emit
 from api.settings import get_settings_service
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Import hardware components
 try:

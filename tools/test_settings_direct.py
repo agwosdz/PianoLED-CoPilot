@@ -8,10 +8,11 @@ sys.path.append('/home/pi/Secret-Project/backend')
 
 from services.settings_service import SettingsService
 import logging
+from logging_config import setup_logging, get_logger
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 def test_settings():
     """Test settings service directly"""

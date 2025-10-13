@@ -16,23 +16,11 @@ import logging
 from typing import List, Tuple
 from unittest.mock import Mock, patch, MagicMock
 import unittest
+from logging_config import setup_logging, get_logger
 
-# Mock hardware modules before any imports
-sys.modules['rpi_ws281x'] = MagicMock()
-sys.modules['RPi'] = MagicMock()
-sys.modules['RPi.GPIO'] = MagicMock()
-
-# Import led_controller after mocking and patch HARDWARE_AVAILABLE
-from led_controller import LEDController
-import led_controller
-led_controller.HARDWARE_AVAILABLE = True
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 def test_hardware_availability():
     """Test if required hardware libraries are available."""
@@ -120,12 +108,12 @@ def check_individual_leds(controller, num_tests: int = 5):
             logger.info(f"  Testing LED {i} with color {color}")
             
             # Turn on LED
-            if controller.turn_on_led(i, color):
+            if controller.turn_on_led(i, color)[0]:
                 logger.info(f"  ✓ LED {i} turned on successfully")
                 time.sleep(0.5)  # Visual delay
                 
                 # Turn off LED
-                if controller.turn_off_led(i):
+                if controller.turn_off_led(i)[0]:
                     logger.info(f"  ✓ LED {i} turned off successfully")
                     success_count += 1
                     time.sleep(0.2)
@@ -164,7 +152,7 @@ def check_all_leds_patterns(controller):
             # Set all LEDs to the pattern color
             led_data = {i: color for i in range(controller.num_pixels)}
             
-            if controller.set_multiple_leds(led_data):
+            if controller.set_multiple_leds(led_data)[0]:
                 logger.info(f"  ✓ {pattern_name} pattern applied successfully")
                 time.sleep(1.0)  # Display pattern for 1 second
             else:
@@ -173,7 +161,7 @@ def check_all_leds_patterns(controller):
         
         # Turn off all LEDs
         logger.info("  Turning off all LEDs...")
-        if controller.turn_off_all():
+        if controller.turn_off_all()[0]:
             logger.info("  ✓ All LEDs turned off successfully")
         else:
             logger.error("  ✗ Failed to turn off all LEDs")

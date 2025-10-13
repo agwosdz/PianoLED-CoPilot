@@ -1,13 +1,16 @@
 import logging
-from typing import Optional
+from typing import Optional, Tuple
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from rpi_ws281x import PixelStrip, Color
     import RPi.GPIO as GPIO
     HARDWARE_AVAILABLE = True
-    logging.info("rpi_ws281x library loaded successfully")
+    logger.info("rpi_ws281x library loaded successfully")
 except ImportError as e:
-    logging.warning(f"rpi_ws281x library not available: {e}")
+    logger.warning(f"rpi_ws281x library not available: {e}")
     HARDWARE_AVAILABLE = False
     PixelStrip = None
     Color = None
@@ -20,24 +23,23 @@ except ImportError:
     try:
         from config import get_config
     except ImportError:
-        logging.warning("Config module not available, using defaults")
+        logger.warning("Config module not available, using defaults")
         def get_config(key, default):
             return default
 
 class LEDController:
     """Controller for WS2812B LED strip using rpi_ws281x library."""
-    
+
     def __init__(self, pin=None, num_pixels=None, brightness=None, settings_service=None):
         """
         Initialize LED controller.
-        
+
         Args:
             pin: GPIO pin for LED strip (uses settings if None)
             num_pixels: Number of LEDs in strip (uses settings if None)
             brightness: LED brightness 0.0-1.0 (uses settings if None)
             settings_service: Settings service instance for retrieving configuration
         """
-        self.logger = logging.getLogger(__name__)
         self.settings_service = settings_service
         
         # Load configuration values if not provided
@@ -80,13 +82,13 @@ class LEDController:
         
         # If LEDs are disabled, run in simulation mode
         if not self.led_enabled:
-            self.logger.info("LEDs are disabled in settings - running in simulation mode")
+            logger.info("LEDs are disabled in settings - running in simulation mode")
             self.pixels = None
             self._led_state = [(0, 0, 0)] * self.num_pixels  # Track LED state for simulation
             return
         
         if not HARDWARE_AVAILABLE:
-            self.logger.warning("Hardware not available - running in simulation mode")
+            logger.warning("Hardware not available - running in simulation mode")
             self.pixels = None
             self._led_state = [(0, 0, 0)] * self.num_pixels  # Track LED state for simulation
             return
@@ -114,10 +116,10 @@ class LEDController:
             # Initialize the library (must be called once before other functions)
             self.pixels.begin()
             
-            self.logger.info(f"LED controller initialized with {self.num_pixels} pixels on pin {self.pin} using rpi_ws281x")
-            self.logger.info(f"LED settings: type={self.led_type}, freq={LED_FREQ_HZ}, dma={LED_DMA}, channel={LED_CHANNEL}")
+            logger.info(f"LED controller initialized with {self.num_pixels} pixels on pin {self.pin} using rpi_ws281x")
+            logger.info(f"LED settings: type={self.led_type}, freq={LED_FREQ_HZ}, dma={LED_DMA}, channel={LED_CHANNEL}")
         except Exception as e:
-            self.logger.error(f"Failed to initialize LED controller: {e}")
+            logger.error(f"Failed to initialize LED controller: {e}")
             raise
     
     def _map_led_index(self, index: int) -> int:
@@ -134,7 +136,7 @@ class LEDController:
             return self.num_pixels - 1 - index
         return index
     
-    def turn_on_led(self, index: int, color: tuple = (255, 255, 255), brightness: Optional[float] = None, auto_show: bool = True) -> bool:
+    def turn_on_led(self, index: int, color: tuple = (255, 255, 255), brightness: Optional[float] = None, auto_show: bool = True) -> Tuple[bool, Optional[str]]:
         """
         Turn on a specific LED.
         
@@ -145,11 +147,11 @@ class LEDController:
             auto_show: Whether to immediately update the LED strip (default: True)
             
         Returns:
-            bool: True if successful, False otherwise
+            Tuple of (success: bool, error_message: Optional[str])
         """
         try:
             if not 0 <= index < self.num_pixels:
-                raise ValueError(f"LED index {index} out of range (0-{self.num_pixels-1})")
+                return False, f"LED index {index} out of range (0-{self.num_pixels-1})"
             
             # Normalize color to tuple
             r, g, b = tuple(color)
@@ -170,30 +172,32 @@ class LEDController:
             
             # Check if color actually changed to avoid unnecessary updates
             if self._led_state[index] == (r, g, b):
-                return True
+                return True, None
                 
             self._led_state[index] = (r, g, b)
             
             if not HARDWARE_AVAILABLE:
-                self.logger.debug(f"[SIMULATION] LED {index} (physical: {physical_index}) set to color {(r, g, b)}")
-                return True
+                logger.debug(f"[SIMULATION] LED {index} (physical: {physical_index}) set to color {(r, g, b)}")
+                return True, None
                 
             if not self.pixels:
-                raise RuntimeError("LED controller not initialized")
+                return False, "LED controller not initialized"
             
             # Set the pixel color using rpi_ws281x Color function
             self.pixels.setPixelColor(physical_index, Color(r, g, b))
             
             if auto_show:
-                self.show()
+                success, error = self.show()
+                if not success:
+                    return False, error
             
-            return True
+            return True, None
             
         except Exception as e:
-            self.logger.error(f"Failed to turn on LED {index}: {e}")
-            return False
+            logger.error(f"Failed to turn on LED {index}: {e}")
+            return False, str(e)
     
-    def turn_off_led(self, index: int, auto_show: bool = True) -> bool:
+    def turn_off_led(self, index: int, auto_show: bool = True) -> Tuple[bool, Optional[str]]:
         """
         Turn off a specific LED.
         
@@ -202,64 +206,66 @@ class LEDController:
             auto_show: Whether to immediately update the LED strip (default: True)
             
         Returns:
-            bool: True if successful, False otherwise
+            Tuple of (success: bool, error_message: Optional[str])
         """
         return self.turn_on_led(index, (0, 0, 0), brightness=None, auto_show=auto_show)
     
-    def show(self) -> bool:
+    def show(self) -> Tuple[bool, Optional[str]]:
         """
         Update the LED strip with pending changes.
         
         Returns:
-            bool: True if successful, False otherwise
+            Tuple of (success: bool, error_message: Optional[str])
         """
         try:
             if not HARDWARE_AVAILABLE:
-                return True
+                return True, None
                 
             if not self.pixels:
-                raise RuntimeError("LED controller not initialized")
+                return False, "LED controller not initialized"
             
             # Update the LED strip
             self.pixels.show()
                 
-            return True
+            return True, None
             
         except Exception as e:
-            self.logger.error(f"Failed to update LED strip: {e}")
-            return False
+            logger.error(f"Failed to update LED strip: {e}")
+            return False, str(e)
     
 
     
-    def turn_off_all(self) -> bool:
+    def turn_off_all(self) -> Tuple[bool, Optional[str]]:
         """
         Turn off all LEDs.
         
         Returns:
-            bool: True if successful, False otherwise
+            Tuple of (success: bool, error_message: Optional[str])
         """
         try:
             # Update state tracking
             self._led_state = [(0, 0, 0)] * self.num_pixels
             
             if not HARDWARE_AVAILABLE:
-                self.logger.debug("[SIMULATION] All LEDs turned off")
-                return True
+                logger.debug("[SIMULATION] All LEDs turned off")
+                return True, None
                 
             if not self.pixels:
-                raise RuntimeError("LED controller not initialized")
+                return False, "LED controller not initialized"
             
             # Turn off all pixels using rpi_ws281x
             for i in range(self.num_pixels):
                 self.pixels.setPixelColor(i, Color(0, 0, 0))
-            self.show()
-            return True
+            success, error = self.show()
+            if not success:
+                return False, error
+            return True, None
             
         except Exception as e:
-            self.logger.error(f"Failed to turn off all LEDs: {e}")
-            return False
+            logger.error(f"Failed to turn off all LEDs: {e}")
+            return False, str(e)
     
-    def set_multiple_leds(self, led_data: dict, auto_show: bool = True) -> bool:
+    def set_multiple_leds(self, led_data: dict, auto_show: bool = True) -> Tuple[bool, Optional[str]]:
         """
         Set multiple LEDs at once for better performance.
         
@@ -268,22 +274,30 @@ class LEDController:
             auto_show: Whether to immediately update the LED strip (default: True)
             
         Returns:
-            bool: True if successful, False otherwise
+            Tuple of (success: bool, error_message: Optional[str])
         """
         try:
             success = True
+            error_messages = []
             for index, color in led_data.items():
-                if not self.turn_on_led(index, color, auto_show=False):
+                led_success, led_error = self.turn_on_led(index, color, auto_show=False)
+                if not led_success:
                     success = False
+                    error_messages.append(f"LED {index}: {led_error}")
             
             if auto_show and success:
-                self.show()
+                show_success, show_error = self.show()
+                if not show_success:
+                    return False, show_error
+            
+            if not success:
+                return False, "; ".join(error_messages)
                 
-            return success
+            return True, None
             
         except Exception as e:
-            self.logger.error(f"Failed to set multiple LEDs: {e}")
-            return False
+            logger.error(f"Failed to set multiple LEDs: {e}")
+            return False, str(e)
     
     def cleanup(self):
         """
@@ -291,7 +305,7 @@ class LEDController:
         """
         try:
             if not HARDWARE_AVAILABLE:
-                self.logger.info("[SIMULATION] LED controller cleaned up successfully")
+                logger.info("[SIMULATION] LED controller cleaned up successfully")
                 return
                 
             if self.pixels:
@@ -304,9 +318,9 @@ class LEDController:
                 # Clean up rpi_ws281x resources
                 # Note: rpi_ws281x doesn't have explicit cleanup, but we set to None
                 self.pixels = None
-                self.logger.info("LED controller cleaned up successfully")
+                logger.info("LED controller cleaned up successfully")
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+            logger.error(f"Error during cleanup: {e}")
     
     def __enter__(self):
         """Context manager entry."""

@@ -10,17 +10,11 @@ import time
 import logging
 import sys
 from datetime import datetime
+from logging_config import setup_logging, get_logger
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/var/log/piano-led-monitor.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging(log_to_file=True, log_file='/var/log/piano-led-monitor.log')
+logger = get_logger(__name__)
 
 HEALTH_URL = "http://localhost:5001/health"
 SERVICE_NAME = "piano-led-visualizer.service"

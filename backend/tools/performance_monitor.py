@@ -9,6 +9,9 @@ import logging
 from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass
 from collections import deque
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import psutil
@@ -38,7 +41,6 @@ class PerformanceMonitor:
         Args:
             max_samples: Maximum number of samples to keep in memory
         """
-        self.logger = logging.getLogger(__name__)
         self.max_samples = max_samples
         self.metrics_history: deque = deque(maxlen=max_samples)
         self.is_monitoring = False
@@ -51,7 +53,7 @@ class PerformanceMonitor:
         self.last_led_update_time = 0
         
         if not PSUTIL_AVAILABLE:
-            self.logger.warning("psutil not available - limited performance monitoring")
+            logger.warning("psutil not available - limited performance monitoring")
     
     def start_monitoring(self, interval: float = 1.0):
         """Start performance monitoring"""
@@ -66,7 +68,7 @@ class PerformanceMonitor:
             daemon=True
         )
         self.monitor_thread.start()
-        self.logger.info(f"Performance monitoring started (interval: {interval}s)")
+        logger.info(f"Performance monitoring started (interval: {interval}s)")
     
     def stop_monitoring(self):
         """Stop performance monitoring"""
@@ -79,7 +81,7 @@ class PerformanceMonitor:
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2.0)
         
-        self.logger.info("Performance monitoring stopped")
+        logger.info("Performance monitoring stopped")
     
     def _monitor_loop(self, interval: float):
         """Main monitoring loop"""
@@ -92,7 +94,7 @@ class PerformanceMonitor:
                 time.sleep(interval)
         
         except Exception as e:
-            self.logger.error(f"Error in monitoring loop: {e}")
+            logger.error(f"Error in monitoring loop: {e}")
     
     def _collect_metrics(self) -> Optional[PerformanceMetrics]:
         """Collect current performance metrics"""
@@ -135,7 +137,7 @@ class PerformanceMonitor:
             )
         
         except Exception as e:
-            self.logger.error(f"Error collecting metrics: {e}")
+            logger.error(f"Error collecting metrics: {e}")
             return None
     
     def record_led_update(self):
@@ -189,7 +191,7 @@ class PerformanceMonitor:
         self.led_updates = 0
         self.note_processing_times.clear()
         self.last_led_update_time = 0
-        self.logger.info("Performance metrics reset")
+        logger.info("Performance metrics reset")
     
     def __enter__(self):
         self.start_monitoring()

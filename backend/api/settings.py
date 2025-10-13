@@ -8,9 +8,10 @@ import logging
 from flask import Blueprint, request, jsonify
 from typing import Dict, Any
 from schemas.settings_schema import validate_setting, validate_category, validate_all_settings, get_all_defaults
-+from config import get_piano_specs
+from services.settings_validator import SettingsValidator
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Import settings service - will be initialized in app.py
 def get_settings_service():
@@ -20,116 +21,17 @@ def get_settings_service():
 
 # Helper: normalize incoming payload to schema-compatible format
 def _normalize_settings_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize settings payload using the centralized validator."""
     if not isinstance(data, dict):
         return {}
-    normalized = {k: (v if isinstance(v, dict) else v) for k, v in data.items()}
-
-    led = dict(normalized.get('led', {}))
-    # Map legacy 'count' to 'led_count'
-    if 'count' in led and 'led_count' not in led:
-        try:
-            led['led_count'] = int(led.pop('count'))
-        except Exception:
-            led.pop('count', None)
-    # Clamp and convert brightness 0-100 -> 0-1
-    if 'brightness' in led:
-        try:
-            b = led['brightness']
-            if isinstance(b, (int, float)):
-                led['brightness'] = max(0.0, min(1.0, float(b) / 100.0)) if float(b) > 1.0 else max(0.0, min(1.0, float(b)))
-        except Exception:
-            pass
-    # Canonicalize color_profile values
-    if 'color_profile' in led:
-        try:
-            cp = str(led['color_profile']).strip().lower()
-            if cp in ['standard', 'standard rgb']:
-                led['color_profile'] = 'Standard RGB'
-            elif cp in ['srgb']:
-                led['color_profile'] = 'sRGB'
-            elif cp in ['adobe rgb', 'adobe']:
-                led['color_profile'] = 'Adobe RGB'
-            elif cp in ['wide gamut', 'wide']:
-                led['color_profile'] = 'Wide Gamut'
-        except Exception:
-            pass
-    # Canonicalize performance_mode values
-    if 'performance_mode' in led:
-        try:
-            pm = str(led['performance_mode']).strip().lower()
-            mapping = {
-                'power saving': 'Power Saving',
-                'balanced': 'Balanced',
-                'performance': 'Performance',
-                'maximum': 'Maximum'
-            }
-            if pm in mapping:
-                led['performance_mode'] = mapping[pm]
-        except Exception:
-            pass
-    # Normalize GPIO pin location and key name
-    pin = None
-    for key in ['gpioPin', 'gpio_pin', 'data_pin']:
-        if key in led:
-            pin = led.pop(key)
-            break
-    if pin is None and isinstance(normalized.get('gpio'), dict):
-        gpio = normalized['gpio']
-        if 'data_pin' in gpio:
-            pin = gpio.pop('data_pin')
-            normalized['gpio'] = gpio
-    if pin is not None:
-        try:
-            led['gpioPin'] = int(pin)
-        except Exception:
-            pass
-    # Ensure numeric types are proper
-    if 'power_supply_voltage' in led:
-        try:
-            led['power_supply_voltage'] = float(led['power_supply_voltage'])
-        except Exception:
-            pass
-    if 'power_supply_current' in led:
-        try:
-            led['power_supply_current'] = float(led['power_supply_current'])
-        except Exception:
-            pass
-    if 'led_count' in led:
-        try:
-            led['led_count'] = int(led['led_count'])
-        except Exception:
-            pass
-
-    # Remove leftover unknowns that often cause validation errors
-    led.pop('count', None)
-
-    normalized['led'] = led
-+
-+    # Piano normalization: derive specs when size is provided and ensure types
-+    piano = dict(normalized.get('piano', {}))
-+    if 'size' in piano:
-+        try:
-+            specs = get_piano_specs(str(piano.get('size')))
-+            # Fill missing fields from specs
-+            if 'keys' not in piano or piano.get('keys') is None:
-+                piano['keys'] = specs.get('keys')
-+            if 'octaves' not in piano or piano.get('octaves') is None:
-+                piano['octaves'] = specs.get('octaves')
-+            if 'start_note' not in piano or not piano.get('start_note'):
-+                piano['start_note'] = specs.get('start_note')
-+            if 'end_note' not in piano or not piano.get('end_note'):
-+                piano['end_note'] = specs.get('end_note')
-+        except Exception:
-+            pass
-+    # Ensure mode and mapping types
-+    if 'key_mapping_mode' not in piano or not isinstance(piano.get('key_mapping_mode'), str):
-+        piano['key_mapping_mode'] = 'chromatic'
-+    km = piano.get('key_mapping')
-+    if not isinstance(km, dict):
-+        piano['key_mapping'] = {}
-+
-+    normalized['piano'] = piano
-     return normalized
+    
+    # Use the centralized validator for normalization
+    normalized, errors = SettingsValidator.validate_and_normalize(data)
+    
+    if errors:
+        logger.warning(f"Settings normalization warnings: {errors}")
+    
+    return normalized
 
 # Create the blueprint
 settings_bp = Blueprint('settings_api', __name__, url_prefix='/api/settings')

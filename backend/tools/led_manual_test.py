@@ -11,13 +11,11 @@ import sys
 import time
 import logging
 from typing import Tuple, Optional
+from logging_config import setup_logging, get_logger
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 class ManualLEDTester:
     """Interactive LED testing tool."""

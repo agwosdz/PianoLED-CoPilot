@@ -6,6 +6,13 @@ print("Simple LED test using rpi_ws281x library")
 
 try:
     from rpi_ws281x import PixelStrip, Color
+    HARDWARE_AVAILABLE = True
+    print("✓ rpi_ws281x library available")
+except ImportError as e:
+    print(f"✗ rpi_ws281x library not available: {e}")
+    print("This test requires rpi_ws281x to be installed on a Raspberry Pi")
+    print("Install with: pip3 install rpi_ws281x")
+    exit(1)
     
     # LED strip configuration
     LED_COUNT = 10        # Number of LED pixels

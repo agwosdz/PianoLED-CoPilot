@@ -10,6 +10,9 @@ import time
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import mido
@@ -69,7 +72,6 @@ class USBMIDIInputService:
             websocket_callback: Callback function for WebSocket event broadcasting
             settings_service: Settings service instance for retrieving configuration
         """
-        self.logger = logging.getLogger(__name__)
         self._led_controller = led_controller
         self._websocket_callback = websocket_callback
         self.settings_service = settings_service
@@ -124,7 +126,7 @@ class USBMIDIInputService:
         
         # Check MIDI availability
         if not MIDO_AVAILABLE:
-            self.logger.warning("mido library not available - MIDI input disabled")
+            logger.warning("mido library not available - MIDI input disabled")
             self._state = MIDIInputState.ERROR
     
     @property
@@ -155,7 +157,7 @@ class USBMIDIInputService:
             List of MIDIDevice objects representing available devices
         """
         if not MIDO_AVAILABLE:
-            self.logger.warning("mido not available - no MIDI devices")
+            logger.warning("mido not available - no MIDI devices")
             return []
         
         try:
@@ -170,11 +172,11 @@ class USBMIDIInputService:
                     status="available"
                 ))
             
-            self.logger.info(f"Found {len(devices)} MIDI input devices")
+            logger.info(f"Found {len(devices)} MIDI input devices")
             return devices
             
         except Exception as e:
-            self.logger.error(f"Error getting MIDI devices: {e}")
+            logger.error(f"Error getting MIDI devices: {e}")
             return []
     
     def start_listening(self, device_name: Optional[str] = None) -> bool:
@@ -188,11 +190,11 @@ class USBMIDIInputService:
             True if listening started successfully, False otherwise
         """
         if not MIDO_AVAILABLE:
-            self.logger.error("Cannot start listening - mido not available")
+            logger.error("Cannot start listening - mido not available")
             return False
         
         if self._running:
-            self.logger.warning("Already listening for MIDI input")
+            logger.warning("Already listening for MIDI input")
             return True
         
         try:
@@ -200,11 +202,11 @@ class USBMIDIInputService:
             if device_name is None:
                 available_devices = self.get_available_devices()
                 if not available_devices:
-                    self.logger.error("No MIDI devices available")
+                    logger.error("No MIDI devices available")
                     self._state = MIDIInputState.ERROR
                     return False
                 device_name = available_devices[0].name
-                self.logger.info(f"Auto-selected MIDI device: {device_name}")
+                logger.info(f"Auto-selected MIDI device: {device_name}")
             
             # Open MIDI input port
             self._input_port = mido.open_input(device_name)
@@ -221,7 +223,7 @@ class USBMIDIInputService:
             self._input_thread.start()
             
             self._state = MIDIInputState.LISTENING
-            self.logger.info(f"Started MIDI input listening on device: {device_name}")
+            logger.info(f"Started MIDI input listening on device: {device_name}")
             
             # Notify via WebSocket
             self._broadcast_status_update()
@@ -229,7 +231,7 @@ class USBMIDIInputService:
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to start MIDI listening: {e}")
+            logger.error(f"Failed to start MIDI listening: {e}")
             self._state = MIDIInputState.ERROR
             self._cleanup_input_port()
             return False
@@ -242,7 +244,7 @@ class USBMIDIInputService:
             True if stopped successfully, False otherwise
         """
         if not self._running:
-            self.logger.info("MIDI input not currently running")
+            logger.info("MIDI input not currently running")
             return True
         
         try:
@@ -253,7 +255,7 @@ class USBMIDIInputService:
             if self._input_thread and self._input_thread.is_alive():
                 self._input_thread.join(timeout=2.0)
                 if self._input_thread.is_alive():
-                    self.logger.warning("MIDI input thread did not stop gracefully")
+                    logger.warning("MIDI input thread did not stop gracefully")
             
             # Clean up resources
             self._cleanup_input_port()
@@ -262,7 +264,7 @@ class USBMIDIInputService:
             self._state = MIDIInputState.IDLE
             self._current_device = None
             
-            self.logger.info("Stopped MIDI input listening")
+            logger.info("Stopped MIDI input listening")
             
             # Notify via WebSocket
             self._broadcast_status_update()
@@ -270,7 +272,7 @@ class USBMIDIInputService:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error stopping MIDI input: {e}")
+            logger.error(f"Error stopping MIDI input: {e}")
             return False
     
     def _input_processing_loop(self):
@@ -278,7 +280,7 @@ class USBMIDIInputService:
         Main loop for processing MIDI input messages.
         Runs in separate thread for real-time processing.
         """
-        self.logger.info("MIDI input processing loop started")
+        logger.info("MIDI input processing loop started")
         
         try:
             while self._running and not self._stop_event.is_set():
@@ -296,18 +298,18 @@ class USBMIDIInputService:
                         break
                         
                 except Exception as e:
-                    self.logger.error(f"Error in MIDI input loop: {e}")
+                    logger.error(f"Error in MIDI input loop: {e}")
                     # Continue processing unless it's a critical error
                     if "device" in str(e).lower() or "port" in str(e).lower():
                         break
                     time.sleep(0.01)  # Brief pause before retry
                     
         except Exception as e:
-            self.logger.error(f"Critical error in MIDI input processing: {e}")
+            logger.error(f"Critical error in MIDI input processing: {e}")
             self._state = MIDIInputState.ERROR
         
         finally:
-            self.logger.info("MIDI input processing loop ended")
+            logger.info("MIDI input processing loop ended")
     
     def _process_midi_message(self, msg):
         """
@@ -318,7 +320,7 @@ class USBMIDIInputService:
         """
         try:
             # DEBUG: Log all incoming MIDI messages
-            self.logger.info(f"MIDI DEBUG: Received message: {msg} (type={msg.type}, channel={getattr(msg, 'channel', 'N/A')})")
+            logger.info(f"MIDI DEBUG: Received message: {msg} (type={msg.type}, channel={getattr(msg, 'channel', 'N/A')})")
             
             current_time = time.time()
             self._event_count += 1
@@ -326,22 +328,22 @@ class USBMIDIInputService:
             
             # Process note on events
             if msg.type == 'note_on' and msg.velocity > 0:
-                self.logger.info(f"MIDI DEBUG: Note ON - {msg.note}, velocity={msg.velocity}, active notes: {sorted(self._active_notes.keys())}")
+                logger.info(f"MIDI DEBUG: Note ON - {msg.note}, velocity={msg.velocity}, active notes: {sorted(self._active_notes.keys())}")
                 self._handle_note_on(msg.note, msg.velocity, msg.channel, current_time)
             
             # Process note off events (including note_on with velocity 0)
             elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
-                self.logger.info(f"MIDI DEBUG: Note OFF - {msg.note}, active notes: {sorted(self._active_notes.keys())}")
+                logger.info(f"MIDI DEBUG: Note OFF - {msg.note}, active notes: {sorted(self._active_notes.keys())}")
                 self._handle_note_off(msg.note, msg.channel, current_time)
             
             # Log other MIDI events for debugging
             elif msg.type in ['control_change', 'program_change', 'pitchwheel']:
-                self.logger.info(f"MIDI DEBUG: {msg.type}: {msg}")
+                logger.info(f"MIDI DEBUG: {msg.type}: {msg}")
             else:
-                self.logger.info(f"MIDI DEBUG: Other message type: {msg}")
+                logger.info(f"MIDI DEBUG: Other message type: {msg}")
                 
         except Exception as e:
-            self.logger.error(f"Error processing MIDI message {msg}: {e}")
+            logger.error(f"Error processing MIDI message {msg}: {e}")
     
     def _handle_note_on(self, note: int, velocity: int, channel: int, timestamp: float):
         """
@@ -369,9 +371,13 @@ class USBMIDIInputService:
             # Update all mapped LEDs
             if self._led_controller:
                 for led_index in led_indices:
-                    self._led_controller.turn_on_led(led_index, final_color, auto_show=False)
+                    success, error = self._led_controller.turn_on_led(led_index, final_color, auto_show=False)
+                    if not success:
+                        logger.warning(f"Failed to turn on LED {led_index}: {error}")
                 # Show all changes at once for better performance
-                self._led_controller.show()
+                success, error = self._led_controller.show()
+                if not success:
+                    logger.warning(f"Failed to show LEDs: {error}")
             
             # Track active note with all LED indices
             self._active_notes[note] = {
@@ -394,10 +400,10 @@ class USBMIDIInputService:
             # Broadcast event
             self._broadcast_midi_event(event)
             
-            self.logger.debug(f"Note ON: {note} (LEDs {led_indices}) velocity {velocity}")
+            logger.debug(f"Note ON: {note} (LEDs {led_indices}) velocity {velocity}")
             
         except Exception as e:
-            self.logger.error(f"Error handling note on {note}: {e}")
+            logger.error(f"Error handling note on {note}: {e}")
     
     def _handle_note_off(self, note: int, channel: int, timestamp: float):
         """
@@ -423,9 +429,13 @@ class USBMIDIInputService:
             # Turn off all mapped LEDs
             if self._led_controller and led_indices:
                 for led_index in led_indices:
-                    self._led_controller.turn_off_led(led_index, auto_show=False)
+                    success, error = self._led_controller.turn_off_led(led_index, auto_show=False)
+                    if not success:
+                        logger.warning(f"Failed to turn off LED {led_index}: {error}")
                 # Show all changes at once for better performance
-                self._led_controller.show()
+                success, error = self._led_controller.show()
+                if not success:
+                    logger.warning(f"Failed to show LEDs: {error}")
             
             # Remove from active notes
             del self._active_notes[note]
@@ -442,10 +452,10 @@ class USBMIDIInputService:
             # Broadcast event
             self._broadcast_midi_event(event)
             
-            self.logger.debug(f"Note OFF: {note} (LEDs {led_indices})")
+            logger.debug(f"Note OFF: {note} (LEDs {led_indices})")
             
         except Exception as e:
-            self.logger.error(f"Error handling note off {note}: {e}")
+            logger.error(f"Error handling note off {note}: {e}")
     
     def _generate_key_mapping(self) -> Dict[int, List[int]]:
         """
@@ -584,13 +594,15 @@ class USBMIDIInputService:
         """Clear all LEDs and reset active notes."""
         try:
             if self._led_controller:
-                self._led_controller.turn_off_all()
+                success, error = self._led_controller.turn_off_all()
+                if not success:
+                    logger.warning(f"Failed to turn off all LEDs: {error}")
             
             self._active_notes.clear()
-            self.logger.debug("Cleared all LEDs and active notes")
+            logger.debug("Cleared all LEDs and active notes")
             
         except Exception as e:
-            self.logger.error(f"Error clearing LEDs: {e}")
+            logger.error(f"Error clearing LEDs: {e}")
     
     def _cleanup_input_port(self):
         """Clean up MIDI input port resources."""
@@ -598,9 +610,9 @@ class USBMIDIInputService:
             if self._input_port:
                 self._input_port.close()
                 self._input_port = None
-                self.logger.debug("Closed MIDI input port")
+                logger.debug("Closed MIDI input port")
         except Exception as e:
-            self.logger.error(f"Error closing MIDI input port: {e}")
+            logger.error(f"Error closing MIDI input port: {e}")
     
     def _broadcast_midi_event(self, event: MIDIInputEvent):
         """Broadcast MIDI event via WebSocket."""
@@ -629,10 +641,24 @@ class USBMIDIInputService:
                 }
                 self._websocket_callback('midi_input', legacy_event_data)
             except Exception as e:
-                self.logger.error(f"Error broadcasting MIDI event: {e}")
+                logger.error(f"Error broadcasting MIDI event: {e}")
     
     def _broadcast_status_update(self):
         """Broadcast service status update via WebSocket."""
+        if self._websocket_callback:
+            try:
+                # Use background task for status updates to avoid blocking MIDI processing
+                import socketio
+                if hasattr(socketio, 'start_background_task'):
+                    socketio.start_background_task(self._do_broadcast_status_update)
+                else:
+                    # Fallback to direct call
+                    self._do_broadcast_status_update()
+            except Exception as e:
+                logger.error(f"Error broadcasting status update: {e}")
+    
+    def _do_broadcast_status_update(self):
+        """Actual status broadcast implementation for background task."""
         if self._websocket_callback:
             try:
                 status_data = {
@@ -653,7 +679,7 @@ class USBMIDIInputService:
                     'devices': [d.__dict__ for d in self.get_available_devices()]
                 })
             except Exception as e:
-                self.logger.error(f"Error broadcasting status update: {e}")
+                logger.error(f"Error in background broadcast of status update: {e}")
     
     def get_status(self) -> Dict[str, Any]:
         """
@@ -674,7 +700,7 @@ class USBMIDIInputService:
     
     def cleanup(self):
         """Clean up service resources."""
-        self.logger.info("Cleaning up USB MIDI input service")
+        logger.info("Cleaning up USB MIDI input service")
         self.stop_listening()
         self._clear_all_leds()
     

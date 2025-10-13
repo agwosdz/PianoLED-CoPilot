@@ -7,10 +7,11 @@ Bypasses the web service to directly test LED hardware
 import sys
 import time
 import logging
+from logging_config import setup_logging, get_logger
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 def test_led_hardware():
     """Test LED hardware directly without threading"""

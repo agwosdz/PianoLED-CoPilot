@@ -11,6 +11,9 @@ import socket
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import pymidi
@@ -64,16 +67,15 @@ if PYMIDI_AVAILABLE:
         def __init__(self, rtpmidi_service):
             super().__init__()
             self.rtpmidi_service = rtpmidi_service
-            self.logger = logging.getLogger(__name__ + '.Handler')
             
         def on_peer_connected(self, peer):
             """Handle peer connection"""
-            self.logger.info(f'rtpMIDI peer connected: {peer}')
+            logger.info(f'rtpMIDI peer connected: {peer}')
             self.rtpmidi_service._handle_peer_connected(peer)
             
         def on_peer_disconnected(self, peer):
             """Handle peer disconnection"""
-            self.logger.info(f'rtpMIDI peer disconnected: {peer}')
+            logger.info(f'rtpMIDI peer disconnected: {peer}')
             self.rtpmidi_service._handle_peer_disconnected(peer)
             
         def on_midi_commands(self, peer, command_list):
@@ -86,7 +88,6 @@ else:
         
         def __init__(self, rtpmidi_service):
             self.rtpmidi_service = rtpmidi_service
-            self.logger = logging.getLogger(__name__ + '.Handler')
             
         def on_peer_connected(self, peer):
             pass
@@ -108,7 +109,6 @@ class RtpMIDIService:
             midi_input_manager: Unified MIDI input manager for event forwarding
             websocket_callback: Callback function for WebSocket event broadcasting
         """
-        self.logger = logging.getLogger(__name__)
         self._midi_input_manager = midi_input_manager
         self._websocket_callback = websocket_callback
         
@@ -139,7 +139,7 @@ class RtpMIDIService:
         
         # Check pymidi availability
         if not PYMIDI_AVAILABLE:
-            self.logger.error("pymidi library not available - rtpMIDI functionality disabled")
+            logger.error("pymidi library not available - rtpMIDI functionality disabled")
             self._state = RtpMIDIState.ERROR
     
     @property
@@ -175,11 +175,11 @@ class RtpMIDIService:
             bool: True if discovery started successfully
         """
         if not PYMIDI_AVAILABLE:
-            self.logger.error("Cannot start discovery - pymidi not available")
+            logger.error("Cannot start discovery - pymidi not available")
             return False
             
         if self._state == RtpMIDIState.DISCOVERING:
-            self.logger.warning("Discovery already running")
+            logger.warning("Discovery already running")
             return True
             
         try:
@@ -194,12 +194,12 @@ class RtpMIDIService:
             )
             self._discovery_thread.start()
             
-            self.logger.info("rtpMIDI session discovery started")
+            logger.info("rtpMIDI session discovery started")
             self._broadcast_status_update()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to start rtpMIDI discovery: {e}")
+            logger.error(f"Failed to start rtpMIDI discovery: {e}")
             self._state = RtpMIDIState.ERROR
             return False
     
@@ -214,11 +214,11 @@ class RtpMIDIService:
             bool: True if listening started successfully
         """
         if not PYMIDI_AVAILABLE:
-            self.logger.error("Cannot start listening - pymidi not available")
+            logger.error("Cannot start listening - pymidi not available")
             return False
             
         if self._state == RtpMIDIState.LISTENING:
-            self.logger.warning("Already listening for rtpMIDI connections")
+            logger.warning("Already listening for rtpMIDI connections")
             return True
             
         listen_port = port or self.rtpmidi_port
@@ -240,12 +240,12 @@ class RtpMIDIService:
             self._state = RtpMIDIState.LISTENING
             self._running = True
             
-            self.logger.info(f"rtpMIDI server listening on port {listen_port}")
+            logger.info(f"rtpMIDI server listening on port {listen_port}")
             self._broadcast_status_update()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to start rtpMIDI server: {e}")
+            logger.error(f"Failed to start rtpMIDI server: {e}")
             self._state = RtpMIDIState.ERROR
             return False
     
@@ -281,12 +281,12 @@ class RtpMIDIService:
             self._discovered_sessions.clear()
             
             self._state = RtpMIDIState.IDLE
-            self.logger.info("rtpMIDI service stopped")
+            logger.info("rtpMIDI service stopped")
             self._broadcast_status_update()
             return True
             
         except Exception as e:
-            self.logger.error(f"Error stopping rtpMIDI service: {e}")
+            logger.error(f"Error stopping rtpMIDI service: {e}")
             return False
     
     def connect_session(self, session_info: RtpMIDISession) -> bool:
@@ -300,15 +300,15 @@ class RtpMIDIService:
             bool: True if connection successful
         """
         if not PYMIDI_AVAILABLE:
-            self.logger.error("Cannot connect to rtpMIDI session: pymidi not available")
+            logger.error("Cannot connect to rtpMIDI session: pymidi not available")
             return False
             
         if session_info is None:
-            self.logger.error("Cannot connect to session: session_info is None")
+            logger.error("Cannot connect to session: session_info is None")
             return False
             
         if len(self._active_sessions) >= self.max_connections:
-            self.logger.warning(f"Maximum connections ({self.max_connections}) reached")
+            logger.warning(f"Maximum connections ({self.max_connections}) reached")
             return False
             
         try:
@@ -319,13 +319,13 @@ class RtpMIDIService:
             
             self._active_sessions[session_info.name] = session_info
             
-            self.logger.info(f"Attempting to connect to rtpMIDI session: {session_info.name}")
+            logger.info(f"Attempting to connect to rtpMIDI session: {session_info.name}")
             self._broadcast_status_update()
             return True
             
         except Exception as e:
             session_name = session_info.name if session_info else "unknown"
-            self.logger.error(f"Failed to connect to session {session_name}: {e}")
+            logger.error(f"Failed to connect to session {session_name}: {e}")
             return False
     
     def disconnect_session(self, session_name: str) -> bool:
@@ -339,7 +339,7 @@ class RtpMIDIService:
             bool: True if disconnection successful
         """
         if session_name not in self._active_sessions:
-            self.logger.warning(f"Session {session_name} not found in active sessions")
+            logger.warning(f"Session {session_name} not found in active sessions")
             return False
             
         try:
@@ -350,17 +350,17 @@ class RtpMIDIService:
             if session_name in self._connection_quality:
                 del self._connection_quality[session_name]
             
-            self.logger.info(f"Disconnected from rtpMIDI session: {session_name}")
+            logger.info(f"Disconnected from rtpMIDI session: {session_name}")
             self._broadcast_status_update()
             return True
             
         except Exception as e:
-            self.logger.error(f"Error disconnecting from session {session_name}: {e}")
+            logger.error(f"Error disconnecting from session {session_name}: {e}")
             return False
     
     def _discovery_loop(self):
         """Main discovery loop for finding rtpMIDI sessions"""
-        self.logger.info("Starting rtpMIDI session discovery loop")
+        logger.info("Starting rtpMIDI session discovery loop")
         
         while not self._stop_event.is_set():
             try:
@@ -374,23 +374,23 @@ class RtpMIDIService:
                     break
                     
             except Exception as e:
-                self.logger.error(f"Error in discovery loop: {e}")
+                logger.error(f"Error in discovery loop: {e}")
                 time.sleep(5.0)
         
-        self.logger.info("rtpMIDI discovery loop stopped")
+        logger.info("rtpMIDI discovery loop stopped")
     
     def _server_loop(self):
         """Main server loop for handling rtpMIDI connections"""
-        self.logger.info("Starting rtpMIDI server loop")
+        logger.info("Starting rtpMIDI server loop")
         
         try:
             if self._server:
                 # This will block until server is stopped
                 self._server.serve_forever()
         except Exception as e:
-            self.logger.error(f"Error in server loop: {e}")
+            logger.error(f"Error in server loop: {e}")
         
-        self.logger.info("rtpMIDI server loop stopped")
+        logger.info("rtpMIDI server loop stopped")
     
     def _discover_sessions_on_network(self):
         """Discover rtpMIDI sessions on local network"""
@@ -403,7 +403,7 @@ class RtpMIDIService:
             local_ip = socket.gethostbyname(hostname)
             
             # For demo purposes, we'll just log that discovery is running
-            self.logger.debug(f"Scanning for rtpMIDI sessions from {local_ip}")
+            logger.debug(f"Scanning for rtpMIDI sessions from {local_ip}")
             
             # TODO: Implement proper mDNS/Bonjour discovery
             # This would involve:
@@ -412,7 +412,7 @@ class RtpMIDIService:
             # 3. Updating self._discovered_sessions
             
         except Exception as e:
-            self.logger.error(f"Error during session discovery: {e}")
+            logger.error(f"Error during session discovery: {e}")
     
     def _handle_peer_connected(self, peer):
         """Handle when a peer connects to our rtpMIDI server"""
@@ -437,11 +437,11 @@ class RtpMIDIService:
                 'last_update': time.time()
             }
             
-            self.logger.info(f"rtpMIDI peer connected: {peer_name}")
+            logger.info(f"rtpMIDI peer connected: {peer_name}")
             self._broadcast_status_update()
             
         except Exception as e:
-            self.logger.error(f"Error handling peer connection: {e}")
+            logger.error(f"Error handling peer connection: {e}")
     
     def _handle_peer_disconnected(self, peer):
         """Handle when a peer disconnects from our rtpMIDI server"""
@@ -454,11 +454,11 @@ class RtpMIDIService:
             if peer_name in self._connection_quality:
                 del self._connection_quality[peer_name]
             
-            self.logger.info(f"rtpMIDI peer disconnected: {peer_name}")
+            logger.info(f"rtpMIDI peer disconnected: {peer_name}")
             self._broadcast_status_update()
             
         except Exception as e:
-            self.logger.error(f"Error handling peer disconnection: {e}")
+            logger.error(f"Error handling peer disconnection: {e}")
     
     def _process_network_midi_command(self, peer, command):
         """Process incoming MIDI command from network peer"""
@@ -498,7 +498,7 @@ class RtpMIDIService:
             self._update_connection_quality(peer_name, timestamp)
             
         except Exception as e:
-            self.logger.error(f"Error processing network MIDI command: {e}")
+            logger.error(f"Error processing network MIDI command: {e}")
     
     def _forward_midi_event(self, event: NetworkMIDIEvent):
         """Forward network MIDI event to unified input manager"""
@@ -518,7 +518,7 @@ class RtpMIDIService:
             self._broadcast_midi_event(event)
             
         except Exception as e:
-            self.logger.error(f"Error forwarding MIDI event: {e}")
+            logger.error(f"Error forwarding MIDI event: {e}")
     
     def _update_connection_quality(self, peer_name: str, timestamp: float):
         """Update connection quality metrics for a peer"""
@@ -543,7 +543,7 @@ class RtpMIDIService:
                     'source_session': event.source_session
                 })
             except Exception as e:
-                self.logger.error(f"Error broadcasting MIDI event: {e}")
+                logger.error(f"Error broadcasting MIDI event: {e}")
     
     def _broadcast_status_update(self):
         """Broadcast service status update via WebSocket"""
@@ -576,7 +576,7 @@ class RtpMIDIService:
                     'last_event_time': self._last_event_time
                 })
             except Exception as e:
-                self.logger.error(f"Error broadcasting status update: {e}")
+                logger.error(f"Error broadcasting status update: {e}")
     
     def get_available_sessions(self) -> List[Dict[str, Any]]:
         """Get list of available rtpMIDI sessions (both active and discovered)"""
@@ -644,7 +644,7 @@ class RtpMIDIService:
     
     def cleanup(self):
         """Clean up service resources"""
-        self.logger.info("Cleaning up rtpMIDI service")
+        logger.info("Cleaning up rtpMIDI service")
         self.stop_listening()
     
     def __enter__(self):

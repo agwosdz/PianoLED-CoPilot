@@ -1,4 +1,11 @@
-import mido
+try:
+    import mido
+    MIDO_AVAILABLE = True
+    print("✓ mido library available")
+except ImportError as e:
+    print(f"✗ mido library not available: {e}")
+    print("Install with: pip3 install mido python-rtmidi")
+    exit(1)
 
 print('Backend details:')
 backend = mido.backend
@@ -11,5 +18,5 @@ try:
 except Exception as e:
     print('Error:', e)
 
-print('\nMido version:', mido.__version__)
+print('\nMido version:', getattr(mido, '__version__', 'Unknown'))
 print('Available backends:', mido.available_backends())

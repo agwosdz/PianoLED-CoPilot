@@ -12,6 +12,7 @@ import os
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
+from logging_config import get_logger
 
 try:
     from led_controller import LEDController
@@ -76,7 +77,6 @@ class PlaybackService:
             num_leds: Number of LEDs in the strip (optional, loaded from config if not provided)
             midi_parser: MIDI parser instance for file parsing
         """
-        self.logger = logging.getLogger(__name__)
         self._led_controller = led_controller
         
         # Load configuration
@@ -128,7 +128,7 @@ class PlaybackService:
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
         
-        self.logger.info(f"PlaybackService initialized with {num_leds} LEDs")
+        logger.info(f"PlaybackService initialized with {num_leds} LEDs")
     
     @property
     def state(self) -> PlaybackState:
@@ -206,13 +206,13 @@ class PlaybackService:
             try:
                 callback(status)
             except Exception as e:
-                self.logger.error(f"Error in status callback: {e}")
+                logger.error(f"Error in status callback: {e}")
     
     def seek_to_time(self, time_seconds: float) -> bool:
         """Seek to a specific time in the playback"""
         try:
             if not self._note_events:
-                self.logger.error("No MIDI file loaded for seeking")
+                logger.error("No MIDI file loaded for seeking")
                 return False
             
             # Clamp time to valid range
@@ -230,12 +230,12 @@ class PlaybackService:
             if self._led_controller:
                 self._led_controller.turn_off_all()
             
-            self.logger.info(f"Seeked to {time_seconds:.2f}s")
+            logger.info(f"Seeked to {time_seconds:.2f}s")
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to seek: {e}")
+            logger.error(f"Failed to seek: {e}")
             return False
     
     def set_tempo(self, multiplier: float) -> bool:
@@ -251,12 +251,12 @@ class PlaybackService:
                 self._start_time = current_real_time - elapsed_playback_time / multiplier
             
             self._tempo_multiplier = multiplier
-            self.logger.info(f"Tempo set to {multiplier:.2f}x")
+            logger.info(f"Tempo set to {multiplier:.2f}x")
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to set tempo: {e}")
+            logger.error(f"Failed to set tempo: {e}")
             return False
     
     def set_volume(self, multiplier: float) -> bool:
@@ -265,12 +265,12 @@ class PlaybackService:
             # Clamp volume to valid range
             multiplier = max(0.0, min(multiplier, 1.0))
             self._volume_multiplier = multiplier
-            self.logger.info(f"Volume set to {multiplier:.2f}")
+            logger.info(f"Volume set to {multiplier:.2f}")
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to set volume: {e}")
+            logger.error(f"Failed to set volume: {e}")
             return False
     
     def set_loop(self, enabled: bool, start_time: float = 0.0, end_time: float = 0.0) -> bool:
@@ -283,15 +283,15 @@ class PlaybackService:
                 end_time = max(start_time + 1.0, min(end_time, self._total_duration))
                 self._loop_start = start_time
                 self._loop_end = end_time
-                self.logger.info(f"Loop enabled: {start_time:.2f}s - {end_time:.2f}s")
+                logger.info(f"Loop enabled: {start_time:.2f}s - {end_time:.2f}s")
             else:
-                self.logger.info("Loop disabled")
+                logger.info("Loop disabled")
             
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to set loop: {e}")
+            logger.error(f"Failed to set loop: {e}")
             return False
     
     def load_midi_file(self, filename: str) -> bool:
@@ -307,7 +307,7 @@ class PlaybackService:
         try:
             # Check if file exists
             if not os.path.exists(filename):
-                self.logger.error(f"MIDI file not found: {filename}")
+                logger.error(f"MIDI file not found: {filename}")
                 self._state = PlaybackState.ERROR
                 self._notify_status_change()
                 return False
@@ -321,10 +321,10 @@ class PlaybackService:
                 if parsed_data:
                     self._note_events = self._convert_parsed_notes(parsed_data)
                 else:
-                    self.logger.warning(f"Failed to parse MIDI file {filename}, using demo notes")
+                    logger.warning(f"Failed to parse MIDI file {filename}, using demo notes")
                     self._note_events = self._generate_demo_notes()
             else:
-                self.logger.warning("No MIDI parser available, using demo notes")
+                logger.warning("No MIDI parser available, using demo notes")
                 self._note_events = self._generate_demo_notes()
             
             self._total_duration = max(event.time + event.duration for event in self._note_events) if self._note_events else 0
@@ -332,12 +332,12 @@ class PlaybackService:
             self._state = PlaybackState.IDLE
             self._current_time = 0.0
             
-            self.logger.info(f"Loaded MIDI file: {filename} ({len(self._note_events)} notes, {self._total_duration:.1f}s)")
+            logger.info(f"Loaded MIDI file: {filename} ({len(self._note_events)} notes, {self._total_duration:.1f}s)")
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to load MIDI file {filename}: {e}")
+            logger.error(f"Failed to load MIDI file {filename}: {e}")
             self._state = PlaybackState.ERROR
             self._notify_status_change()
             return False
@@ -426,10 +426,10 @@ class PlaybackService:
                         channel=0
                     ))
             
-            self.logger.info(f"Converted {len(notes)} notes from parsed MIDI data")
+            logger.info(f"Converted {len(notes)} notes from parsed MIDI data")
             
         except Exception as e:
-            self.logger.error(f"Error converting parsed MIDI data: {e}")
+            logger.error(f"Error converting parsed MIDI data: {e}")
             # Fall back to demo notes on error
             notes = self._generate_demo_notes()
         
@@ -444,11 +444,11 @@ class PlaybackService:
         """
         try:
             if self._state == PlaybackState.PLAYING:
-                self.logger.warning("Playback already in progress")
+                logger.warning("Playback already in progress")
                 return True
             
             if not self._note_events:
-                self.logger.error("No MIDI file loaded")
+                logger.error("No MIDI file loaded")
                 return False
             
             # Reset events
@@ -467,12 +467,12 @@ class PlaybackService:
             self._state = PlaybackState.PLAYING
             self._start_time = time.time() - self._current_time / self._tempo_multiplier  # Account for resume and tempo
             
-            self.logger.info("Playback started")
+            logger.info("Playback started")
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to start playback: {e}")
+            logger.error(f"Failed to start playback: {e}")
             self._state = PlaybackState.ERROR
             self._notify_status_change()
             return False
@@ -489,23 +489,23 @@ class PlaybackService:
                 self._pause_event.set()
                 self._state = PlaybackState.PAUSED
                 self._pause_time = time.time()
-                self.logger.info("Playback paused")
+                logger.info("Playback paused")
             elif self._state == PlaybackState.PAUSED:
                 self._pause_event.clear()
                 self._state = PlaybackState.PLAYING
                 # Adjust start time to account for pause duration
                 pause_duration = time.time() - self._pause_time
                 self._start_time += pause_duration
-                self.logger.info("Playback resumed")
+                logger.info("Playback resumed")
             else:
-                self.logger.warning(f"Cannot pause/resume from state: {self._state}")
+                logger.warning(f"Cannot pause/resume from state: {self._state}")
                 return False
             
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to pause/resume playback: {e}")
+            logger.error(f"Failed to pause/resume playback: {e}")
             return False
     
     def stop_playback(self) -> bool:
@@ -535,18 +535,18 @@ class PlaybackService:
             self._current_time = 0.0
             self._active_notes.clear()
             
-            self.logger.info("Playback stopped")
+            logger.info("Playback stopped")
             self._notify_status_change()
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to stop playback: {e}")
+            logger.error(f"Failed to stop playback: {e}")
             return False
     
     def _playback_loop(self):
         """Main playback loop running in separate thread"""
         try:
-            self.logger.info("Playback loop started")
+            logger.info("Playback loop started")
             last_status_update = 0
             last_led_update = 0
             
@@ -563,7 +563,7 @@ class PlaybackService:
                 
                 # Handle loop functionality
                 if self._loop_enabled and self._current_time >= self._loop_end:
-                    self.logger.info(f"Loop: jumping from {self._current_time:.2f}s to {self._loop_start:.2f}s")
+                    logger.info(f"Loop: jumping from {self._current_time:.2f}s to {self._loop_start:.2f}s")
                     self._current_time = self._loop_start
                     self._start_time = current_loop_time - self._current_time / self._tempo_multiplier
                     self._active_notes.clear()
@@ -572,7 +572,7 @@ class PlaybackService:
                 
                 # Check if playback is complete (only if not looping)
                 elif self._current_time >= self._total_duration:
-                    self.logger.info("Playback completed")
+                    logger.info("Playback completed")
                     break
                 
                 # Process note events
@@ -612,7 +612,7 @@ class PlaybackService:
                 self._notify_status_change()
             
         except Exception as e:
-            self.logger.error(f"Error in playback loop: {e}")
+            logger.error(f"Error in playback loop: {e}")
             self._state = PlaybackState.ERROR
             self._notify_status_change()
     
@@ -625,14 +625,14 @@ class PlaybackService:
             if abs(event.time - current_time) < 0.02:  # 20ms tolerance
                 if event.note not in self._active_notes:
                     self._active_notes[event.note] = current_time + event.duration
-                    self.logger.debug(f"Note ON: {event.note} at {current_time:.2f}s")
+                    logger.debug(f"Note ON: {event.note} at {current_time:.2f}s")
         
         # Remove notes that should end
         notes_to_remove = []
         for note, end_time in self._active_notes.items():
             if current_time >= end_time:
                 notes_to_remove.append(note)
-                self.logger.debug(f"Note OFF: {note} at {current_time:.2f}s")
+                logger.debug(f"Note OFF: {note} at {current_time:.2f}s")
         
         for note in notes_to_remove:
             del self._active_notes[note]
@@ -666,7 +666,7 @@ class PlaybackService:
                 self._led_controller.set_multiple_leds(led_data, auto_show=True)
         
         except Exception as e:
-            self.logger.error(f"Error updating LEDs: {e}")
+            logger.error(f"Error updating LEDs: {e}")
     
     def _map_note_to_led(self, note: int) -> int:
         """
@@ -758,7 +758,7 @@ class PlaybackService:
                 return mapping
                 
         except Exception as e:
-            self.logger.error(f"Error generating key mapping: {e}")
+            logger.error(f"Error generating key mapping: {e}")
             # Fallback to single LED mapping
             mapping = {}
             for note in range(self.min_midi_note, self.max_midi_note + 1):
@@ -833,9 +833,9 @@ class PlaybackService:
         try:
             self.stop_playback()
             self._status_callbacks.clear()
-            self.logger.info("PlaybackService cleaned up")
+            logger.info("PlaybackService cleaned up")
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+            logger.error(f"Error during cleanup: {e}")
     
     def __enter__(self):
         """Context manager entry"""

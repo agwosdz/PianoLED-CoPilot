@@ -10,6 +10,9 @@ import time
 from typing import Dict, List, Optional, Callable, Any, Set
 from dataclasses import dataclass
 from enum import Enum
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import MIDI services
 try:
@@ -62,7 +65,6 @@ class MIDIInputManager:
             websocket_callback: Callback function for WebSocket event broadcasting
             led_controller: LED controller instance for real-time visualization
         """
-        self.logger = logging.getLogger(__name__)
         self._websocket_callback = websocket_callback
         self._led_controller = led_controller
         
@@ -106,11 +108,11 @@ class MIDIInputManager:
             MIDIInputSource.RTPMIDI: {'available': False, 'listening': False, 'sessions': []}
         }
         
-        self.logger.info("Unified MIDI Input Manager initialized")
+        logger.info("Unified MIDI Input Manager initialized")
         # Send initial status broadcast
-        self.logger.info("Broadcasting initial status update...")
+        logger.info("Broadcasting initial status update...")
         self._broadcast_status_update()
-        self.logger.info("Initial status broadcast completed")
+        logger.info("Initial status broadcast completed")
     
     @property
     def is_listening(self) -> bool:
@@ -137,9 +139,9 @@ class MIDIInputManager:
                 )
                 self._source_status[MIDIInputSource.USB]['available'] = True
                 success_count += 1
-                self.logger.info("USB MIDI service initialized")
+                logger.info("USB MIDI service initialized")
             except Exception as e:
-                self.logger.error(f"Failed to initialize USB MIDI service: {e}")
+                logger.error(f"Failed to initialize USB MIDI service: {e}")
         
         # Initialize rtpMIDI service
         if self.enable_rtpmidi and RtpMIDIService:
@@ -150,15 +152,15 @@ class MIDIInputManager:
                 )
                 self._source_status[MIDIInputSource.RTPMIDI]['available'] = True
                 success_count += 1
-                self.logger.info("rtpMIDI service initialized")
+                logger.info("rtpMIDI service initialized")
             except Exception as e:
-                self.logger.error(f"Failed to initialize rtpMIDI service: {e}")
+                logger.error(f"Failed to initialize rtpMIDI service: {e}")
         
         if success_count == 0:
-            self.logger.error("No MIDI input services could be initialized")
+            logger.error("No MIDI input services could be initialized")
             return False
         
-        self.logger.info(f"Initialized {success_count} MIDI input service(s)")
+        logger.info(f"Initialized {success_count} MIDI input service(s)")
         return True
     
     def start_listening(self, device_name: Optional[str] = None, enable_usb: bool = True, enable_rtpmidi: bool = True) -> bool:
@@ -174,7 +176,7 @@ class MIDIInputManager:
             bool: True if at least one source started successfully
         """
         if self._running:
-            self.logger.warning("MIDI input manager already running")
+            logger.warning("MIDI input manager already running")
             return True
         
         # Initialize services if not already done
@@ -198,9 +200,9 @@ class MIDIInputManager:
                 if self._usb_service.start_listening(device_name):
                     self._source_status[MIDIInputSource.USB]['listening'] = True
                     success_count += 1
-                    self.logger.info("USB MIDI listening started")
+                    logger.info("USB MIDI listening started")
             except Exception as e:
-                self.logger.error(f"Failed to start USB MIDI listening: {e}")
+                logger.error(f"Failed to start USB MIDI listening: {e}")
         
         # Start rtpMIDI listening
         if enable_rtpmidi and self._rtpmidi_service:
@@ -208,17 +210,17 @@ class MIDIInputManager:
                 if self._rtpmidi_service.start_listening():
                     self._source_status[MIDIInputSource.RTPMIDI]['listening'] = True
                     success_count += 1
-                    self.logger.info("rtpMIDI listening started")
+                    logger.info("rtpMIDI listening started")
             except Exception as e:
-                self.logger.error(f"Failed to start rtpMIDI listening: {e}")
+                logger.error(f"Failed to start rtpMIDI listening: {e}")
         
         if success_count == 0:
-            self.logger.error("No MIDI input sources could be started")
+            logger.error("No MIDI input sources could be started")
             self._stop_event.set()
             return False
         
         self._running = True
-        self.logger.info(f"MIDI input manager started with {success_count} source(s)")
+        logger.info(f"MIDI input manager started with {success_count} source(s)")
         self._broadcast_status_update()
         return True
     
@@ -240,18 +242,18 @@ class MIDIInputManager:
             try:
                 self._usb_service.stop_listening()
                 self._source_status[MIDIInputSource.USB]['listening'] = False
-                self.logger.info("USB MIDI listening stopped")
+                logger.info("USB MIDI listening stopped")
             except Exception as e:
-                self.logger.error(f"Error stopping USB MIDI: {e}")
+                logger.error(f"Error stopping USB MIDI: {e}")
         
         # Stop rtpMIDI service
         if self._rtpmidi_service:
             try:
                 self._rtpmidi_service.stop_listening()
                 self._source_status[MIDIInputSource.RTPMIDI]['listening'] = False
-                self.logger.info("rtpMIDI listening stopped")
+                logger.info("rtpMIDI listening stopped")
             except Exception as e:
-                self.logger.error(f"Error stopping rtpMIDI: {e}")
+                logger.error(f"Error stopping rtpMIDI: {e}")
         
         # Wait for processing thread to finish
         if self._processing_thread and self._processing_thread.is_alive():
@@ -262,7 +264,7 @@ class MIDIInputManager:
             self._active_notes.clear()
             self.active_notes.clear()
         
-        self.logger.info("MIDI input manager stopped")
+        logger.info("MIDI input manager stopped")
         self._broadcast_status_update()
         return True
     
@@ -299,7 +301,7 @@ class MIDIInputManager:
                 if len(self._event_buffer) >= self.event_buffer_size:
                     # Remove oldest event if buffer is full
                     self._event_buffer.pop(0)
-                    self.logger.warning("MIDI event buffer overflow - dropping oldest event")
+                    logger.warning("MIDI event buffer overflow - dropping oldest event")
                 
                 self._event_buffer.append(unified_event)
             
@@ -308,11 +310,11 @@ class MIDIInputManager:
             self._last_event_time = unified_event.timestamp
             
         except Exception as e:
-            self.logger.error(f"Error processing MIDI event from {source_type}: {e}")
+            logger.error(f"Error processing MIDI event from {source_type}: {e}")
     
     def _event_processing_loop(self):
         """Main event processing loop"""
-        self.logger.info("Starting MIDI event processing loop")
+        logger.info("Starting MIDI event processing loop")
         
         while not self._stop_event.is_set():
             try:
@@ -333,10 +335,10 @@ class MIDIInputManager:
                     time.sleep(0.001)  # 1ms
                 
             except Exception as e:
-                self.logger.error(f"Error in event processing loop: {e}")
+                logger.error(f"Error in event processing loop: {e}")
                 time.sleep(0.1)
         
-        self.logger.info("MIDI event processing loop stopped")
+        logger.info("MIDI event processing loop stopped")
     
     def _process_unified_event(self, event: UnifiedMIDIEvent):
         """Process a unified MIDI event"""
@@ -356,7 +358,7 @@ class MIDIInputManager:
             event.processed = True
             
         except Exception as e:
-            self.logger.error(f"Error processing unified event: {e}")
+            logger.error(f"Error processing unified event: {e}")
     
     def _is_duplicate_event(self, event: UnifiedMIDIEvent) -> bool:
         """
@@ -425,7 +427,7 @@ class MIDIInputManager:
                     'source_detail': event.source_detail
                 })
             except Exception as e:
-                self.logger.error(f"Error broadcasting unified MIDI event: {e}")
+                logger.error(f"Error broadcasting unified MIDI event: {e}")
     
     def _handle_usb_event(self, event_type: str, event_data: Dict[str, Any]):
         """Handle events from USB MIDI service"""
@@ -445,7 +447,7 @@ class MIDIInputManager:
                 self._source_status[MIDIInputSource.USB]['devices'] = event_data.get('devices', [])
                 self._broadcast_status_update()
         except Exception as e:
-            self.logger.error(f"Error handling USB event: {e}")
+            logger.error(f"Error handling USB event: {e}")
     
     def _handle_rtpmidi_event(self, event_type: str, event_data: Dict[str, Any]):
         """Handle events from rtpMIDI service"""
@@ -458,13 +460,27 @@ class MIDIInputManager:
                 self._source_status[MIDIInputSource.RTPMIDI]['sessions'] = event_data.get('active_sessions', 0)
                 self._broadcast_status_update()
         except Exception as e:
-            self.logger.error(f"Error handling rtpMIDI event: {e}")
+            logger.error(f"Error handling rtpMIDI event: {e}")
     
     def _broadcast_status_update(self):
         """Broadcast unified status update via WebSocket"""
         if self._websocket_callback:
             try:
-                self.logger.info("Broadcasting MIDI manager status update...")
+                # Use background task for status updates to avoid blocking MIDI processing
+                import socketio
+                if hasattr(socketio, 'start_background_task'):
+                    socketio.start_background_task(self._do_broadcast_status_update)
+                else:
+                    # Fallback to direct call
+                    self._do_broadcast_status_update()
+            except Exception as e:
+                logger.error(f"Error broadcasting status update: {e}")
+    
+    def _do_broadcast_status_update(self):
+        """Actual status broadcast implementation for background task."""
+        if self._websocket_callback:
+            try:
+                logger.info("Broadcasting MIDI manager status update...")
                 # Get detailed status from services
                 usb_status = {}
                 rtpmidi_status = {}
@@ -477,7 +493,7 @@ class MIDIInputManager:
                         'listening': usb_service_status.get('is_listening', False),
                         'available': self._source_status[MIDIInputSource.USB].get('available', False)
                     }
-                    self.logger.info(f"USB status: {usb_status}")
+                    logger.info(f"USB status: {usb_status}")
                 
                 if self._rtpmidi_service:
                     rtpmidi_service_status = self._rtpmidi_service.get_status()
@@ -505,11 +521,11 @@ class MIDIInputManager:
                         'buffer_size': len(self._event_buffer)
                     }
                 }
-                self.logger.info(f"Sending midi_manager_status: {status_data}")
+                logger.info(f"Sending midi_manager_status: {status_data}")
                 self._websocket_callback('midi_manager_status', status_data)
-                self.logger.info("WebSocket callback completed")
+                logger.info("WebSocket callback completed")
             except Exception as e:
-                self.logger.error(f"Error broadcasting status update: {e}")
+                logger.error(f"Error in background broadcast of status update: {e}")
     
     def get_active_notes(self) -> Dict[int, Dict[str, Any]]:
         """Get currently active notes across all sources"""
@@ -538,7 +554,7 @@ class MIDIInputManager:
                     'status': device.status
                 } for device in usb_devices]
             except Exception as e:
-                self.logger.error(f"Error getting USB devices: {e}")
+                logger.error(f"Error getting USB devices: {e}")
         
         # Get rtpMIDI sessions
         if self._rtpmidi_service:
@@ -546,7 +562,7 @@ class MIDIInputManager:
                 rtpmidi_sessions = self._rtpmidi_service.get_available_sessions()
                 devices['rtpmidi_sessions'] = rtpmidi_sessions
             except Exception as e:
-                self.logger.error(f"Error getting rtpMIDI sessions: {e}")
+                logger.error(f"Error getting rtpMIDI sessions: {e}")
         
         return devices
     
@@ -564,14 +580,14 @@ class MIDIInputManager:
             try:
                 status['usb_service'] = self._usb_service.get_status()
             except Exception as e:
-                self.logger.error(f"Error getting USB service status: {e}")
+                logger.error(f"Error getting USB service status: {e}")
         
         # Get rtpMIDI service status
         if self._rtpmidi_service:
             try:
                 status['rtpmidi_service'] = self._rtpmidi_service.get_status()
             except Exception as e:
-                self.logger.error(f"Error getting rtpMIDI service status: {e}")
+                logger.error(f"Error getting rtpMIDI service status: {e}")
         
         return status
     
@@ -587,7 +603,7 @@ class MIDIInputManager:
             try:
                 services['usb'] = self._usb_service.is_listening
             except Exception as e:
-                self.logger.error(f"Error checking USB service status: {e}")
+                logger.error(f"Error checking USB service status: {e}")
         
         # Check rtpMIDI service
         if self._rtpmidi_service:
@@ -595,7 +611,7 @@ class MIDIInputManager:
                 services['rtpmidi'] = hasattr(self._rtpmidi_service, 'state') and \
                                    self._rtpmidi_service.state.value in ['discovering', 'listening']
             except Exception as e:
-                self.logger.error(f"Error checking rtpMIDI service status: {e}")
+                logger.error(f"Error checking rtpMIDI service status: {e}")
         
         return services
     
@@ -629,7 +645,7 @@ class MIDIInputManager:
     
     def cleanup(self):
         """Clean up manager resources"""
-        self.logger.info("Cleaning up MIDI input manager")
+        logger.info("Cleaning up MIDI input manager")
         self.stop_listening()
         
         if self._usb_service:

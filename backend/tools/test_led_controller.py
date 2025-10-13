@@ -87,38 +87,42 @@ class TestLEDController(unittest.TestCase):
         controller = self.LEDController()
         
         # Test turning on LED with default color
-        result = controller.turn_on_led(5)
+        result, error = controller.turn_on_led(5)
         
         # Verify the LED was set and show was called
         self.mock_pixels.setPixelColor.assert_called_with(5, 'mock_color')
         self.mock_color.assert_called_with(255, 255, 255)
         self.mock_pixels.show.assert_called_once()
         self.assertTrue(result)
+        self.assertIsNone(error)
     
     def test_turn_on_led_custom_color(self):
         """Test turning on LED with custom color"""
         controller = self.LEDController()
         custom_color = (255, 0, 0)  # Red
         
-        result = controller.turn_on_led(10, custom_color)
+        result, error = controller.turn_on_led(10, custom_color)
         
         # Verify the LED was set with custom color
         self.mock_pixels.setPixelColor.assert_called_with(10, 'mock_color')
         self.mock_color.assert_called_with(255, 0, 0)
         self.mock_pixels.show.assert_called_once()
         self.assertTrue(result)
+        self.assertIsNone(error)
     
     def test_turn_on_led_invalid_index(self):
         """Test turning on LED with invalid index"""
         controller = self.LEDController(num_pixels=10)
         
         # Test with negative index
-        result = controller.turn_on_led(-1)
+        result, error = controller.turn_on_led(-1)
         self.assertFalse(result)
+        self.assertIsNotNone(error)
         
         # Test with index too high
-        result = controller.turn_on_led(10)
+        result, error = controller.turn_on_led(10)
         self.assertFalse(result)
+        self.assertIsNotNone(error)
         
         # Verify show was not called
         self.mock_pixels.show.assert_not_called()
@@ -133,21 +137,23 @@ class TestLEDController(unittest.TestCase):
         self.mock_color.reset_mock()
         self.mock_pixels.show.reset_mock()
         
-        result = controller.turn_off_led(3)
+        result, error = controller.turn_off_led(3)
         
         # Verify the LED was set to black (off)
         self.mock_pixels.setPixelColor.assert_called_with(3, 'mock_color')
         self.mock_color.assert_called_with(0, 0, 0)
         self.mock_pixels.show.assert_called_once()
         self.assertTrue(result)
+        self.assertIsNone(error)
     
     def test_turn_off_led_invalid_index(self):
         """Test turning off LED with invalid index"""
         controller = self.LEDController(num_pixels=5)
         
         # Test with invalid index
-        result = controller.turn_off_led(5)
+        result, error = controller.turn_off_led(5)
         self.assertFalse(result)
+        self.assertIsNotNone(error)
         
         # Verify show was not called
         self.mock_pixels.show.assert_not_called()
@@ -156,7 +162,7 @@ class TestLEDController(unittest.TestCase):
         """Test turning off all LEDs"""
         controller = self.LEDController()
         
-        result = controller.turn_off_all()
+        result, error = controller.turn_off_all()
         
         # Verify setPixelColor was called for each LED with black color
         expected_calls = []
@@ -166,6 +172,7 @@ class TestLEDController(unittest.TestCase):
         self.mock_pixels.setPixelColor.assert_has_calls(expected_calls)
         self.mock_pixels.show.assert_called_once()
         self.assertTrue(result)
+        self.assertIsNone(error)
     
     def test_cleanup(self):
         """Test cleanup functionality"""
@@ -197,8 +204,9 @@ class TestLEDController(unittest.TestCase):
         # Mock a hardware error
         self.mock_pixels.setPixelColor.side_effect = Exception("Hardware error")
         
-        result = controller.turn_on_led(0)
+        result, error = controller.turn_on_led(0)
         self.assertFalse(result)
+        self.assertIsNotNone(error)
     
     def test_initialization_failure(self):
         """Test handling of initialization failure"""
@@ -214,9 +222,17 @@ class TestLEDController(unittest.TestCase):
         controller.pixels = None  # Simulate failed initialization
         
         # Test operations return False when pixels is None
-        self.assertFalse(controller.turn_on_led(0))
-        self.assertFalse(controller.turn_off_led(0))
-        self.assertFalse(controller.turn_off_all())
+        result, error = controller.turn_on_led(0)
+        self.assertFalse(result)
+        self.assertIsNotNone(error)
+        
+        result, error = controller.turn_off_led(0)
+        self.assertFalse(result)
+        self.assertIsNotNone(error)
+        
+        result, error = controller.turn_off_all()
+        self.assertFalse(result)
+        self.assertIsNotNone(error)
 
 
 class TestLEDEndpoint(unittest.TestCase):
@@ -244,7 +260,7 @@ class TestLEDEndpoint(unittest.TestCase):
     
     def test_test_led_endpoint_turn_on(self):
         """Test turning on LED via endpoint"""
-        self.mock_led_controller.turn_on_led.return_value = True
+        self.mock_led_controller.turn_on_led.return_value = (True, None)
         
         response = self.client.post('/api/test-led', 
                                   json={'index': 5, 'state': 'on'})
@@ -260,7 +276,7 @@ class TestLEDEndpoint(unittest.TestCase):
     
     def test_test_led_endpoint_turn_off(self):
         """Test turning off LED via endpoint"""
-        self.mock_led_controller.turn_off_led.return_value = True
+        self.mock_led_controller.turn_off_led.return_value = (True, None)
         
         response = self.client.post('/api/test-led', 
                                   json={'index': 3, 'state': 'off'})
@@ -276,7 +292,7 @@ class TestLEDEndpoint(unittest.TestCase):
     
     def test_test_led_endpoint_custom_color(self):
         """Test turning on LED with custom color"""
-        self.mock_led_controller.turn_on_led.return_value = True
+        self.mock_led_controller.turn_on_led.return_value = (True, None)
         
         response = self.client.post('/api/test-led', 
                                   json={'index': 0, 'state': 'on', 'color': [255, 0, 0]})
@@ -314,7 +330,7 @@ class TestLEDEndpoint(unittest.TestCase):
     
     def test_test_led_endpoint_hardware_failure(self):
         """Test endpoint when hardware operation fails"""
-        self.mock_led_controller.turn_on_led.return_value = False
+        self.mock_led_controller.turn_on_led.return_value = (False, "Hardware error")
         
         response = self.client.post('/api/test-led', 
                                   json={'index': 0, 'state': 'on'})

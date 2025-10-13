@@ -12,13 +12,11 @@ import os
 import subprocess
 import logging
 from typing import List, Dict, Tuple
+from logging_config import setup_logging, get_logger
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 def check_system_info():
     """Check basic system information."""

@@ -1,7 +1,19 @@
-import mido
 import os
 from typing import List, Dict, Any, Optional
 import logging
+from logging_config import get_logger
+
+# Try to import mido with fallback
+try:
+    import mido
+    MIDO_AVAILABLE = True
+    logger = get_logger(__name__)
+    logger.info("mido library loaded successfully")
+except ImportError as e:
+    logger = get_logger(__name__)
+    logger.warning(f"mido library not available: {e}")
+    MIDO_AVAILABLE = False
+    mido = None
 
 try:
     from config import get_config, get_piano_specs
@@ -11,8 +23,6 @@ except ImportError:
         return default
     def get_piano_specs(piano_size):
         return {'keys': 88, 'midi_start': 21, 'midi_end': 108}
-
-logger = logging.getLogger(__name__)
 
 class MIDIParser:
     """Service for parsing MIDI files into timed note sequences for LED visualization."""
@@ -50,6 +60,9 @@ class MIDIParser:
             FileNotFoundError: If MIDI file doesn't exist
             ValueError: If file is not a valid MIDI file
         """
+        if not MIDO_AVAILABLE:
+            raise RuntimeError("mido library not available - cannot parse MIDI files")
+            
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"MIDI file not found: {file_path}")
             
@@ -80,7 +93,7 @@ class MIDIParser:
             logger.error(f"Error parsing MIDI file {file_path}: {str(e)}")
             raise ValueError(f"Invalid MIDI file: {str(e)}")
     
-    def _extract_note_events(self, midi_file: mido.MidiFile) -> List[Dict[str, Any]]:
+    def _extract_note_events(self, midi_file) -> List[Dict[str, Any]]:
         """
         Extract note on/off events from all tracks in the MIDI file.
         
@@ -90,6 +103,9 @@ class MIDIParser:
         Returns:
             List of note events with timing information
         """
+        if not MIDO_AVAILABLE:
+            raise RuntimeError("mido library not available")
+            
         events = []
         
         for track_idx, track in enumerate(midi_file.tracks):
@@ -121,7 +137,7 @@ class MIDIParser:
         logger.info(f"Extracted {len(events)} note events from {len(midi_file.tracks)} tracks")
         return events
     
-    def _create_note_sequence(self, events: List[Dict[str, Any]], midi_file: mido.MidiFile) -> List[Dict[str, Any]]:
+    def _create_note_sequence(self, events: List[Dict[str, Any]], midi_file) -> List[Dict[str, Any]]:
         """
         Convert MIDI events to a time-ordered sequence with absolute timing.
         
@@ -132,6 +148,9 @@ class MIDIParser:
         Returns:
             Time-ordered list of note events with millisecond timing
         """
+        if not MIDO_AVAILABLE:
+            raise RuntimeError("mido library not available")
+            
         # Calculate ticks per second for timing conversion
         ticks_per_beat = midi_file.ticks_per_beat
         tempo = 500000  # Default tempo (120 BPM) in microseconds per beat
@@ -207,7 +226,7 @@ class MIDIParser:
         else:
             return logical_index
     
-    def _extract_metadata(self, midi_file: mido.MidiFile) -> Dict[str, Any]:
+    def _extract_metadata(self, midi_file) -> Dict[str, Any]:
         """
         Extract metadata from MIDI file.
         
@@ -217,6 +236,9 @@ class MIDIParser:
         Returns:
             Dictionary containing metadata
         """
+        if not MIDO_AVAILABLE:
+            raise RuntimeError("mido library not available")
+            
         metadata = {
             'tracks': len(midi_file.tracks),
             'ticks_per_beat': midi_file.ticks_per_beat,
@@ -247,6 +269,10 @@ class MIDIParser:
         Returns:
             True if valid MIDI file, False otherwise
         """
+        if not MIDO_AVAILABLE:
+            logger.warning("mido library not available - cannot validate MIDI files")
+            return False
+            
         try:
             if not os.path.exists(file_path):
                 return False

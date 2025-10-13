@@ -6,11 +6,22 @@ Tests individual LEDs to identify hardware issues
 
 import time
 import logging
-from rpi_ws281x import PixelStrip, Color
+from logging_config import setup_logging, get_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
+
+# Try to import hardware libraries
+try:
+    from rpi_ws281x import PixelStrip, Color
+    HARDWARE_AVAILABLE = True
+    logger.info("rpi_ws281x library loaded successfully")
+except ImportError as e:
+    logger.error(f"rpi_ws281x library not available: {e}")
+    logger.error("This script requires rpi_ws281x to be installed on a Raspberry Pi")
+    logger.error("Install with: pip3 install rpi_ws281x")
+    exit(1)
 
 # LED strip configuration
 LED_COUNT = 30  # Start with a small count to test

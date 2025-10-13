@@ -15,6 +15,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
+# Setup centralized logging before other imports
+from logging_config import setup_logging, get_logger
+setup_logging()
+
 # Initialize Flask app and SocketIO early so decorators work
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET', 'dev-secret')
@@ -30,9 +34,7 @@ CORS(app)
 # Use eventlet async mode to avoid OS thread exhaustion
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
+logger = get_logger(__name__)
 
 from led_controller import LEDController
 from led_effects_manager import LEDEffectsManager
@@ -606,16 +608,30 @@ def _run_startup_animation(duration):
         if led_effects_manager:
             led_effects_manager.startup_animation(duration)
             
-        # Emit completion event
-        socketio.emit('led_startup_animation_complete', {
-            'duration': duration
-        })
+        # Emit completion event using background task
+        socketio.start_background_task(_emit_startup_animation_complete, duration)
         
     except Exception as e:
         logger.error(f"Error in LED startup animation: {e}")
-        socketio.emit('led_startup_animation_error', {
-            'error': str(e)
+        socketio.start_background_task(_emit_startup_animation_error, str(e))
+
+def _emit_startup_animation_complete(duration):
+    """Emit startup animation complete event in background task."""
+    try:
+        socketio.emit('led_startup_animation_complete', {
+            'duration': duration
         })
+    except Exception as e:
+        logger.error(f"Error emitting startup animation complete: {e}")
+
+def _emit_startup_animation_error(error_msg):
+    """Emit startup animation error event in background task."""
+    try:
+        socketio.emit('led_startup_animation_error', {
+            'error': error_msg
+        })
+    except Exception as e:
+        logger.error(f"Error emitting startup animation error: {e}")
 
 def _run_led_test_sequence(sequence_type, duration, led_count):
     """Run LED test sequence in background thread"""
@@ -642,17 +658,31 @@ def _run_led_test_sequence(sequence_type, duration, led_count):
         # Clear LEDs when done
         led_controller.turn_off_all()
         
-        # Emit completion event
+        # Emit completion event using background task
+        socketio.start_background_task(_emit_led_test_sequence_complete, sequence_type, duration)
+        
+    except Exception as e:
+        logger.error(f"Error in LED test sequence: {e}")
+        socketio.start_background_task(_emit_led_test_sequence_error, str(e))
+
+def _emit_led_test_sequence_complete(sequence_type, duration):
+    """Emit LED test sequence complete event in background task."""
+    try:
         socketio.emit('led_test_sequence_complete', {
             'type': sequence_type,
             'duration': duration
         })
-        
     except Exception as e:
-        logger.error(f"Error in LED test sequence: {e}")
+        logger.error(f"Error emitting LED test sequence complete: {e}")
+
+def _emit_led_test_sequence_error(error_msg):
+    """Emit LED test sequence error event in background task."""
+    try:
         socketio.emit('led_test_sequence_error', {
-            'error': str(e)
+            'error': error_msg
         })
+    except Exception as e:
+        logger.error(f"Error emitting LED test sequence error: {e}")
 
 def _rainbow_sequence(led_count):
     """Rainbow color sequence"""

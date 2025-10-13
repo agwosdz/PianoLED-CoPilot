@@ -8,8 +8,9 @@ import threading
 import time
 import logging
 from typing import Optional, Dict, Any
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class LEDEffectsManager:
     """Manages LED effects with proper thread cleanup"""

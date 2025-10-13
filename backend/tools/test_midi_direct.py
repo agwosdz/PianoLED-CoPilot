@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-import mido
+try:
+    import mido
+    MIDO_AVAILABLE = True
+    print("✓ mido library available")
+except ImportError as e:
+    print(f"✗ mido library not available: {e}")
+    print("This test requires mido to be installed")
+    print("Install with: pip3 install mido python-rtmidi")
+    exit(1)
+
 import time
 
 print("Available MIDI devices:")

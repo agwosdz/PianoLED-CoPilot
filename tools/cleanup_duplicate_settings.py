@@ -8,10 +8,11 @@ import sqlite3
 import json
 import logging
 from pathlib import Path
+from logging_config import setup_logging, get_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Setup centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 # Database path
 DB_PATH = "/home/pi/Secret-Project/backend/settings.db"
