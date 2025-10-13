@@ -8,16 +8,17 @@ import os
 import time
 
 import logging
-# Patch standard libs to use eventlet for concurrency before Flask/SIO import paths
-import eventlet
-eventlet.monkey_patch()
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
-
 # Setup centralized logging before other imports
 from logging_config import setup_logging, get_logger
 setup_logging()
+
+# Initialize logger early
+logger = get_logger(__name__)
+
+# Initialize Flask app and SocketIO early so decorators work
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 
 # Initialize Flask app and SocketIO early so decorators work
 app = Flask(__name__)
@@ -31,10 +32,8 @@ app.config.setdefault('MAX_CONTENT_LENGTH', 1 * 1024 * 1024)
 # Enable CORS for all routes
 CORS(app)
 
-# Use eventlet async mode to avoid OS thread exhaustion
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
-
-logger = get_logger(__name__)
+# Use threading async mode instead of eventlet for Python 3.13 compatibility
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 from led_controller import LEDController
 from led_effects_manager import LEDEffectsManager

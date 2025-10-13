@@ -8,9 +8,9 @@ import os
 import sys
 from pathlib import Path
 
-# Add the backend directory to Python path
-backend_dir = Path(__file__).parent
-sys.path.insert(0, str(backend_dir))
+# Add the parent directory to Python path so 'backend' can be imported as a package
+project_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(project_dir))
 
 # Set default environment variables
 os.environ.setdefault('FLASK_DEBUG', 'False')  # Disabled for production stability
@@ -19,7 +19,7 @@ os.environ.setdefault('FLASK_PORT', '5001')
 
 if __name__ == '__main__':
     try:
-        from app import app, socketio
+        from backend.app import app, socketio
         print("="*50)
         print("Piano LED Visualizer Backend Starting...")
         print("="*50)
@@ -28,12 +28,12 @@ if __name__ == '__main__':
         print(f"Health Check: http://{app.config['HOST']}:{app.config['PORT']}/health")
         print("="*50)
         
-        socketio.run(
-            app,
+        # Use standard Flask run for now to test basic functionality
+        app.run(
             host=app.config['HOST'],
-            port=app.config['PORT'],
-            debug=app.config['DEBUG'],
-            allow_unsafe_werkzeug=True
+            port=int(app.config['PORT']),
+            debug=bool(app.config['DEBUG']),
+            use_reloader=False  # Disable reloader for systemd
         )
     except ImportError as e:
         print(f"Error importing Flask app: {e}")

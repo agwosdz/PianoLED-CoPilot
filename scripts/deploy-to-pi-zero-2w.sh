@@ -15,20 +15,26 @@ BRANCH="main"
 
 # Parse command line arguments
 START_STEP=1
+SKIP_FRONTEND_BUILD=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --start)
             START_STEP="$2"
             shift 2
             ;;
+        --skip-frontend-build)
+            SKIP_FRONTEND_BUILD=true
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--start STEP]"
-            echo "  --start STEP  Start deployment from step number (1-21, default: 1)"
+            echo "Usage: $0 [--start STEP] [--skip-frontend-build]"
+            echo "  --start STEP              Start deployment from step number (1-22, default: 1)"
+            echo "  --skip-frontend-build     Skip frontend compilation and use local build"
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--start STEP]"
+            echo "Usage: $0 [--start STEP] [--skip-frontend-build]"
             exit 1
             ;;
     esac
@@ -42,13 +48,13 @@ echo ""
 # Function to run commands on Pi via SSH
 run_on_pi() {
     echo "🔧 Executing on Pi: $1"
-    ssh -o StrictHostKeyChecking=no $PI_USER@$PI_IP "$1"
+    ssh $PI_USER@$PI_IP "$1"
 }
 
 # Function to copy files to Pi
 copy_to_pi() {
     echo "📤 Copying $1 to $2 on Pi"
-    scp -o StrictHostKeyChecking=no -r "$1" $PI_USER@$PI_IP:"$2"
+    scp -r $1 $PI_USER@$PI_IP:$2
 }
 
 # Function to run a deployment step conditionally
@@ -153,13 +159,52 @@ setup_python_env() {
     run_on_pi "cd $PROJECT_DIR/backend && python3 -m venv venv"
     run_on_pi "cd $PROJECT_DIR/backend && source venv/bin/activate && pip install --upgrade pip setuptools wheel"
     run_on_pi "cd $PROJECT_DIR/backend && source venv/bin/activate && pip install -r requirements.txt"
+    # Fix permissions for virtual environment executables
+    run_on_pi "sudo chmod +x $PROJECT_DIR/backend/venv/bin/python3 $PROJECT_DIR/backend/venv/bin/pip $PROJECT_DIR/backend/venv/bin/pip3"
+    run_on_pi "sudo find $PROJECT_DIR/backend/venv/bin -type f -executable -exec chmod +x {} \;"
+    # Verify venv is working
+    run_on_pi "cd $PROJECT_DIR/backend && source venv/bin/activate && python3 -c 'import sys; print(f\"Python: {sys.executable}\"); print(f\"Virtual env: {sys.prefix}\")'"
 }
 
 build_frontend() {
-    # Skip npm install and build on Pi due to memory constraints
-    # Frontend should be built locally and copied to the Pi
-    echo "⚠️  Skipping frontend build on Pi (memory constrained)"
-    echo "   Frontend files should be built locally and copied to $PROJECT_DIR/frontend/build"
+    if [ "$SKIP_FRONTEND_BUILD" = true ]; then
+        echo "⏭️  Skipping frontend build (using local build)"
+        return
+    fi
+    
+    run_on_pi "cd $PROJECT_DIR/frontend && npm install"
+    run_on_pi "cd $PROJECT_DIR/frontend && npm run build"
+}
+
+build_frontend_locally() {
+    echo "🏗️  Building frontend locally..."
+    if [ ! -d "frontend" ]; then
+        echo "❌ Frontend directory not found in current workspace"
+        exit 1
+    fi
+    
+    cd frontend
+    npm install
+    npm run build
+    
+    if [ ! -d "build" ]; then
+        echo "❌ Frontend build failed - build directory not created"
+        exit 1
+    fi
+    
+    cd ..
+    echo "✅ Frontend built locally successfully"
+}
+
+copy_frontend_build() {
+    if [ "$SKIP_FRONTEND_BUILD" = true ]; then
+        echo "🏗️  Building frontend locally first..."
+        build_frontend_locally
+        echo "📤 Copying local frontend build to Pi..."
+        copy_to_pi "frontend/build" "$PROJECT_DIR/frontend/"
+    else
+        echo "⏭️  Skipping frontend copy (built on Pi)"
+    fi
 }
 
 create_env_config() {
@@ -202,9 +247,10 @@ After=network.target sound.target
 Type=simple
 User=pi
 WorkingDirectory=$PROJECT_DIR/backend
-Environment=PATH=$PROJECT_DIR/backend/venv/bin
+Environment=PATH=$PROJECT_DIR/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=VIRTUAL_ENV=$PROJECT_DIR/backend/venv
 EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$PROJECT_DIR/backend/venv/bin/python start.py
+ExecStart=$PROJECT_DIR/backend/venv/bin/python3 start.py
 Restart=always
 RestartSec=10
 
@@ -340,14 +386,15 @@ run_step 10 "🔒 Step 10: Setting up GPIO permissions for user access..." "setu
 run_step 11 "📁 Step 11: Setting up project directory..." "setup_project_dir"
 run_step 12 "🐍 Step 12: Setting up Python virtual environment and dependencies..." "setup_python_env"
 run_step 13 "⚛️ Step 13: Building frontend..." "build_frontend"
-run_step 14 "⚙️ Step 14: Creating environment configuration..." "create_env_config"
-run_step 15 "🔧 Step 15: Setting up systemd service..." "setup_systemd"
-run_step 16 "🌐 Step 16: Configuring nginx reverse proxy..." "configure_nginx"
-run_step 17 "🔒 Step 17: Setting up proper permissions..." "setup_permissions"
-run_step 18 "🎛️ Step 18: Configuring audio (optional, for MIDI playback)..." "configure_audio"
-run_step 19 "🚀 Step 19: Starting and enabling services..." "start_services"
-run_step 20 "⏳ Step 20: Waiting for services to start..." "wait_for_services"
-run_step 21 "✅ Step 21: Verifying deployment..." "verify_deployment"
+run_step 14 "📤 Step 14: Copying frontend build to Pi..." "copy_frontend_build"
+run_step 15 "⚙️ Step 15: Creating environment configuration..." "create_env_config"
+run_step 16 "🔧 Step 16: Setting up systemd service..." "setup_systemd"
+run_step 17 "🌐 Step 17: Configuring nginx reverse proxy..." "configure_nginx"
+run_step 18 "🔒 Step 18: Setting up proper permissions..." "setup_permissions"
+run_step 19 "🎛️ Step 19: Configuring audio (optional, for MIDI playback)..." "configure_audio"
+run_step 20 "🚀 Step 20: Starting and enabling services..." "start_services"
+run_step 21 "⏳ Step 21: Waiting for services to start..." "wait_for_services"
+run_step 22 "✅ Step 22: Verifying deployment..." "verify_deployment"
 
 echo ""
 echo "🎉 Deployment Complete!"
