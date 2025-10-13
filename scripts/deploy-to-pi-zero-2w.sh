@@ -178,6 +178,7 @@ build_frontend() {
 
 build_frontend_locally() {
     echo "🏗️  Building frontend locally..."
+    cd ..
     if [ ! -d "frontend" ]; then
         echo "❌ Frontend directory not found in current workspace"
         exit 1

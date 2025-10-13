@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from enum import Enum
 from logging_config import get_logger
 
+logger = get_logger(__name__)
+
 try:
     from led_controller import LEDController
 except ImportError:
