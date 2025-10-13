@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+		<meta name="theme-color" content="#3b82f6" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<link rel="manifest" href="/manifest.json" />
+		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.svg" />
+		<script src="https://cdn.socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous"></script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+		<script>
+			// Configure Socket.IO to use same-origin during development.
+			// The dev server proxies "/socket.io" to the Pi backend per vite.config.ts,
+			// so we avoid cross-origin calls and CORS errors.
+			if (typeof io !== 'undefined') {
+				window.socketIOConfig = {
+					forceNew: true,
+					reconnection: true,
+					timeout: 5000,
+					// Prefer pure WebSocket (reduce polling overhead)
+					transports: ['websocket'],
+					// Reduce reconnection storm
+					reconnectionDelay: 1000,
+					reconnectionDelayMax: 10000,
+					reconnectionAttempts: 5
+				};
+				// Falsy value so code falls back to io() (same-origin)
+				window.socketIOBackendUrl = '';
+			}
+			if ('serviceWorker' in navigator) {
+				window.addEventListener('load', () => {
+					navigator.serviceWorker.register('/service-worker.js')
+						.then(registration => {
+							console.log('Service Worker registered with scope:', registration.scope);
+						})
+						.catch(error => {
+							console.error('Service Worker registration failed:', error);
+						});
+				});
+			}
+		</script>
+	</body>
+</html>

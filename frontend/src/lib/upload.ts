@@ -1,0 +1,329 @@
+/**
+ * Upload service for handling MIDI file uploads
+ */
+
+export interface UploadResponse {
+	success: boolean;
+	filename?: string;
+	original_filename?: string;
+	size?: number;
+	filesize?: number;
+	path?: string;
+	error?: string;
+	message?: string;
+}
+
+export interface UploadProgress {
+	loaded: number;
+	total: number;
+	percentage: number;
+}
+
+export class UploadError extends Error {
+	constructor(
+		message: string,
+		public status?: number
+	) {
+		super(message);
+		this.name = 'UploadError';
+	}
+}
+
+/**
+ * Enhanced validation result with detailed error information
+ */
+export interface ValidationResult {
+	valid: boolean;
+	message: string;
+	errorType?: 'extension' | 'size' | 'empty' | 'type' | 'name' | 'content';
+	suggestion?: string;
+	details?: {
+		actualSize?: string;
+		maxSize?: string;
+		actualExtension?: string;
+		allowedExtensions?: string[];
+		actualLength?: number;
+		requiredLength?: number;
+		maxLength?: number;
+		actualValue?: number;
+		minValue?: number;
+		maxValue?: number;
+	};
+}
+
+/**
+ * Validates a file before upload with comprehensive error messages and suggestions
+ */
+export function validateMidiFile(file: File): ValidationResult {
+	const allowedExtensions = ['.mid', '.midi'];
+	const maxSize = 1024 * 1024; // 1MB
+	const minSize = 100; // 100 bytes minimum
+
+	// Check if file exists
+	if (!file) {
+		return {
+			valid: false,
+			message: 'No file selected. Please choose a MIDI file to upload.',
+			errorType: 'empty',
+			suggestion: 'Click the upload area or drag and drop a MIDI file (.mid or .midi) to get started.'
+		};
+	}
+
+	// Check for invalid filename characters
+	const invalidChars = /[<>:"|?*\\]/;
+	if (invalidChars.test(file.name)) {
+		return {
+			valid: false,
+			message: 'Filename contains invalid characters. Please rename your file.',
+			errorType: 'name',
+			suggestion: 'Remove characters like < > : " | ? * \\ from the filename and try again.'
+		};
+	}
+
+	// Check filename length
+	if (file.name.length > 255) {
+		return {
+			valid: false,
+			message: 'Filename is too long. Please use a shorter filename.',
+			errorType: 'name',
+			suggestion: 'Rename your file to be under 255 characters and try again.'
+		};
+	}
+
+	// Check file extension
+	const fileName = file.name.toLowerCase();
+	const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+
+	if (!hasValidExtension) {
+		const fileExtension = fileName.includes('.') ? fileName.split('.').pop() : 'no extension';
+		const commonMistakes = {
+			'mp3': 'MP3 files are audio recordings, not MIDI data. You need a MIDI file (.mid or .midi).',
+			'wav': 'WAV files are audio recordings, not MIDI data. You need a MIDI file (.mid or .midi).',
+			'txt': 'Text files cannot be processed as MIDI. You need a MIDI file (.mid or .midi).',
+			'pdf': 'PDF files cannot be processed as MIDI. You need a MIDI file (.mid or .midi).',
+			'doc': 'Document files cannot be processed as MIDI. You need a MIDI file (.mid or .midi).',
+			'docx': 'Document files cannot be processed as MIDI. You need a MIDI file (.mid or .midi).'
+		};
+
+		const specificMessage = commonMistakes[fileExtension as keyof typeof commonMistakes] ||
+			`Files with "${fileExtension}" extension are not supported. You need a MIDI file (.mid or .midi).`;
+
+		return {
+			valid: false,
+			message: specificMessage,
+			errorType: 'extension',
+			suggestion: 'MIDI files are created by music software like GarageBand, FL Studio, or Ableton Live. Look for files ending in .mid or .midi.',
+			details: {
+				actualExtension: fileExtension,
+				allowedExtensions
+			}
+		};
+	}
+
+	// Check file size - too large
+	if (file.size > maxSize) {
+		const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+		const maxSizeMB = (maxSize / (1024 * 1024)).toFixed(0);
+		return {
+			valid: false,
+			message: `File size (${fileSizeMB}MB) exceeds the maximum limit of ${maxSizeMB}MB.`,
+			errorType: 'size',
+			suggestion: 'Try using a shorter MIDI file or reduce the number of tracks/instruments in your music software.',
+			details: {
+				actualSize: `${fileSizeMB}MB`,
+				maxSize: `${maxSizeMB}MB`
+			}
+		};
+	}
+
+	// Check file size - too small
+	if (file.size < minSize) {
+		return {
+			valid: false,
+			message: `File appears to be empty or corrupted (${file.size} bytes).`,
+			errorType: 'empty',
+			suggestion: 'Make sure your MIDI file contains musical notes and was exported correctly from your music software.',
+			details: {
+				actualSize: `${file.size} bytes`
+			}
+		};
+	}
+
+	// Additional validation for common non-MIDI files that might have .mid extension
+	if (file.type && !file.type.includes('midi') && !file.type.includes('audio') && !file.type.includes('octet-stream')) {
+		return {
+			valid: false,
+			message: `File type "${file.type}" is not a MIDI file, despite the .mid extension.`,
+			errorType: 'type',
+			suggestion: 'This file may have been renamed to have a .mid extension but is not actually a MIDI file. Export a proper MIDI file from your music software.'
+		};
+	}
+
+	// Basic MIDI header validation (if we can read the file)
+	try {
+		const reader = new FileReader();
+		// We can't do async validation here, but we can check the filename pattern
+		// More sophisticated content validation would require async processing
+	} catch (error) {
+		// File reading not available or failed - continue with basic validation
+	}
+
+	return {
+		valid: true,
+		message: 'File validation successful. Ready to upload!'
+	};
+}
+
+/**
+ * Uploads a MIDI file to the server
+ */
+export async function uploadMidiFile(
+	file: File,
+	onProgress?: (progress: UploadProgress) => void
+): Promise<UploadResponse> {
+	// Validate file before upload
+	const validation = validateMidiFile(file);
+	if (!validation.valid) {
+		throw new UploadError(validation.message);
+	}
+
+	// Create form data
+	const formData = new FormData();
+	formData.append('file', file);
+
+	try {
+		// Create XMLHttpRequest for progress tracking
+		const xhr = new XMLHttpRequest();
+
+		// Set up progress tracking
+		if (onProgress) {
+			xhr.upload.addEventListener('progress', (event) => {
+				if (event.lengthComputable) {
+					const progress: UploadProgress = {
+						loaded: event.loaded,
+						total: event.total,
+						percentage: Math.round((event.loaded / event.total) * 100)
+					};
+					onProgress(progress);
+				}
+			});
+		}
+
+		// Create promise for XMLHttpRequest
+		const uploadPromise = new Promise<UploadResponse>((resolve, reject) => {
+			xhr.onload = () => {
+				try {
+					const response = JSON.parse(xhr.responseText);
+
+					if (xhr.status >= 200 && xhr.status < 300) {
+						resolve({
+							success: true,
+							...response
+						});
+					} else {
+						reject(
+							new UploadError(
+								response.error || `Upload failed with status ${xhr.status}`,
+								xhr.status
+							)
+						);
+					}
+				} catch (parseError) {
+					reject(
+						new UploadError(
+							'Invalid response from server',
+							xhr.status
+						)
+					);
+				}
+			};
+
+			xhr.onerror = () => {
+				reject(new UploadError('Network error occurred during upload'));
+			};
+
+			xhr.ontimeout = () => {
+				reject(new UploadError('Upload timed out'));
+			};
+
+			xhr.onabort = () => {
+				reject(new UploadError('Upload was cancelled'));
+			};
+		});
+
+		// Configure and send request
+		xhr.open('POST', '/api/upload-midi');
+		xhr.timeout = 30000; // 30 second timeout
+		xhr.send(formData);
+
+		return await uploadPromise;
+	} catch (error) {
+		if (error instanceof UploadError) {
+			throw error;
+		}
+		throw new UploadError(
+			error instanceof Error ? error.message : 'Unknown upload error'
+		);
+	}
+}
+
+/**
+ * Alternative upload function using fetch API (simpler, but no progress tracking)
+ */
+export async function uploadMidiFileSimple(file: File): Promise<UploadResponse> {
+	// Validate file before upload
+	const validation = validateMidiFile(file);
+	if (!validation.valid) {
+		throw new UploadError(validation.message);
+	}
+
+	// Create form data
+	const formData = new FormData();
+	formData.append('file', file);
+
+	try {
+		const response = await fetch('/api/upload-midi', {
+			method: 'POST',
+			body: formData
+		});
+
+		const result = await response.json();
+
+		if (response.ok) {
+			return {
+				success: true,
+				...result
+			};
+		} else {
+			throw new UploadError(
+				result.error || `Upload failed with status ${response.status}`,
+				response.status
+			);
+		}
+	} catch (error) {
+		if (error instanceof UploadError) {
+			throw error;
+		}
+
+		if (error instanceof TypeError && error.message.includes('fetch')) {
+			throw new UploadError('Network error occurred during upload');
+		}
+
+		throw new UploadError(
+			error instanceof Error ? error.message : 'Unknown upload error'
+		);
+	}
+}
+
+/**
+ * Formats file size for display
+ */
+export function formatFileSize(bytes: number): string {
+	if (bytes === 0) return '0 Bytes';
+
+	const k = 1024;
+	const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+	const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+	return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}

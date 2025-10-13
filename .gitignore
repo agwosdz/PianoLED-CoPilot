@@ -1,0 +1,7 @@
+.bmad-core
+.trae
+__pycache__
+.pytest_cache
+node_modules
+docs
+config.json
