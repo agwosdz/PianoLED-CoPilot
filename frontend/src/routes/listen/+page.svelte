@@ -34,6 +34,7 @@
   let socketInstance: any = null;
   let unsubscribeSocketStatus: (() => void) | null = null;
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
+  let fileInput: HTMLInputElement | null = null;
 
   let uploadedFiles: UploadedFileItem[] = [];
   let uploadedFilesError = '';
@@ -54,39 +55,38 @@
     return base.replace(/_\d{8}_\d{6}_[a-f0-9]+(?=\.)/, '');
   }
 
-  function getBasename(path: string): string {
-    if (!path) return '';
-    const normalized = path.replace(/\\/g, '/');
-    const segments = normalized.split('/');
-    return segments[segments.length - 1] ?? path;
-  }
-
   function updateFromPlayback(payload: any): void {
     if (!payload) return;
-    playbackState = (payload.state as PlaybackState) || 'idle';
-    currentTime = payload.current_time ?? 0;
-    totalDuration = payload.total_duration ?? 0;
 
-    if (payload.filename) {
-      playbackFilename = payload.filename;
-            playbackState = 'idle';
-            currentTime = 0;
-            totalDuration = 0;
-            playbackNotice = 'Song removed from library.';
+    const incomingState = (payload.state as PlaybackState) || 'idle';
+    const incomingFilename = typeof payload.filename === 'string' ? payload.filename : '';
+
+    playbackState = incomingState;
+    const isActivePlayback = incomingState === 'playing' || incomingState === 'paused';
+    currentTime = isActivePlayback ? payload.current_time ?? 0 : 0;
+    totalDuration = isActivePlayback ? payload.total_duration ?? 0 : 0;
+
+    if (incomingFilename && (incomingState === 'playing' || incomingState === 'paused')) {
+      playbackFilename = incomingFilename;
+      playbackOriginalName = payload.original_filename || deriveOriginalName(incomingFilename);
+    }
+    if (!incomingFilename) {
+      playbackFilename = '';
+      playbackOriginalName = '';
+      uploadedSize = 0;
+      totalDuration = 0;
     }
 
     if (payload.error_message) {
       playbackNotice = payload.error_message;
-    } else if (playbackState === 'playing') {
+    } else if (incomingState === 'playing') {
       playbackNotice = 'Playback in progress';
-    } else if (playbackState === 'paused') {
+    } else if (incomingState === 'paused') {
       playbackNotice = 'Playback paused';
-    } else if (playbackState === 'stopped') {
-      playbackNotice = 'Playback stopped';
-    } else if (playbackFilename) {
-      playbackNotice = 'Ready to play';
-    } else {
-      playbackNotice = 'Upload a MIDI file to begin';
+    } else if (incomingState === 'stopped') {
+      playbackNotice = playbackFilename ? 'Playback stopped' : 'Upload a MIDI file to begin';
+    } else if (incomingState === 'idle') {
+      playbackNotice = playbackFilename ? 'Ready to play' : 'Upload a MIDI file to begin';
     }
   }
 
@@ -124,6 +124,10 @@
           playbackFilename = '';
           playbackOriginalName = '';
           uploadedSize = 0;
+          playbackState = 'idle';
+          currentTime = 0;
+          totalDuration = 0;
+          playbackNotice = 'Upload a MIDI file to begin';
         }
       }
     } catch (error) {
@@ -152,14 +156,6 @@
     unsubscribeSocketStatus = socketStatus.subscribe((status) => {
       connectionStatus = status;
     });
-
-    if (!playbackFilename && browser) {
-      const cached = window.localStorage.getItem('lastUploadedFile');
-      if (cached) {
-        playbackFilename = cached;
-        playbackOriginalName = deriveOriginalName(cached);
-      }
-    }
   });
 
   onDestroy(() => {
@@ -206,6 +202,17 @@
     }
   }
 
+  function triggerFilePicker(): void {
+    fileInput?.click();
+  }
+
+  function handleDropZoneKey(event: KeyboardEvent): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      triggerFilePicker();
+    }
+  }
+
   async function handleIncomingFile(file: File): Promise<void> {
     if (uploadState === 'uploading') {
       uploadError = 'Please wait for the current upload to finish.';
@@ -213,7 +220,6 @@
     }
 
     selectedFile = file;
-    uploadedSize = file.size;
     resetUploadFeedback();
     uploadState = 'idle';
     await beginUpload(file);
@@ -231,25 +237,14 @@
     uploadProgress = 0;
 
     try {
-      selectedFile = targetFile;
-      uploadedSize = targetFile.size;
-
       const result = await uploadMidiFile(targetFile, (progress: UploadProgress) => {
         uploadProgress = progress.percentage;
       });
 
       uploadState = 'complete';
       uploadMessage = result.message || 'Upload complete.';
-      playbackFilename = result.filename || playbackFilename;
-      playbackOriginalName = result.original_filename || deriveOriginalName(playbackFilename);
-      uploadedSize = result.size ?? targetFile.size;
-
-      if (browser && playbackFilename) {
-        window.localStorage.setItem('lastUploadedFile', playbackFilename);
-      }
-
-      await fetchPlaybackStatus();
       await loadUploadedFiles();
+      await fetchPlaybackStatus();
       selectedFile = null;
     } catch (error) {
       uploadState = 'idle';
@@ -279,15 +274,18 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename })
       });
-  const data = await response.json();
-  if (response.ok && data?.status === 'success') {
+      const data = await response.json();
+      if (response.ok && data?.status === 'success') {
+        playbackState = 'playing';
         playbackNotice = data.message || 'Playback started.';
         await fetchPlaybackStatus();
       } else {
         playbackNotice = data?.message || 'Unable to start playback.';
+        playbackState = 'idle';
       }
     } catch (error) {
       playbackNotice = 'Network error while starting playback.';
+      playbackState = 'idle';
     }
   }
 
@@ -310,6 +308,10 @@
       const data = await response.json();
       if (response.ok && data?.status === 'success') {
         playbackNotice = data.message || 'Playback toggled.';
+        const nextState = (data.playback_state as PlaybackState | undefined) || playbackState;
+        if (nextState === 'playing' || nextState === 'paused' || nextState === 'stopped' || nextState === 'idle') {
+          playbackState = nextState;
+        }
         await fetchPlaybackStatus();
       } else {
         playbackNotice = data?.message || 'Unable to pause playback.';
@@ -325,6 +327,9 @@
       const data = await response.json();
       if (response.ok && data?.status === 'success') {
         playbackNotice = data.message || 'Playback stopped.';
+        playbackState = 'stopped';
+        currentTime = 0;
+        totalDuration = 0;
         await fetchPlaybackStatus();
         return true;
       } else {
@@ -351,10 +356,6 @@
     uploadedSize = file.size;
     playbackNotice = 'Starting playback…';
 
-    if (browser) {
-      window.localStorage.setItem('lastUploadedFile', playbackFilename);
-    }
-
     await handlePlay(false);
   }
 
@@ -370,9 +371,6 @@
     playbackOriginalName = deriveOriginalName(file.filename);
     uploadedSize = file.size;
     playbackNotice = 'Ready to play';
-    if (browser) {
-      window.localStorage.setItem('lastUploadedFile', playbackFilename);
-    }
     fetchPlaybackStatus();
   }
 
@@ -384,6 +382,18 @@
     if (browser) {
       const confirmation = window.confirm(`Delete ${deriveOriginalName(file.filename)} from the device?`);
       if (!confirmation) {
+        return;
+      }
+    }
+
+    if (
+      playbackFilename === file.path &&
+      (playbackState === 'playing' || playbackState === 'paused')
+    ) {
+      playbackNotice = 'Stopping playback before deletion…';
+      const stopped = await handleStop();
+      if (!stopped) {
+        playbackNotice = 'Unable to stop playback. Delete cancelled.';
         return;
       }
     }
@@ -409,9 +419,6 @@
           playbackState = 'idle';
           currentTime = 0;
           totalDuration = 0;
-          if (browser) {
-            window.localStorage.removeItem('lastUploadedFile');
-          }
         }
 
         await loadUploadedFiles();
@@ -511,12 +518,17 @@
       <section class="upload-card">
         <header class="upload-header">
           <h3>Upload MIDI</h3>
-          <p>Drop a file into the box or browse to pick one. Upload starts right after you confirm.</p>
+          <p>Drop a file into the box or browse to pick one. Upload starts as soon as you choose a file.</p>
         </header>
 
         <div
           class="drop-zone"
           class:active={dragActive}
+          role="button"
+          tabindex="0"
+          aria-label="Upload MIDI file by drag and drop"
+          on:click={triggerFilePicker}
+          on:keydown={handleDropZoneKey}
           on:dragover={handleDragOver}
           on:dragleave={handleDragLeave}
           on:drop={handleDrop}
@@ -525,8 +537,8 @@
           <p class="drop-text">Drag &amp; drop a MIDI file here</p>
           <p class="drop-subtext">
             or
-            <label class="browse-trigger">
-              <input type="file" accept=".mid,.midi" on:change={handleFileInput} />
+            <label class="browse-trigger" on:click|preventDefault={triggerFilePicker}>
+              <input bind:this={fileInput} type="file" accept=".mid,.midi" on:change={handleFileInput} />
               browse your computer
             </label>
           </p>
@@ -585,8 +597,9 @@
 <style>
   .listen-page {
     min-height: 100vh;
-    background: #f8fafc;
+    background: #ffffff;
     padding: 2.5rem 1rem 3rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
   .listen-content {
@@ -602,6 +615,7 @@
     background: transparent;
     color: #1f2937;
     padding: 0;
+    margin-bottom: 2rem;
   }
 
   .hero-section h1 {
@@ -626,10 +640,11 @@
   .playback-card,
   .upload-card,
   .song-list-card {
-    background: #ffffff;
-    border-radius: 18px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
     padding: 1.75rem;
-    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
   }
 
   .playback-card {
@@ -811,22 +826,23 @@
   .drop-zone {
     width: 100%;
     max-width: 420px;
-    border: 2px dashed #94a3b8;
-    border-radius: 18px;
+    border: 2px dashed #cbd5f5;
+    border-radius: 16px;
     padding: 2.5rem 1.5rem;
-    background: #f8fafc;
+    background: #ffffff;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.75rem;
     text-align: center;
     transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
   }
 
   .drop-zone.active {
     border-color: #2563eb;
-    background: rgba(37, 99, 235, 0.08);
-    box-shadow: 0 16px 32px rgba(37, 99, 235, 0.18);
+    background: #eff6ff;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.15);
   }
 
   .drop-icon {
@@ -835,7 +851,7 @@
     color: #1d4ed8;
     width: 3.5rem;
     height: 3.5rem;
-    border-radius: 16px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
