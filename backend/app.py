@@ -133,6 +133,13 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     orientation = led_config.get('orientation', 'normal')
 
     current_led_count = getattr(led_controller, 'num_pixels', None)
+    current_orientation = getattr(led_controller, 'led_orientation', None)
+    orientation_changed = (
+        led_controller is not None
+        and orientation is not None
+        and current_orientation is not None
+        and orientation != current_orientation
+    )
     reinitialize_controller = led_controller is None or desired_led_count != current_led_count
 
     if reinitialize_controller:
@@ -160,8 +167,20 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
             led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
     else:
         # Update orientation if the controller remains the same
+        if orientation_changed and led_effects_manager:
+            try:
+                led_effects_manager.stop_current()
+            except Exception as exc:
+                logger.warning(f"Failed to stop LED effects for orientation change: {exc}")
+
         if led_controller:
+            if orientation_changed:
+                try:
+                    led_controller.turn_off_all()
+                except Exception as exc:
+                    logger.warning(f"Failed to clear LEDs during orientation change: {exc}")
             led_controller.led_orientation = orientation
+
         if led_effects_manager and led_controller:
             led_effects_manager.update_led_count(led_controller.num_pixels)
 

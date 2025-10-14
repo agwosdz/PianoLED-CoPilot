@@ -285,6 +285,9 @@ class SettingsService:
         legacy_key_mappings = {
             ('led', 'ledOrientation'): ('led', 'led_orientation'),
             ('led', 'orientation'): ('led', 'led_orientation'),
+            ('led', 'ledCount'): ('led', 'led_count'),
+            ('led', 'LED_COUNT'): ('led', 'led_count'),
+            ('led', 'count'): ('led', 'led_count'),
         }
 
         try:

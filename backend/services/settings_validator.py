@@ -20,7 +20,10 @@ class SettingsValidator:
     _KEY_ALIASES = {
         'led': {
             'ledOrientation': 'led_orientation',
-            'orientation': 'led_orientation'
+            'orientation': 'led_orientation',
+            'ledCount': 'led_count',
+            'LED_COUNT': 'led_count',
+            'count': 'led_count'
         }
     }
 
