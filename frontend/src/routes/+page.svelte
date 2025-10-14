@@ -1,22 +1,57 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { settings, getSetting } from '$lib/stores/settings.js';
 
-	let backendStatus: string = 'Checking...';
-	let backendMessage: string = '';
+	type DashboardResponse = {
+		status?: string;
+		message?: string;
+		version?: string;
+		uploaded_files_count?: number;
+		system_status?: {
+			backend_status?: string;
+			led_controller_available?: boolean;
+			midi_parser_available?: boolean;
+			playback_service_available?: boolean;
+			midi_input_active?: boolean;
+			midi_device_name?: string | null;
+		};
+		playback_status?: {
+			state?: string;
+			progress_percentage?: number;
+			filename?: string | null;
+		};
+	};
 
-	// System status from backend dashboard endpoint
-	let systemStatus: any = null;
-	let systemStatusLoading: boolean = true;
-	let systemStatusError: string | null = null;
+	let backendStatus = 'Checking...';
+	let backendMessage = '';
+	let dashboardLoading = true;
+	let dashboardError: string | null = null;
+	let dashboardData: DashboardResponse | null = null;
 
-	// USB MIDI status object (populated from systemStatus if available)
-	type UsbMidiStatus = { connected: boolean; deviceName?: string | null; lastActivity?: string | null; messageCount: number };
-	let usbMidiStatus: UsbMidiStatus | null = null;
+	let hostWithPort = 'localhost:5000';
+	let backendOrigin = 'http://localhost:5000';
+	let apiBaseUrl = `${backendOrigin}/api`;
+	let websocketUrl = 'ws://localhost:5000/socket.io';
 
 	onMount(async () => {
-		// Check backend health first
+		if (browser) {
+			hostWithPort = window.location.host || hostWithPort;
+			backendOrigin = window.location.origin || backendOrigin;
+			const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+			websocketUrl = `${wsProtocol}://${hostWithPort}/socket.io`;
+			apiBaseUrl = `${backendOrigin}/api`;
+		}
+
+		await checkBackendHealth();
+
+		if (backendStatus === 'healthy') {
+			await fetchDashboard();
+		} else {
+			dashboardLoading = false;
+		}
+	});
+
+	async function checkBackendHealth() {
 		try {
 			const response = await fetch('/health');
 			if (response.ok) {
@@ -31,53 +66,44 @@
 			backendStatus = 'Offline';
 			backendMessage = 'Cannot connect to backend server';
 		}
+	}
 
-		// Initialize dashboard functionality if backend is healthy
-		if (backendStatus === 'healthy') {
-			fetchSystemStatus();
-		}
-	});
-
-	onDestroy(() => {
-		// No cleanup needed for removed features
-	});
-
-	// Fetch system status from backend
-	async function fetchSystemStatus() {
+	async function fetchDashboard() {
+		dashboardLoading = true;
 		try {
 			const response = await fetch('/api/dashboard');
-			if (response.ok) {
-				systemStatus = await response.json();
-				systemStatusError = null;
-				
-				// Initialize MIDI status based on system status
-				if (systemStatus.system_status) {
-					usbMidiStatus = {
-						connected: systemStatus.system_status.midi_input_active || false,
-						deviceName: systemStatus.system_status.midi_device_name || null,
-						lastActivity: null,
-						messageCount: 0
-					};
-				}
-			} else {
-				systemStatusError = `HTTP ${response.status}: ${response.status}`;
+			if (!response.ok) {
+				dashboardError = `HTTP ${response.status}: ${response.statusText}`;
+				dashboardData = null;
+				return;
 			}
+
+			dashboardData = await response.json();
+			dashboardError = null;
 		} catch (error) {
-			systemStatusError = 'Cannot connect to backend server';
+			dashboardError = 'Cannot connect to backend server';
+			dashboardData = null;
 		} finally {
-			systemStatusLoading = false;
+			dashboardLoading = false;
 		}
 	}
 
-	// Helper functions for system status display
 	function getStatusClass(available: boolean | undefined): string {
 		return available ? 'healthy' : 'error';
 	}
 
-	function formatDuration(seconds: number): string {
-		const mins = Math.floor(seconds / 60);
-		const secs = Math.floor(seconds % 60);
-		return `${mins}:${secs.toString().padStart(2, '0')}`;
+	function formatPlaybackState(state?: string | null): string {
+		if (!state) {
+			return 'Idle';
+		}
+		return state.charAt(0).toUpperCase() + state.slice(1);
+	}
+
+	function formatPlaybackProgress(progress?: number | null): string {
+		if (progress === undefined || progress === null) {
+			return 'N/A';
+		}
+		return `${Math.round(progress)}%`;
 	}
 </script>
 
@@ -89,118 +115,107 @@
 <main>
 	<div class="hero-section">
 		<h1>🎹 Piano LED Visualizer</h1>
-		<p>Welcome to the Piano LED Visualizer - Transform your MIDI files into stunning LED light shows!</p>
+		<p>Welcome to the Piano LED Visualizer - manage your system and start a light show in moments.</p>
 	</div>
-	
-	<div class="system-details-card">
+
+	<section class="system-details-card">
 		<h2>System Details</h2>
-		<div class="system-details-grid">
+		<div class="detail-grid">
 			<div class="detail-item">
-				<span class="label">Frontend:</span>
-				<span class="value">Running</span>
+				<span class="label">Frontend</span>
+				<span class="value healthy">Running</span>
 			</div>
 			<div class="detail-item">
-				<span class="label">Backend:</span>
+				<span class="label">Backend</span>
 				<span class="value {backendStatus === 'healthy' ? 'healthy' : 'error'}">
 					{backendStatus === 'healthy' ? 'Healthy' : backendStatus}
 				</span>
 			</div>
 			<div class="detail-item">
-				<span class="label">Backend IP/Port:</span>
-				<span class="value">{browser ? `${window.location.hostname}:${window.location.port || '5173'}` : 'localhost:5173'}</span>
+				<span class="label">Backend Host</span>
+				<span class="value">{hostWithPort}</span>
 			</div>
 			<div class="detail-item">
-				<span class="label">WebSocket:</span>
-				<span class="value">Connected</span>
+				<span class="label">API Base</span>
+				<span class="value">{apiBaseUrl}</span>
 			</div>
 			<div class="detail-item">
-				<span class="label">Uptime:</span>
-				<span class="value">Running</span>
+				<span class="label">WebSocket Endpoint</span>
+				<span class="value">{websocketUrl}</span>
 			</div>
-			<div class="detail-item">
-				<span class="label">Version:</span>
-				<span class="value">1.0.0</span>
-			</div>
+			{#if dashboardData?.uploaded_files_count !== undefined}
+				<div class="detail-item">
+					<span class="label">Uploaded MIDI Files</span>
+					<span class="value">{dashboardData.uploaded_files_count}</span>
+				</div>
+			{/if}
+			{#if dashboardData?.version}
+				<div class="detail-item">
+					<span class="label">Backend Version</span>
+					<span class="value">{dashboardData.version}</span>
+				</div>
+			{/if}
+			{#if dashboardData?.playback_status?.state}
+				<div class="detail-item">
+					<span class="label">Playback State</span>
+					<span class="value">{formatPlaybackState(dashboardData.playback_status.state)}</span>
+				</div>
+			{/if}
+			{#if dashboardData?.playback_status?.progress_percentage !== undefined}
+				<div class="detail-item">
+					<span class="label">Playback Progress</span>
+					<span class="value">{formatPlaybackProgress(dashboardData.playback_status.progress_percentage)}</span>
+				</div>
+			{/if}
 		</div>
 		{#if backendMessage}
 			<p class="status-message">{backendMessage}</p>
 		{/if}
-	</div>
+	</section>
 
 	{#if backendStatus === 'healthy'}
-		<!-- System Status Details -->
-		{#if systemStatusLoading}
-			<div class="loading">Loading system status...</div>
-		{:else if systemStatusError}
-			<div class="error-card">
+		{#if dashboardLoading}
+			<div class="loading">Loading system information...</div>
+		{:else if dashboardError}
+			<div class="error-card" role="alert">
 				<span class="error-icon">❌</span>
-				<span class="error-message">{systemStatusError}</span>
+				<span class="error-message">{dashboardError}</span>
 			</div>
-		{:else if systemStatus}
-			<section class="system-details-section">
-				<h2>System Details</h2>
-				<div class="system-status-grid">
-					<div class="status-card">
-						<h3>🔧 Components</h3>
-						<div class="status-items">
-							<div class="status-item">
-								<span class="label">Backend:</span>
-								<span class="status healthy">{systemStatus.system_status.backend_status}</span>
-							</div>
-							<div class="status-item">
-								<span class="label">LED Controller:</span>
-								<span class="status {getStatusClass(systemStatus.system_status.led_controller_available)}">
-									{systemStatus.system_status.led_controller_available ? 'Available' : 'Unavailable'}
-								</span>
-							</div>
-							<div class="status-item">
-								<span class="label">MIDI Parser:</span>
-								<span class="status {getStatusClass(systemStatus.system_status.midi_parser_available)}">
-									{systemStatus.system_status.midi_parser_available ? 'Available' : 'Unavailable'}
-								</span>
-							</div>
-							<div class="status-item">
-								<span class="label">USB MIDI Input:</span>
-								<span class="status {getStatusClass(systemStatus.system_status.midi_input_active)}">
-									{systemStatus.system_status.midi_input_active ? 'Active' : 'Inactive'}
-								</span>
-								{#if systemStatus.system_status.midi_device_name}
-									<div class="device-name">Device: {systemStatus.system_status.midi_device_name}</div>
-								{/if}
-							</div>
-							<div class="status-item">
-								<span class="label">Playback Service:</span>
-								<span class="status {getStatusClass(systemStatus.system_status.playback_service_available)}">
-									{systemStatus.system_status.playback_service_available ? 'Available' : 'Unavailable'}
-								</span>
-							</div>
-						</div>
+		{:else if dashboardData?.system_status}
+			<section class="services-card">
+				<h2>Core Services</h2>
+				<div class="service-grid">
+					<div class="service-item">
+						<span class="service-label">LED Controller</span>
+						<span class="service-status {getStatusClass(dashboardData.system_status.led_controller_available)}">
+							{dashboardData.system_status.led_controller_available ? 'Available' : 'Unavailable'}
+						</span>
+					</div>
+					<div class="service-item">
+						<span class="service-label">MIDI Parser</span>
+						<span class="service-status {getStatusClass(dashboardData.system_status.midi_parser_available)}">
+							{dashboardData.system_status.midi_parser_available ? 'Available' : 'Unavailable'}
+						</span>
+					</div>
+					<div class="service-item">
+						<span class="service-label">Playback Service</span>
+						<span class="service-status {getStatusClass(dashboardData.system_status.playback_service_available)}">
+							{dashboardData.system_status.playback_service_available ? 'Available' : 'Unavailable'}
+						</span>
+					</div>
+					<div class="service-item">
+						<span class="service-label">MIDI Input</span>
+						<span class="service-status {dashboardData.system_status.midi_input_active ? 'healthy' : 'warning'}">
+							{dashboardData.system_status.midi_input_active ? 'Listening' : 'Idle'}
+						</span>
 					</div>
 				</div>
+				{#if dashboardData.system_status.midi_device_name}
+					<p class="service-note">Active MIDI device: {dashboardData.system_status.midi_device_name}</p>
+				{/if}
 			</section>
 		{/if}
 	{/if}
-
-	<div class="navigation-card">
-		<h2>Navigation</h2>
-		<p>Access all available features of the Piano LED Visualizer:</p>
-		<div class="nav-buttons">
-			<a href="/listen" class="nav-button">
-				<span class="nav-icon">🎵</span>
-				<div class="nav-content">
-					<h3>Listen</h3>
-					<p>Upload and play MIDI files for LED visualization</p>
-				</div>
-			</a>
-			<a href="/settings" class="nav-button">
-				<span class="nav-icon">⚙️</span>
-				<div class="nav-content">
-					<h3>Settings</h3>
-					<p>Configure system preferences and LED settings</p>
-				</div>
-			</a>
-		</div>
-	</div>
 </main>
 
 <style>
@@ -217,203 +232,176 @@
 	}
 
 	.hero-section h1 {
-		color: #333;
+		color: #1f2937;
 		margin-bottom: 1rem;
 		font-size: 2.5rem;
 	}
 
 	.hero-section p {
 		font-size: 1.1rem;
-		color: #666;
-		margin-bottom: 0;
+		color: #4b5563;
+		margin: 0 auto;
+		max-width: 640px;
 	}
 
-	.status-card, .info-card, .navigation-card, .system-details-card {
-		background: #f8f9fa;
-		border: 1px solid #e9ecef;
-		border-radius: 8px;
-		padding: 1.5rem;
-		margin: 1.5rem 0;
+	.system-details-card,
+	.services-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		padding: 1.75rem;
+		margin-bottom: 2rem;
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 	}
 
-	.system-details-grid {
+	.system-details-card h2,
+	.services-card h2 {
+		margin: 0 0 1.25rem 0;
+		font-size: 1.5rem;
+		color: #1f2937;
+	}
+
+	.detail-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 		gap: 1rem;
-		margin-bottom: 1rem;
 	}
 
 	.detail-item {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.75rem;
-		background: white;
-		border-radius: 6px;
-		border: 1px solid #e9ecef;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 1rem;
+		background: #fff;
+		border: 1px solid #e2e8f0;
+		border-radius: 10px;
 	}
 
-	.detail-item .label {
+	.label {
 		font-weight: 600;
-		color: #495057;
+		color: #475569;
 	}
 
-	.detail-item .value {
+	.value {
 		font-weight: 500;
-		color: #2d3748;
+		color: #1f2937;
 		font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+		word-break: break-word;
 	}
 
-	.detail-item .value.healthy {
-		color: #155724;
-		font-weight: 600;
+	.value.healthy {
+		color: #15803d;
 	}
 
-	.detail-item .value.error {
-		color: #721c24;
-		font-weight: 600;
+	.value.error {
+		color: #b91c1c;
 	}
 
 	.status-message {
 		margin-top: 1rem;
-		padding: 0.75rem;
-		background: #e2e3e5;
-		border-radius: 4px;
-		font-size: 0.875rem;
-		color: #495057;
-	}
-
-	/* Dashboard-specific styles */
-	.system-details-section {
-		background: white;
-		border: 1px solid #e9ecef;
-		border-radius: 12px;
-		padding: 2rem;
-		margin: 2rem 0;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-	}
-
-	.system-status-grid {
-		display: grid;
-		gap: 1.5rem;
-	}
-
-	.system-status-grid .status-card {
-		background: #f8f9fa;
-		border: 1px solid #e9ecef;
+		padding: 0.75rem 1rem;
 		border-radius: 8px;
-		padding: 1.5rem;
-		margin: 0;
+		font-size: 0.9rem;
+		background: #e2e8f0;
+		color: #1f2937;
 	}
 
-	.system-status-grid .status-card h3 {
-		margin-top: 0;
-		margin-bottom: 1rem;
-		color: #495057;
-	}
-
-	.status-items {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.device-name {
-		font-size: 0.875rem;
-		color: #6c757d;
-		margin-top: 0.25rem;
+	.status-message.error {
+		background: #fee2e2;
+		color: #b91c1c;
 	}
 
 	.loading {
 		text-align: center;
 		padding: 2rem;
-		color: #6c757d;
+		color: #6b7280;
 		font-style: italic;
 	}
 
 	.error-card {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 1rem;
-		background-color: #f8d7da;
-		color: #721c24;
-		border: 1px solid #f5c6cb;
-		border-radius: 8px;
-		margin: 1rem 0;
+		gap: 0.75rem;
+		padding: 1rem 1.25rem;
+		background-color: #fee2e2;
+		color: #b91c1c;
+		border: 1px solid #fecaca;
+		border-radius: 10px;
+		margin-bottom: 2rem;
 	}
 
-
-	.nav-buttons {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-		gap: 1rem;
-		margin-top: 1rem;
-	}
-
-	.nav-button {
-		display: flex;
-		align-items: center;
-		padding: 1.25rem;
-		background: white;
-		border: 2px solid #e9ecef;
-		border-radius: 8px;
-		text-decoration: none;
-		color: inherit;
-		transition: all 0.2s ease;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	}
-
-	.nav-button:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-		border-color: #007bff;
-	}
-
-	.nav-icon {
-		font-size: 2rem;
-		margin-right: 1rem;
-		flex-shrink: 0;
-	}
-
-	.nav-content h3 {
-		margin: 0 0 0.5rem 0;
+	.error-icon {
 		font-size: 1.25rem;
-		font-weight: 600;
 	}
 
-	.nav-content p {
-		margin: 0;
+	.service-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 1rem;
+	}
+
+	.service-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem;
+		background: #fff;
+		border: 1px solid #e2e8f0;
+		border-radius: 10px;
+	}
+
+	.service-label {
+		font-weight: 600;
+		color: #475569;
+	}
+
+	.service-status {
+		font-weight: 600;
+		color: #1f2937;
+		padding: 0.25rem 0.75rem;
+		border-radius: 9999px;
+		font-size: 0.85rem;
+		background: #e2e8f0;
+	}
+
+	.service-status.healthy {
+		background: rgba(34, 197, 94, 0.15);
+		color: #15803d;
+	}
+
+	.service-status.error {
+		background: rgba(239, 68, 68, 0.15);
+		color: #b91c1c;
+	}
+
+	.service-status.warning {
+		background: rgba(251, 191, 36, 0.15);
+		color: #b45309;
+	}
+
+	.service-note {
+		margin-top: 1rem;
 		font-size: 0.9rem;
-		opacity: 0.8;
-		line-height: 1.4;
+		color: #4b5563;
 	}
 
 	@media (max-width: 768px) {
 		main {
-			padding: 1rem;
+			padding: 1.5rem 1rem;
 		}
 
-		.visualization-header {
-			flex-direction: column;
-			align-items: stretch;
+		.hero-section h1 {
+			font-size: 2rem;
 		}
 
-		.connection-info {
-			justify-content: center;
+		.system-details-card,
+		.services-card {
+			padding: 1.5rem 1.25rem;
 		}
 
-		.nav-buttons {
+		.detail-grid,
+		.service-grid {
 			grid-template-columns: 1fr;
-		}
-		
-		.nav-button {
-			padding: 1rem;
-		}
-		
-		.nav-icon {
-			font-size: 1.5rem;
-			margin-right: 0.75rem;
 		}
 	}
 </style>

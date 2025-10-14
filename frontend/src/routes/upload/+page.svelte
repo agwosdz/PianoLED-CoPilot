@@ -1,4 +1,27 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+
+	onMount(() => {
+		goto('/listen', { replaceState: true });
+	});
+</script>
+
+<main class="redirect">
+	<p>Redirecting to Listen...</p>
+</main>
+
+<style>
+	.redirect {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 50vh;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		color: #4b5563;
+	}
+</style>
+<script lang="ts">
 	import { uploadMidiFile, validateMidiFile, formatFileSize, UploadError, type UploadProgress, type ValidationResult } from '$lib/upload';
 import { toastStore } from '$lib/stores/toastStore.js';
 import { historyStore, setupHistoryKeyboardShortcuts } from '$lib/stores/historyStore.js';

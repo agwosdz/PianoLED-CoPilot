@@ -48,22 +48,12 @@
 			</li>
 			<li>
 				<a 
-					href="/play" 
-					class:active={currentPath === '/play'}
+					href="/listen" 
+					class:active={currentPath === '/listen'}
 					on:click={closeMenu}
 				>
-					<span class="icon">🎹</span>
-					<span class="text">Play</span>
-				</a>
-			</li>
-			<li>
-				<a 
-					href="/upload" 
-					class:active={currentPath === '/upload'}
-					on:click={closeMenu}
-				>
-					<span class="icon">📤</span>
-					<span class="text">Upload</span>
+					<span class="icon">�</span>
+					<span class="text">Listen</span>
 				</a>
 			</li>
 			<li>

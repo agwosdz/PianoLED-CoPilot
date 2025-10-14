@@ -13,9 +13,8 @@
 	$: currentPath = $page.url.pathname;
 
 	const navigationItems = [
-		{ href: '/', icon: '🏠', text: 'Home', description: 'Main dashboard and overview' },
-		{ href: '/play', icon: '🎹', text: 'Play', description: 'MIDI playback and visualization' },
-		{ href: '/upload', icon: '📤', text: 'Upload', description: 'Upload MIDI files' },
+		{ href: '/', icon: '🏠', text: 'Home', description: 'System overview and status' },
+		{ href: '/listen', icon: '🎧', text: 'Listen', description: 'Upload and play MIDI files' },
 		{ href: '/settings', icon: '⚙️', text: 'Settings', description: 'Configuration and preferences' }
 	];
 </script>

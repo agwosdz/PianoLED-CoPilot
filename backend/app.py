@@ -6,6 +6,7 @@ import datetime
 import math
 import os
 import time
+import uuid
 
 import logging
 # Setup centralized logging before other imports
@@ -19,6 +20,7 @@ logger = get_logger(__name__)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
 
 # Initialize Flask app and SocketIO early so decorators work
 app = Flask(__name__)
@@ -110,6 +112,97 @@ midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_cont
 # Initialize MIDI input manager services
 if midi_input_manager:
     midi_input_manager.initialize_services()
+
+ALLOWED_MIDI_EXTENSIONS = {'.mid', '.midi'}
+
+
+def _is_allowed_midi_file(filename: str) -> bool:
+    if not filename:
+        return False
+    _, ext = os.path.splitext(filename)
+    return ext.lower() in ALLOWED_MIDI_EXTENSIONS
+
+
+@app.route('/api/upload-midi', methods=['POST'])
+def upload_midi_file():
+    """Handle MIDI file uploads for playback."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'No file provided'
+            }), 400
+
+        midi_file = request.files.get('file')
+        if midi_file is None or midi_file.filename == '':
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'No file selected'
+            }), 400
+
+        original_filename = midi_file.filename
+        if not _is_allowed_midi_file(original_filename):
+            return jsonify({
+                'error': 'Invalid File Type',
+                'message': 'Only MIDI files (.mid, .midi) are allowed'
+            }), 400
+
+        upload_folder = app.config.get('UPLOAD_FOLDER')
+        if not upload_folder:
+            logger.error('UPLOAD_FOLDER is not configured')
+            return jsonify({
+                'error': 'Upload Failed',
+                'message': 'Upload folder is not configured'
+            }), 500
+
+        if not os.path.exists(upload_folder):
+            try:
+                os.makedirs(upload_folder, exist_ok=True)
+            except Exception as exc:
+                logger.error(f"Failed to create upload folder '{upload_folder}': {exc}")
+            if not os.path.exists(upload_folder):
+                return jsonify({
+                    'error': 'Upload Failed',
+                    'message': 'Uploaded file could not be saved'
+                }), 500
+
+        safe_stem = secure_filename(os.path.splitext(original_filename)[0]) or 'midi_file'
+        extension = os.path.splitext(original_filename)[1].lower()
+        timestamp = datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        unique_suffix = uuid.uuid4().hex[:8]
+        final_filename = f"{safe_stem}_{timestamp}_{unique_suffix}{extension}"
+        destination_path = os.path.join(upload_folder, final_filename)
+
+        try:
+            midi_file.stream.seek(0, os.SEEK_END)
+            file_size = midi_file.stream.tell()
+            midi_file.stream.seek(0)
+            midi_file.save(destination_path)
+        except Exception as exc:
+            logger.error(f"Failed to save uploaded MIDI file: {exc}")
+            return jsonify({
+                'error': 'Upload Failed',
+                'message': 'Uploaded file could not be saved'
+            }), 500
+
+        response_payload = {
+            'status': 'success',
+            'success': True,
+            'message': 'MIDI file uploaded successfully',
+            'filename': destination_path,
+            'original_filename': original_filename,
+            'size': file_size,
+            'upload_path': destination_path
+        }
+
+        return jsonify(response_payload), 200
+
+    except Exception as exc:
+        logger.error(f"Unexpected error handling MIDI upload: {exc}")
+        return jsonify({
+            'error': 'Upload Failed',
+            'message': 'An unexpected error occurred during upload'
+        }), 500
 
 @app.route('/api/play', methods=['POST'])
 def play():
