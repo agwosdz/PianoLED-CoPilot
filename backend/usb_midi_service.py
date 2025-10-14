@@ -80,7 +80,9 @@ class USBMIDIInputService:
             self._load_settings_from_service()
         else:
             self._load_settings_from_config()
-        
+
+        self._sync_led_geometry()
+
         # Generate precomputed mapping for performance
         self._precomputed_mapping = self._generate_key_mapping()
         
@@ -195,9 +197,40 @@ class USBMIDIInputService:
         """Check if service is actively listening for MIDI input"""
         return self._state == MIDIInputState.LISTENING and self._running
 
+    def _sync_led_geometry(self) -> None:
+        """Ensure internal LED geometry matches the active controller."""
+        if not self._led_controller:
+            return
+
+        controller_leds = getattr(self._led_controller, 'num_pixels', None)
+        if isinstance(controller_leds, int) and controller_leds > 0:
+            if controller_leds != self.num_leds:
+                logger.debug(
+                    "USB MIDI service harmonizing LED count with controller (service=%s controller=%s)",
+                    self.num_leds,
+                    controller_leds
+                )
+            self.num_leds = controller_leds
+
+        controller_orientation = getattr(self._led_controller, 'led_orientation', None)
+        if isinstance(controller_orientation, str) and controller_orientation:
+            if controller_orientation != self.led_orientation:
+                logger.debug(
+                    "USB MIDI service adopting controller orientation '%s' (was '%s')",
+                    controller_orientation,
+                    self.led_orientation
+                )
+            self.led_orientation = controller_orientation
+
     def update_led_controller(self, led_controller) -> None:
         """Update the LED controller reference used for real-time output."""
         self._led_controller = led_controller
+        self._sync_led_geometry()
+        logger.debug(
+            "USB MIDI service LED controller reference updated (id=%s, leds=%s)",
+            hex(id(self._led_controller)) if self._led_controller else None,
+            getattr(self._led_controller, 'num_pixels', 'unknown')
+        )
 
     def refresh_runtime_settings(self) -> None:
         """Reload runtime configuration from the active settings source."""
@@ -206,6 +239,7 @@ class USBMIDIInputService:
         else:
             self._load_settings_from_config()
 
+        self._sync_led_geometry()
         self._precomputed_mapping = self._generate_key_mapping()
         self._active_notes.clear()
         logger.debug(
