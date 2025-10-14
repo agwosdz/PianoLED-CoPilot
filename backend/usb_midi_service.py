@@ -574,11 +574,10 @@ class USBMIDIInputService:
             for note_str, led_indices in self.key_mapping.items():
                 try:
                     note = int(note_str)
-                    indices: List[int]
+                    indices: List[int] = []
                     if isinstance(led_indices, int):
                         indices = [led_indices]
                     elif isinstance(led_indices, list):
-                        indices = []
                         for raw_idx in led_indices:
                             try:
                                 indices.append(int(raw_idx))
@@ -590,10 +589,7 @@ class USBMIDIInputService:
                         except (TypeError, ValueError):
                             continue
 
-                    if self.led_orientation == 'reversed':
-                        indices = [self.num_leds - 1 - idx for idx in indices if 0 <= idx < self.num_leds]
-                    else:
-                        indices = [idx for idx in indices if 0 <= idx < self.num_leds]
+                    indices = [idx for idx in indices if 0 <= idx < self.num_leds]
 
                     mapping[note] = indices
                 except (ValueError, TypeError):
@@ -604,7 +600,7 @@ class USBMIDIInputService:
             auto_mapping = generate_auto_key_mapping(
                 piano_size=self.piano_size,
                 led_count=self.num_leds,
-                led_orientation=self.led_orientation,
+                led_orientation='normal',
                 leds_per_key=self.leds_per_key,
                 mapping_base_offset=self.mapping_base_offset
             )
