@@ -3,14 +3,19 @@
 	import Navigation from '$lib/components/Navigation.svelte';
 	import '$lib/styles/global.css';
 	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
-	if (import.meta.env.DEV && typeof window !== 'undefined') {
-		import('$lib/debug/midiConsoleDebug').then((mod) => {
-			if (mod?.enableMidiConsoleDebug) {
-				mod.enableMidiConsoleDebug();
-			}
-		}).catch((err) => {
-			console.warn('Failed to enable MIDI console debug', err);
+	if (import.meta.env.DEV) {
+		onMount(() => {
+			import('$lib/debug/midiConsoleDebug')
+				.then((mod) => {
+					if (mod?.enableMidiConsoleDebug) {
+						mod.enableMidiConsoleDebug();
+					}
+				})
+				.catch((err) => {
+					console.warn('Failed to enable MIDI console debug', err);
+				});
 		});
 	}
 

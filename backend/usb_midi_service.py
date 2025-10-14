@@ -691,6 +691,12 @@ class USBMIDIInputService:
                     'source': f"USB:{self._current_device or 'unknown'}"
                 }
                 self._websocket_callback(event.event_type, event_data)
+                # Temporary debugging to confirm note events reach frontend
+                logger.info(
+                    "[debug] emitted %s via websocket with LEDs %s",
+                    event.event_type,
+                    led_indices
+                )
                 
                 # Also broadcast direct midi_input event for backward compatibility
                 if led_indices is None:
@@ -713,6 +719,12 @@ class USBMIDIInputService:
                     }
                 }
                 self._websocket_callback('midi_input', legacy_event_data)
+                logger.info(
+                    "[debug] emitted midi_input payload: note=%s leds=%s mapping=%s",
+                    event.note,
+                    led_indices,
+                    legacy_event_data['mapping']
+                )
             except Exception as e:
                 logger.error(f"Error broadcasting MIDI event: {e}")
 

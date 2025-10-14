@@ -12,6 +12,12 @@ export function enableMidiConsoleDebug(): void {
     return;
   }
 
+  console.debug('[midi-debug] attaching listeners', {
+    connected: socket.connected,
+    id: socket.id,
+    listeners: socket.listeners?.('debug_midi_mapping')?.length ?? 'n/a'
+  });
+
   const handleMapping = (payload: unknown) => {
     console.groupCollapsed('[midi-debug] debug_midi_mapping');
     console.log(payload);
@@ -26,6 +32,16 @@ export function enableMidiConsoleDebug(): void {
 
   socket.on('debug_midi_mapping', handleMapping);
   socket.on('midi_input', handleMidiInput);
+
+  socket.on('connect', () => {
+    console.info('[midi-debug] socket connected', socket.id);
+  });
+  socket.on('disconnect', (reason: unknown) => {
+    console.warn('[midi-debug] socket disconnected', reason);
+  });
+  socket.on('connect_error', (err: unknown) => {
+    console.error('[midi-debug] socket connect error', err);
+  });
 
   const cleanup = () => {
     socket.off('debug_midi_mapping', handleMapping);
