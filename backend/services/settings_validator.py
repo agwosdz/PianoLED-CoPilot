@@ -271,6 +271,7 @@ class SettingsValidator:
                 'enabled': {'type': 'boolean', 'default': False},
                 'led_count': {'type': 'number', 'default': 246, 'min': 1, 'max': 1000},
                 'max_led_count': {'type': 'number', 'default': 1000, 'min': 1, 'max': 1000},
+                'led_channel': {'type': 'number', 'default': 0, 'min': 0, 'max': 1},
                 'brightness': {'type': 'number', 'default': 0.5, 'min': 0, 'max': 1},
                 'led_type': {'type': 'string', 'default': 'WS2812B', 'enum': ['WS2812B', 'WS2811', 'WS2813', 'WS2815', 'APA102', 'SK6812']},
                 'led_orientation': {'type': 'string', 'default': 'normal', 'enum': ['normal', 'reversed']},

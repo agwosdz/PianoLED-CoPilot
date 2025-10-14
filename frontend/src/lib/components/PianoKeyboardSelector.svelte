@@ -28,6 +28,9 @@
 	export let settings: Settings = {};
 	export let piano: PianoSettings = {};
 	export let disabled: boolean = false;
+	export let showMapping: boolean = true;
+	export let showPreview: boolean = true;
+	export let allowCustomSize: boolean = true;
 
 	// Define types for piano size data
 	interface PianoSize {
@@ -61,6 +64,17 @@
 		{ value: '88-key', label: '88-Key Grand', keys: 88, octaves: 7.25, description: 'Full acoustic piano', startNote: 'A0', endNote: 'C8' },
 		{ value: 'custom', label: 'Custom Size', keys: 0, octaves: 0, description: 'Define your own layout', startNote: '', endNote: '' }
 	];
+
+		$: availableSizes = allowCustomSize ? pianoSizes : pianoSizes.filter((option) => option.value !== 'custom');
+		$: {
+			const hasSelected = availableSizes.some((option) => option.value === selectedSize);
+			if (!hasSelected && availableSizes.length > 0) {
+				const fallback = availableSizes.find((option) => option.value === '88-key') || availableSizes[0];
+				if (fallback) {
+					handleSizeChange(fallback.value);
+				}
+			}
+		}
 
 	const keyMappingOptions: KeyMappingOption[] = [
 		{ value: 'chromatic', label: 'Chromatic (All Keys)', description: 'Map LEDs to all piano keys including black keys' },
@@ -231,7 +245,7 @@
 	<div class="section">
 		<h3 class="section-title">Piano Size Configuration</h3>
 		<div class="size-grid">
-			{#each pianoSizes as size}
+			{#each availableSizes as size}
 				<button
 					class="size-option"
 					class:selected={selectedSize === size.value}
@@ -255,29 +269,31 @@
 		</div>
 	</div>
 
-	<div class="section">
-		<h3 class="section-title">Key-to-LED Mapping</h3>
-		<div class="mapping-options">
-			{#each keyMappingOptions as mapping}
-				<label class="mapping-option">
-					<input
-						type="radio"
-						name="keyMapping"
-						value={mapping.value}
-						checked={keyMapping === mapping.value}
-						on:change={() => handleKeyMappingChange(mapping.value)}
-						{disabled}
-					/>
-					<div class="mapping-content">
-						<div class="mapping-label">{mapping.label}</div>
-						<div class="mapping-description">{mapping.description}</div>
-					</div>
-				</label>
-			{/each}
+	{#if showMapping}
+		<div class="section">
+			<h3 class="section-title">Key-to-LED Mapping</h3>
+			<div class="mapping-options">
+				{#each keyMappingOptions as mapping}
+					<label class="mapping-option">
+						<input
+							type="radio"
+							name="keyMapping"
+							value={mapping.value}
+							checked={keyMapping === mapping.value}
+							on:change={() => handleKeyMappingChange(mapping.value)}
+							{disabled}
+						/>
+						<div class="mapping-content">
+							<div class="mapping-label">{mapping.label}</div>
+							<div class="mapping-description">{mapping.description}</div>
+						</div>
+					</label>
+				{/each}
+			</div>
 		</div>
-	</div>
+	{/if}
 
-	{#if selectedSizeData && selectedSizeData.keys > 0}
+	{#if showPreview && selectedSizeData && selectedSizeData.keys > 0}
 		<div class="section">
 			<h3 class="section-title">Visual Key-to-LED Mapping Preview</h3>
 			<div class="keyboard-container">

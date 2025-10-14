@@ -735,7 +735,7 @@ class SettingsAPI {
         const allowedCategories = new Set(['led', 'audio', 'piano', 'gpio', 'hardware', 'system', 'user']);
         const allowedProps: Record<string, Set<string>> = {
             led: new Set([
-                'enabled','led_count','max_led_count','brightness','led_type','led_strip_type','led_orientation','data_pin','clock_pin','gpioPin','reverse_order','color_mode','colorScheme','color_profile','color_temperature','gamma_correction','white_balance','performance_mode','power_supply_voltage','power_supply_current','power_limiting_enabled','max_power_watts','dither_enabled','update_rate','thermal_protection_enabled','max_temperature_celsius','animationSpeed'
+                'enabled','led_count','max_led_count','led_channel','brightness','led_type','led_strip_type','led_orientation','data_pin','clock_pin','gpioPin','reverse_order','color_mode','colorScheme','color_profile','color_temperature','gamma_correction','white_balance','performance_mode','power_supply_voltage','power_supply_current','power_limiting_enabled','max_power_watts','dither_enabled','update_rate','thermal_protection_enabled','max_temperature_celsius','animationSpeed'
             ]),
             gpio: new Set(['enabled','pins','debounce_time']),
             piano: new Set(['enabled','octave','velocity_sensitivity','channel','size','keys','octaves','start_note','end_note','key_mapping','key_mapping_mode']),
@@ -791,12 +791,33 @@ class SettingsAPI {
             let bNum = typeof bRaw === 'number' ? bRaw : parseFloat(bRaw);
             if (!isFinite(bNum)) bNum = 1;
             const brightness = bNum > 1 ? Math.max(0, Math.min(1, bNum / 100)) : Math.max(0, Math.min(1, bNum));
+            // Normalize PWM channel and ensure valid range
+            let channelRaw: any = ledData.led_channel ?? currentLed.led_channel ?? 0;
+            let ledChannel = parseInt(String(channelRaw), 10);
+            if (!Number.isFinite(ledChannel)) {
+                ledChannel = 0;
+            }
+            ledChannel = Math.min(Math.max(ledChannel, 0), 1);
             // Ensure update_rate present and valid (1-120)
             let updateRateRaw: any = ledData.update_rate ?? currentLed.update_rate ?? (current as any)?.updateRate ?? 60;
             let updateRate = parseInt(String(updateRateRaw));
             if (!Number.isFinite(updateRate) || updateRate < 1) updateRate = 60;
             updateRate = Math.min(Math.max(updateRate, 1), 120);
-            sanitized.led = { ...ledData, enabled, led_count: ledCount, brightness, update_rate: updateRate } as any;
+            // Normalize data pin if present
+            let dataPin = ledData.data_pin ?? currentLed.data_pin;
+            if (dataPin !== undefined) {
+                const parsed = parseInt(String(dataPin), 10);
+                dataPin = Number.isFinite(parsed) ? parsed : dataPin;
+            }
+            sanitized.led = {
+                ...ledData,
+                ...(dataPin !== undefined ? { data_pin: dataPin } : {}),
+                enabled,
+                led_count: ledCount,
+                led_channel: ledChannel,
+                brightness,
+                update_rate: updateRate
+            } as any;
         }
 
         // Filter allowed properties per category to avoid backend 400s
