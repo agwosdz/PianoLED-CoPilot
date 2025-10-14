@@ -48,9 +48,10 @@ try:
 except Exception:
     USBMIDIInputService = None
 try:
-    from playback_service import PlaybackService
+    from playback_service import PlaybackService, PlaybackState
 except Exception:
     PlaybackService = None
+    PlaybackState = None
 
 def websocket_status_callback(status):
     """Broadcast playback status over WebSocket."""
@@ -247,6 +248,73 @@ def list_uploaded_midi_files():
         return jsonify({
             'status': 'error',
             'message': 'Could not list uploaded files'
+        }), 500
+
+
+@app.route('/api/uploaded-midi', methods=['DELETE'])
+def delete_uploaded_midi_file():
+    """Delete an uploaded MIDI file from the server."""
+    upload_folder = app.config.get('UPLOAD_FOLDER')
+    if not upload_folder:
+        return jsonify({
+            'status': 'error',
+            'message': 'Upload folder is not configured'
+        }), 500
+
+    data = request.get_json(silent=True) or {}
+    target_path = data.get('path') or data.get('filename')
+    if not target_path:
+        return jsonify({
+            'status': 'error',
+            'message': 'File path is required'
+        }), 400
+
+    upload_root = os.path.abspath(upload_folder)
+    if os.path.isabs(target_path):
+        resolved_path = os.path.abspath(target_path)
+    else:
+        resolved_path = os.path.abspath(os.path.join(upload_folder, target_path))
+
+    if not resolved_path.startswith(upload_root):
+        return jsonify({
+            'status': 'error',
+            'message': 'Invalid file path'
+        }), 400
+
+    if not os.path.exists(resolved_path):
+        return jsonify({
+            'status': 'error',
+            'message': 'File not found'
+        }), 404
+
+    try:
+        if playback_service and PlaybackState is not None:
+            status = playback_service.get_status()
+            current_file = getattr(status, 'filename', None)
+            current_state = getattr(status, 'state', None)
+            if current_file == resolved_path and current_state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Stop playback before deleting the active file'
+                }), 409
+
+        os.remove(resolved_path)
+
+        return jsonify({
+            'status': 'success',
+            'message': 'File deleted successfully'
+        }), 200
+    except PermissionError:
+        logger.error(f"Permission denied while deleting MIDI file: {resolved_path}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Permission denied while deleting the file'
+        }), 423
+    except Exception as exc:
+        logger.error(f"Failed to delete uploaded MIDI file '{resolved_path}': {exc}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not delete uploaded file'
         }), 500
 
 @app.route('/api/play', methods=['POST'])

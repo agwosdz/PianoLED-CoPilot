@@ -27,6 +27,8 @@
   let playbackNotice = '';
   let currentTime = 0;
   let totalDuration = 0;
+  let playbackDisplayName = '';
+  let deletingPath: string | null = null;
 
   let connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error' = 'connecting';
   let socketInstance: any = null;
@@ -40,6 +42,8 @@
   const autoPlayAfterUpload = true;
   const statusPollIntervalMs = 3000;
 
+  $: playbackDisplayName = playbackOriginalName || deriveOriginalName(playbackFilename);
+
   function resetUploadFeedback(): void {
     uploadMessage = '';
     uploadError = '';
@@ -47,7 +51,15 @@
 
   function deriveOriginalName(filename: string): string {
     if (!filename) return '';
-    return filename.replace(/_\d{8}_\d{6}_[a-f0-9]+/, '');
+    const base = filename.split(/[\\/]/).pop() ?? filename;
+    return base.replace(/_\d{8}_\d{6}_[a-f0-9]+(?=\.)/, '');
+  }
+
+  function getBasename(path: string): string {
+    if (!path) return '';
+    const normalized = path.replace(/\\/g, '/');
+    const segments = normalized.split('/');
+    return segments[segments.length - 1] ?? path;
   }
 
   function updateFromPlayback(payload: any): void {
@@ -103,6 +115,15 @@
 
       const data = await response.json();
       uploadedFiles = Array.isArray(data?.files) ? data.files : [];
+
+      if (playbackFilename) {
+        const match = uploadedFiles.find((file) => file.path === playbackFilename);
+        if (!match) {
+          playbackFilename = '';
+          playbackOriginalName = '';
+          uploadedSize = 0;
+        }
+      }
     } catch (error) {
       uploadedFilesError = 'Failed to load uploaded files';
       uploadedFiles = [];
@@ -116,7 +137,7 @@
 
     fetchPlaybackStatus();
     pollingHandle = setInterval(fetchPlaybackStatus, statusPollIntervalMs);
-  loadUploadedFiles();
+    loadUploadedFiles();
 
     try {
       socketInstance = getSocket();
@@ -168,7 +189,6 @@
     event.preventDefault();
     dragActive = false;
   }
-
 
   function handleDrop(event: DragEvent): void {
     event.preventDefault();
@@ -232,7 +252,7 @@
       return;
     }
 
-    playbackNotice = triggeredByUpload ? 'Starting playback...' : 'Starting playback...';
+    playbackNotice = triggeredByUpload ? 'Starting playback…' : 'Starting playback…';
 
     try {
       const response = await fetch('/api/playback', {
@@ -249,6 +269,19 @@
       }
     } catch (error) {
       playbackNotice = 'Network error while starting playback.';
+    }
+  }
+
+  async function handlePlayToggle(): Promise<void> {
+    if (!playbackFilename && playbackState !== 'playing' && playbackState !== 'paused') {
+      playbackNotice = 'Upload a MIDI file before playing.';
+      return;
+    }
+
+    if (playbackState === 'playing' || playbackState === 'paused') {
+      await handlePause();
+    } else {
+      await handlePlay(false);
     }
   }
 
@@ -282,6 +315,19 @@
     }
   }
 
+  async function handleListPlay(file: UploadedFileItem): Promise<void> {
+    playbackFilename = file.path;
+    playbackOriginalName = deriveOriginalName(file.filename);
+    uploadedSize = file.size;
+    playbackNotice = 'Starting playback…';
+
+    if (browser) {
+      window.localStorage.setItem('lastUploadedFile', playbackFilename);
+    }
+
+    await handlePlay(false);
+  }
+
   function formatTime(seconds: number): string {
     const safeSeconds = Math.max(0, Math.floor(seconds || 0));
     const minutes = Math.floor(safeSeconds / 60);
@@ -298,6 +344,53 @@
       window.localStorage.setItem('lastUploadedFile', playbackFilename);
     }
     fetchPlaybackStatus();
+  }
+
+  async function handleDeleteFile(file: UploadedFileItem): Promise<void> {
+    if (deletingPath) {
+      return;
+    }
+
+    if (browser) {
+      const confirmation = window.confirm(`Delete ${deriveOriginalName(file.filename)} from the device?`);
+      if (!confirmation) {
+        return;
+      }
+    }
+
+    deletingPath = file.path;
+    playbackNotice = 'Deleting file…';
+
+    try {
+      const response = await fetch('/api/uploaded-midi', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: file.path })
+      });
+      const data = await response.json().catch(() => null);
+
+      if (response.ok && data?.status === 'success') {
+        playbackNotice = data.message || 'File deleted.';
+
+        if (playbackFilename === file.path) {
+          playbackFilename = '';
+          playbackOriginalName = '';
+          uploadedSize = 0;
+          if (browser) {
+            window.localStorage.removeItem('lastUploadedFile');
+          }
+        }
+
+        await loadUploadedFiles();
+        await fetchPlaybackStatus();
+      } else {
+        playbackNotice = data?.message || 'Unable to delete file.';
+      }
+    } catch (error) {
+      playbackNotice = 'Network error while deleting file.';
+    } finally {
+      deletingPath = null;
+    }
   }
 
   $: playbackProgress = totalDuration > 0 ? Math.min(100, Math.round((currentTime / totalDuration) * 100)) : 0;
@@ -321,114 +414,137 @@
 </svelte:head>
 
 <main class="listen-page">
-  <div class="listen-container">
-    <section class="panel upload-panel">
-      <header>
-        <h1>Listen</h1>
-        <p class="subtitle">Upload a MIDI file and start playback from one place.</p>
-      </header>
+  <div class="listen-content">
+    <section class="hero-section">
+      <h1>🎹 Piano LED Visualizer</h1>
+      <p>Upload, manage, and play your MIDI songs from one streamlined dashboard.</p>
+    </section>
 
-      <div
+    <div class="upper-row">
+      <section class="playback-card">
+        <div class="playback-top">
+          <div class="now-playing">
+            <span class="label">Now Playing</span>
+            <h2 class="track-title" title={playbackDisplayName || 'No file loaded'}>
+              {playbackDisplayName || 'No file loaded'}
+            </h2>
+            {#if playbackFilename}
+              <div class="track-meta">
+                <span>{formatFileSize(uploadedSize)}</span>
+                <span aria-hidden="true">•</span>
+                <span>{playbackState === 'playing' ? 'Playing' : playbackState === 'paused' ? 'Paused' : 'Ready'}</span>
+              </div>
+            {/if}
+          </div>
+          <span class={`connection-indicator ${connectionStatus}`}>
+            {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'connecting' ? 'Connecting…' : connectionStatus === 'error' ? 'Socket error' : 'Offline'}
+          </span>
+        </div>
+
+        <div class="playback-controls">
+          <button
+            class={`control-button primary ${playbackState === 'playing' ? 'active' : ''}`}
+            on:click={handlePlayToggle}
+            disabled={!playbackFilename && playbackState !== 'playing' && playbackState !== 'paused'}
+          >
+            <span class="visually-hidden">{playbackState === 'playing' ? 'Pause playback' : playbackState === 'paused' ? 'Resume playback' : 'Start playback'}</span>
+            <span aria-hidden="true">{playbackState === 'playing' ? '⏸' : playbackState === 'paused' ? '▶' : '▶'}</span>
+          </button>
+          <button
+            class="control-button"
+            on:click={handleStop}
+            disabled={playbackState === 'idle' || playbackState === 'stopped'}
+          >
+            <span class="visually-hidden">Stop playback</span>
+            <span aria-hidden="true">■</span>
+          </button>
+        </div>
+
+        <div class="timeline">
+          <div class="timeline-track">
+            <div class="timeline-fill" style={`width: ${playbackProgress}%`}></div>
+          </div>
+          <div class="timeline-meta">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(totalDuration)}</span>
+          </div>
+        </div>
+
+        {#if playbackNotice}
+          <p class="playback-notice">{playbackNotice}</p>
+        {/if}
+      </section>
+
+      <section
+        class="upload-card"
         class:drag-active={dragActive}
-        class="drop-zone"
         on:dragover={handleDragOver}
         on:dragleave={handleDragLeave}
         on:drop={handleDrop}
       >
-        <div class="drop-zone-content">
-          <p class="drop-title">Drag and drop a MIDI file here</p>
-          <p class="drop-meta">.mid or .midi up to 1 MB</p>
-          <label class="file-picker">
-            <input type="file" accept=".mid,.midi" on:change={handleFileInput} />
-            <span>Browse files</span>
-          </label>
-        </div>
-      </div>
+        <div class="upload-inner">
+          <div class="upload-icon" aria-hidden="true">🎵</div>
+          <div class="upload-details">
+            <h3>Upload MIDI</h3>
+            <p>Drop a file or browse to add a new song to your library.</p>
+            {#if selectedFile}
+              <div class="selected-file" title={selectedFile.name}>
+                <span class="selected-name">{selectedFile.name}</span>
+                <span class="selected-size">{formatFileSize(selectedFile.size)}</span>
+              </div>
+            {/if}
 
-      {#if selectedFile}
-        <div class="file-summary">
-          <div>
-            <span class="file-name">{selectedFile.name}</span>
-            <span class="file-size">{formatFileSize(selectedFile.size)}</span>
+            {#if uploadState === 'uploading'}
+              <div class="upload-progress">
+                <div class="progress-bar">
+                  <div class="progress-fill" style={`width: ${uploadProgress}%`}></div>
+                </div>
+                <span class="progress-text">{uploadProgress}%</span>
+              </div>
+            {/if}
+
+            {#if uploadMessage}
+              <p class="upload-message success">{uploadMessage}</p>
+            {/if}
+            {#if uploadError}
+              <p class="upload-message error">{uploadError}</p>
+            {/if}
+          </div>
+
+          <div class="upload-actions">
+            <label class="browse-label">
+              <input type="file" accept=".mid,.midi" on:change={handleFileInput} />
+              <span>Browse</span>
+            </label>
+            <button class="upload-button" on:click={beginUpload} disabled={uploadState === 'uploading'}>
+              {uploadState === 'uploading' ? 'Uploading…' : 'Upload'}
+            </button>
           </div>
         </div>
-      {/if}
+      </section>
+    </div>
 
-      {#if uploadState === 'uploading'}
-        <div class="upload-progress">
-          <div class="progress-bar">
-            <div class="progress-fill" style={`width: ${uploadProgress}%`}></div>
-          </div>
-          <span class="progress-text">{uploadProgress}%</span>
+    <section class="song-list-card">
+      <header class="song-list-header">
+        <div>
+          <h2>MIDI Song List</h2>
+          <p class="song-list-subtitle">All songs available on the Raspberry Pi</p>
         </div>
-      {/if}
-
-      {#if uploadMessage}
-        <p class="upload-message success">{uploadMessage}</p>
-      {/if}
-      {#if uploadError}
-        <p class="upload-message error">{uploadError}</p>
-      {/if}
-
-      <button class="primary" on:click={beginUpload} disabled={uploadState === 'uploading'}>
-        {uploadState === 'uploading' ? 'Uploading…' : 'Upload MIDI'}
-      </button>
-    </section>
-
-    <section class="panel playback-panel">
-      <header class="playback-header">
-        <h2>Playback</h2>
-        <span class={`status ${connectionStatus}`}>
-          {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'connecting' ? 'Connecting…' : connectionStatus === 'error' ? 'Socket error' : 'Offline'}
-        </span>
-      </header>
-
-      <div class="uploaded-files">
-        <div class="section-header">
-          <h3>Uploaded Files</h3>
-          {#if isLoadingUploadedFiles}
-            <span class="section-meta">Loading…</span>
-          {:else if uploadedFilesError}
-            <span class="section-meta error">{uploadedFilesError}</span>
-          {:else if uploadedFiles.length > 0}
-            <span class="section-meta">{uploadedFiles.length} {uploadedFiles.length === 1 ? 'file' : 'files'}</span>
-          {/if}
-        </div>
-        <UploadedFileList
-          files={uploadedFiles}
-          selectedPath={playbackFilename}
-          on:select={(event) => handleUploadedFileSelection(event.detail.file)}
-        />
-      </div>
-
-      <div class="track-summary">
-        <p class="track-name">{playbackOriginalName || playbackFilename || 'No file loaded'}</p>
-        {#if playbackFilename}
-          <p class="track-meta">{formatFileSize(uploadedSize)} · {playbackState === 'playing' ? 'Playing' : playbackState === 'paused' ? 'Paused' : 'Ready'}</p>
+        {#if isLoadingUploadedFiles}
+          <span class="list-count loading">Loading…</span>
+        {:else if uploadedFilesError}
+          <span class="list-count error">{uploadedFilesError}</span>
+        {:else}
+          <span class="list-count">{uploadedFiles.length} {uploadedFiles.length === 1 ? 'song' : 'songs'}</span>
         {/if}
-      </div>
-
-      <div class="timeline">
-        <div class="timeline-track">
-          <div class="timeline-fill" style={`width: ${playbackProgress}%`}></div>
-        </div>
-        <div class="timeline-meta">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(totalDuration)}</span>
-        </div>
-      </div>
-
-      {#if playbackNotice}
-        <p class="playback-notice">{playbackNotice}</p>
-      {/if}
-
-      <div class="controls">
-        <button class="secondary" on:click={() => handlePlay(false)} disabled={!playbackFilename || playbackState === 'playing'}>Play</button>
-        <button class="secondary" on:click={handlePause} disabled={playbackState === 'idle' || playbackState === 'stopped'}>
-          {playbackState === 'paused' ? 'Resume' : 'Pause'}
-        </button>
-        <button class="secondary" on:click={handleStop} disabled={playbackState === 'idle' || playbackState === 'stopped'}>Stop</button>
-      </div>
+      </header>
+      <UploadedFileList
+        files={uploadedFiles}
+        selectedPath={playbackFilename}
+        on:select={(event) => handleUploadedFileSelection(event.detail.file)}
+        on:play={(event) => handleListPlay(event.detail.file)}
+        on:delete={(event) => handleDeleteFile(event.detail.file)}
+      />
     </section>
   </div>
 </main>
@@ -437,114 +553,273 @@
   .listen-page {
     min-height: 100vh;
     background: #f8fafc;
-    padding: 2rem 1rem;
-    display: flex;
-    justify-content: center;
+    padding: 2.5rem 1rem 3rem;
   }
 
-  .listen-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
-    max-width: 960px;
-    width: 100%;
-  }
-
-  .panel {
-    background: #ffffff;
-    border-radius: 16px;
-    padding: 1.75rem;
-    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  .listen-content {
+    max-width: 1200px;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
+    gap: 2rem;
+  }
+
+  .hero-section {
+    text-align: center;
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+    color: #ffffff;
+    padding: 2.5rem 2rem;
+    border-radius: 20px;
+    box-shadow: 0 18px 40px rgba(29, 78, 216, 0.25);
+  }
+
+  .hero-section h1 {
+    margin: 0 0 0.75rem;
+    font-size: 2.35rem;
+    font-weight: 700;
+  }
+
+  .hero-section p {
+    margin: 0;
+    font-size: 1rem;
+    opacity: 0.9;
+  }
+
+  .upper-row {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 1.75rem;
+  }
+
+  .playback-card,
+  .upload-card,
+  .song-list-card {
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 1.75rem;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+  }
+
+  .playback-card {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .playback-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: 1rem;
   }
 
-  .upload-panel header h1 {
-    margin: 0;
-    font-size: 1.9rem;
-    color: #0f172a;
+  .now-playing .label {
+    display: inline-block;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
   }
 
-  .subtitle {
+  .track-title {
     margin: 0;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #0f172a;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track-meta {
+    margin-top: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9rem;
     color: #475569;
   }
 
-  .drop-zone {
-    border: 2px dashed #cbd5f5;
-    border-radius: 12px;
-    min-height: 180px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 1.5rem;
-    transition: border-color 0.2s ease, background-color 0.2s ease;
-    background: #f1f5f9;
-  }
-
-  .drop-zone.drag-active {
-    border-color: #2563eb;
-    background: #e0ecff;
-  }
-
-  .drop-zone-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    color: #1e293b;
-  }
-
-  .drop-title {
+  .connection-indicator {
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
     font-weight: 600;
-    margin: 0;
+    font-size: 0.85rem;
+    white-space: nowrap;
   }
 
-  .drop-meta {
-    margin: 0;
-    color: #64748b;
-    font-size: 0.9rem;
+  .connection-indicator.connected {
+    background: #dcfce7;
+    color: #166534;
   }
 
-  .file-picker {
-    margin-top: 0.75rem;
+  .connection-indicator.connecting {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .connection-indicator.error {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .connection-indicator.disconnected {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .playback-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .control-button {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 999px;
+    border: none;
+    background: #e2e8f0;
+    color: #0f172a;
+    font-size: 1.25rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.65rem 1.2rem;
-    border-radius: 8px;
-    background: #2563eb;
-    color: #ffffff;
-    font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s ease;
+    transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.15);
   }
 
-  .file-picker:hover {
-    background: #1d4ed8;
+  .control-button.primary {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
   }
 
-  .file-picker input {
-    display: none;
+  .control-button.primary.active {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
   }
 
-  .file-summary {
+  .control-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 22px rgba(15, 23, 42, 0.18);
+  }
+
+  .control-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    box-shadow: none;
+  }
+
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .timeline-track {
+    width: 100%;
+    height: 12px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .timeline-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2563eb, #3b82f6);
+    transition: width 0.2s ease;
+  }
+
+  .timeline-meta {
     display: flex;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
-    background: #e2e8f0;
+    font-size: 0.85rem;
+    color: #475569;
+  }
+
+  .playback-notice {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #1e293b;
+  }
+
+  .upload-card {
+    position: relative;
+    border: 1px solid #e2e8f0;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    display: flex;
+    align-items: stretch;
+  }
+
+  .upload-card.drag-active {
+    border-color: #2563eb;
+    background: #f5f9ff;
+    box-shadow: 0 16px 32px rgba(37, 99, 235, 0.15);
+  }
+
+  .upload-inner {
+    display: flex;
+    flex: 1;
+    gap: 1.5rem;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .upload-icon {
+    font-size: 2rem;
+    background: #eef2ff;
+    color: #1d4ed8;
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .upload-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .upload-details h3 {
+    margin: 0;
+    font-size: 1.25rem;
     color: #0f172a;
+  }
+
+  .upload-details p {
+    margin: 0;
+    color: #475569;
     font-size: 0.95rem;
   }
 
-  .file-name {
-    font-weight: 600;
+  .selected-file {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+    background: #eef2ff;
+    color: #1d4ed8;
+    max-width: 100%;
   }
 
-  .file-size {
-    color: #1e293b;
+  .selected-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .selected-size {
+    font-size: 0.85rem;
   }
 
   .upload-progress {
@@ -555,7 +830,7 @@
 
   .progress-bar {
     flex: 1;
-    height: 12px;
+    height: 10px;
     border-radius: 999px;
     background: #e2e8f0;
     overflow: hidden;
@@ -564,7 +839,6 @@
   .progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #2563eb, #3b82f6);
-    transition: width 0.2s ease;
   }
 
   .progress-text {
@@ -574,7 +848,7 @@
 
   .upload-message {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
   }
 
   .upload-message.success {
@@ -585,181 +859,168 @@
     color: #b91c1c;
   }
 
-  .primary {
-    border: none;
-    border-radius: 10px;
-    padding: 0.75rem 1.25rem;
-    font-weight: 600;
-    background: #2563eb;
-    color: #ffffff;
-    cursor: pointer;
-    transition: background 0.2s ease;
-  }
-
-  .primary:disabled {
-    background: #94a3b8;
-    cursor: not-allowed;
-  }
-
-  .primary:not(:disabled):hover {
-    background: #1d4ed8;
-  }
-
-  .playback-panel {
-    gap: 1.25rem;
-  }
-
-  .playback-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .uploaded-files {
+  .upload-actions {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    align-items: flex-end;
   }
 
-  .section-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  .section-header h3 {
-    margin: 0;
-    font-size: 1rem;
-    color: #0f172a;
-  }
-
-  .section-meta {
-    font-size: 0.8rem;
-    color: #475569;
-  }
-
-  .section-meta.error {
-    color: #b91c1c;
-  }
-
-  .playback-header h2 {
-    margin: 0;
-    color: #0f172a;
-  }
-
-  .status {
-    padding: 0.3rem 0.75rem;
+  .browse-label {
+    border: 1px dashed #94a3b8;
     border-radius: 999px;
-    font-size: 0.85rem;
+    padding: 0.5rem 1.25rem;
     font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
   }
 
-  .status.connected {
-    background: #dcfce7;
-    color: #166534;
+  .browse-label:hover {
+    background: #e2e8f0;
+    color: #1f2937;
   }
 
-  .status.connecting {
-    background: #fef3c7;
-    color: #92400e;
+  .browse-label input {
+    display: none;
   }
 
-  .status.error {
-    background: #fee2e2;
-    color: #b91c1c;
+  .upload-button {
+    border: none;
+    border-radius: 999px;
+    padding: 0.65rem 1.75rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.25);
   }
 
-  .status.disconnected {
-    background: #dbeafe;
-    color: #1d4ed8;
+  .upload-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 28px rgba(37, 99, 235, 0.3);
   }
 
-  .track-summary {
-    background: #f1f5f9;
-    border-radius: 12px;
-    padding: 1rem;
+  .upload-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 
-  .track-name {
+  .song-list-card {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .song-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .song-list-header h2 {
     margin: 0;
-    font-weight: 600;
+    font-size: 1.4rem;
     color: #0f172a;
   }
 
-  .track-meta {
+  .song-list-subtitle {
     margin: 0.25rem 0 0;
     color: #475569;
     font-size: 0.9rem;
   }
 
-  .timeline {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .timeline-track {
-    height: 10px;
+  .list-count {
+    padding: 0.4rem 0.85rem;
     border-radius: 999px;
-    background: #e2e8f0;
-    overflow: hidden;
-  }
-
-  .timeline-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #2563eb, #3b82f6);
-  }
-
-  .timeline-meta {
-    display: flex;
-    justify-content: space-between;
-    color: #475569;
+    background: #f1f5f9;
+    color: #1f2937;
+    font-weight: 600;
     font-size: 0.85rem;
   }
 
-  .playback-notice {
-    margin: 0;
-    color: #1e293b;
-    font-size: 0.95rem;
+  .list-count.loading {
+    background: #fef3c7;
+    color: #92400e;
   }
 
-  .controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
+  .list-count.error {
+    background: #fee2e2;
+    color: #b91c1c;
   }
 
-  .secondary {
-    flex: 1 1 100px;
-    border: none;
-    border-radius: 10px;
-    padding: 0.65rem 1rem;
-    font-weight: 600;
-    background: #e2e8f0;
-    color: #0f172a;
-    cursor: pointer;
-    transition: background 0.2s ease;
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
-  .secondary:hover:not(:disabled) {
-    background: #cbd5f5;
-  }
+  @media (max-width: 960px) {
+    .upper-row {
+      grid-template-columns: 1fr;
+    }
 
-  .secondary:disabled {
-    cursor: not-allowed;
-    background: #cbd5e1;
-    color: #64748b;
+    .upload-card {
+      padding: 1.5rem;
+    }
+
+    .upload-inner {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .upload-actions {
+      flex-direction: row;
+      justify-content: flex-start;
+    }
+
+    .browse-label {
+      flex: 1;
+      text-align: center;
+    }
+
+    .upload-button {
+      flex: 1;
+    }
   }
 
   @media (max-width: 640px) {
     .listen-page {
-      padding: 1.25rem 0.75rem;
+      padding: 1.75rem 0.75rem 2.25rem;
     }
 
-    .panel {
+    .hero-section {
+      padding: 2rem 1.25rem;
+    }
+
+    .playback-card,
+    .upload-card,
+    .song-list-card {
       padding: 1.5rem;
+    }
+
+    .playback-controls {
+      gap: 0.75rem;
+    }
+
+    .control-button {
+      width: 3rem;
+      height: 3rem;
+    }
+
+    .song-list-header {
+      flex-direction: column;
+      align-items: flex-start;
     }
   }
 </style>

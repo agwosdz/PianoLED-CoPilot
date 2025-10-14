@@ -12,10 +12,24 @@
   export let files: UploadedFile[] = [];
   export let selectedPath: string | null = null;
 
-  const dispatch = createEventDispatcher<{ select: { file: UploadedFile } }>();
+  const dispatch = createEventDispatcher<{
+    select: { file: UploadedFile };
+    play: { file: UploadedFile };
+    delete: { file: UploadedFile };
+  }>();
 
   function handleSelect(file: UploadedFile): void {
     dispatch('select', { file });
+  }
+
+  function handlePlay(file: UploadedFile, event: MouseEvent): void {
+    event.stopPropagation();
+    dispatch('play', { file });
+  }
+
+  function handleDelete(file: UploadedFile, event: MouseEvent): void {
+    event.stopPropagation();
+    dispatch('delete', { file });
   }
 
   function formatTimestamp(value: string): string {
@@ -24,73 +38,174 @@
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
   }
+
+  function getDisplayName(filename: string): string {
+    if (!filename) return '';
+    const base = filename.split(/[\\/]/).pop() ?? filename;
+    return base.replace(/_\d{8}_\d{6}_[a-f0-9]+(?=\.)/, '');
+  }
 </script>
 
-<div class="file-list" role="list" aria-label="Uploaded MIDI files">
+<ul class="file-list" aria-label="Uploaded MIDI files">
   {#if files.length === 0}
-    <p class="empty-state">No uploaded files yet.</p>
+    <li class="empty-state">No uploaded files yet.</li>
   {:else}
     {#each files as file (file.path)}
-      <button
-        type="button"
-        role="listitem"
-        class="file-item {selectedPath === file.path ? 'selected' : ''}"
-        on:click={() => handleSelect(file)}
-      >
-        <span class="file-name">{file.filename}</span>
-        <span class="file-meta">{formatFileSize(file.size)} · {formatTimestamp(file.modified)}</span>
-      </button>
+      <li class="file-row {selectedPath === file.path ? 'selected' : ''}">
+        <button
+          type="button"
+          class="file-info"
+          on:click={() => handleSelect(file)}
+          title={getDisplayName(file.filename)}
+        >
+          <span class="file-name">{getDisplayName(file.filename)}</span>
+          <span class="file-meta">{formatFileSize(file.size)} · {formatTimestamp(file.modified)}</span>
+        </button>
+        <div class="row-actions">
+          <button
+            type="button"
+            class="icon-button"
+            on:click={(event) => handlePlay(file, event)}
+            aria-label={`Play ${getDisplayName(file.filename)}`}
+            title={`Play ${getDisplayName(file.filename)}`}
+          >
+            <span aria-hidden="true">▶</span>
+          </button>
+          <button
+            type="button"
+            class="icon-button danger"
+            on:click={(event) => handleDelete(file, event)}
+            aria-label={`Delete ${getDisplayName(file.filename)}`}
+            title={`Delete ${getDisplayName(file.filename)}`}
+          >
+            <span aria-hidden="true">🗑</span>
+          </button>
+        </div>
+      </li>
     {/each}
   {/if}
-</div>
+</ul>
 
 <style>
   .file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.65rem;
   }
 
   .empty-state {
     margin: 0;
+    padding: 1rem;
+    border-radius: 12px;
+    background: #f1f5f9;
     color: #64748b;
-    font-size: 0.9rem;
+    text-align: center;
+    font-size: 0.95rem;
   }
 
-  .file-item {
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.06);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .file-row:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+    border-color: #cbd5f5;
+  }
+
+  .file-row.selected {
+    border-color: #2563eb;
+    background: #eef2ff;
+  }
+
+  .file-info {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.25rem;
-    padding: 0.75rem 1rem;
-    width: 100%;
-    border-radius: 10px;
-    border: 1px solid transparent;
-    background: #f1f5f9;
-    color: #0f172a;
-    cursor: pointer;
-    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
     text-align: left;
-  }
-
-  .file-item:hover {
-    background: #e2e8f0;
-    border-color: #cbd5f5;
-    transform: translateY(-1px);
-  }
-
-  .file-item.selected {
-    background: rgba(37, 99, 235, 0.1);
-    border-color: #2563eb;
-    color: #1d4ed8;
+    cursor: pointer;
+    color: inherit;
   }
 
   .file-name {
     font-weight: 600;
+    font-size: 0.95rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .file-meta {
     font-size: 0.8rem;
-    color: #475569;
+    color: #64748b;
+  }
+
+  .row-actions {
+    display: inline-flex;
+    gap: 0.5rem;
+  }
+
+  .icon-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 9999px;
+    border: none;
+    background: #e2e8f0;
+    color: #1f2937;
+    font-size: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+
+  .icon-button:hover {
+    background: #cbd5f5;
+    transform: translateY(-1px);
+  }
+
+  .icon-button:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+
+  .icon-button.danger {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .icon-button.danger:hover {
+    background: #fecaca;
+  }
+
+  @media (max-width: 640px) {
+    .file-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.75rem;
+    }
+
+    .row-actions {
+      justify-content: flex-end;
+    }
   }
 </style>
