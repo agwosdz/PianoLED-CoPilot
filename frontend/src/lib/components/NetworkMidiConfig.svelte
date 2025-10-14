@@ -21,7 +21,7 @@
 		count: number;
 	}
 
-	export let autoDiscovery = true;
+	export let autoDiscovery = false;
 	export let discoveryInterval = 10000;
 
 	let sessions = writable<SessionsResponse>({ sessions: [], count: 0 });

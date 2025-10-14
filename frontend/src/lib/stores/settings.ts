@@ -6,6 +6,7 @@
 import { writable, derived, type Writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { getSocket } from '$lib/socket';
+import { normalizeSettings } from '$lib/utils/normalizeSettings.js';
 
 // Declare io as any to avoid TypeScript errors
 declare const io: any;
@@ -443,7 +444,7 @@ export const gpioSettings = derived(settings, ($settings: Settings): GPIOSetting
 }));
 
 export const hardwareSettings = derived(settings, ($settings: Settings): HardwareSettings => ({
-    auto_detect_midi: true,
+    auto_detect_midi: false,
     auto_detect_gpio: false,
     auto_detect_led: false,
     ...($settings.hardware || {})
@@ -623,7 +624,7 @@ class SettingsAPI {
         }
     }
 
-    async loadAllSettings(): Promise<void> {
+    async loadAllSettings(): Promise<Settings> {
         settingsLoading.set(true);
         try {
             const response = await fetch(`${this.baseUrl}/`);
@@ -631,8 +632,11 @@ class SettingsAPI {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             const allSettings = await response.json();
-            settings.set(allSettings);
-            lastSavedSettings.set(allSettings);
+            const normalized = normalizeSettings(allSettings) as Settings;
+            const merged = mergeWithDefaults(normalized, getAllDefaults());
+            settings.set(merged);
+            lastSavedSettings.set(merged);
+            return merged;
         } catch (error) {
             console.error('Failed to load all settings:', error);
             settingsError.set(`Failed to load settings: ${error instanceof Error ? error.message : String(error)}`);
@@ -737,7 +741,7 @@ class SettingsAPI {
             led: new Set([
                 'enabled','led_count','max_led_count','led_channel','brightness','led_type','led_strip_type','led_orientation','data_pin','clock_pin','gpioPin','reverse_order','color_mode','colorScheme','color_profile','color_temperature','gamma_correction','white_balance','performance_mode','power_supply_voltage','power_supply_current','power_limiting_enabled','max_power_watts','dither_enabled','update_rate','thermal_protection_enabled','max_temperature_celsius','animationSpeed'
             ]),
-            gpio: new Set(['enabled','pins','debounce_time']),
+    gpio: new Set(['enabled','pins','debounce_time','data_pin','clock_pin']),
             piano: new Set(['enabled','octave','velocity_sensitivity','channel','size','keys','octaves','start_note','end_note','key_mapping','key_mapping_mode']),
             audio: new Set(['enabled','volume','sample_rate','buffer_size','latency','device_id']),
             hardware: new Set(['auto_detect_midi','auto_detect_gpio','auto_detect_led','midi_device_id','rtpmidi_enabled','rtpmidi_port']),
@@ -1001,7 +1005,7 @@ class SettingsAPI {
 export const settingsAPI = new SettingsAPI();
 
 // Convenience functions
-export const loadSettings = (): Promise<void> => settingsAPI.loadAllSettings();
+export const loadSettings = (): Promise<Settings> => settingsAPI.loadAllSettings();
 export const getSetting = (category: string, key: string): Promise<any> => settingsAPI.getSetting(category, key);
 export const setSetting = (category: string, key: string, value: any): Promise<void> => settingsAPI.setSetting(category, key, value);
 export const updateSettings = (settingsData: Settings): Promise<void> => settingsAPI.updateSettings(settingsData);
@@ -1056,7 +1060,7 @@ function getCategoryDefaults(category: string): any {
             pins: []
         },
         hardware: {
-            auto_detect_midi: true,
+            auto_detect_midi: false,
             auto_detect_gpio: false,
             auto_detect_led: false
         },

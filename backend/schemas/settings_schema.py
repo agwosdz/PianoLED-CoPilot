@@ -54,7 +54,9 @@ class SettingsSchema:
                         }
                     }
                 },
-                'debounce_time': {'type': 'number', 'minimum': 0, 'maximum': 1000}
+                'debounce_time': {'type': 'number', 'minimum': 0, 'maximum': 1000},
+                'data_pin': {'type': 'number', 'minimum': 1, 'maximum': 40},
+                'clock_pin': {'type': 'number', 'minimum': 1, 'maximum': 40}
             }
         },
         

@@ -612,21 +612,17 @@
 
   .hero-section {
     text-align: center;
-    background: transparent;
     color: #1f2937;
-    padding: 0;
-    margin-bottom: 2rem;
   }
 
   .hero-section h1 {
-    margin: 0 0 0.75rem;
-    font-size: 2.35rem;
+    margin: 0;
+    font-size: 2.4rem;
     font-weight: 700;
-    color: #1f2937;
   }
 
   .hero-section p {
-    margin: 0;
+    margin: 0.5rem 0 0;
     font-size: 1rem;
     color: #4b5563;
   }

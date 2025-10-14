@@ -18,7 +18,7 @@
 	}
 
 	export let selectedDevice: number | null = null;
-	export let autoRefresh = true;
+	export let autoRefresh = false;
 	export let refreshInterval = 5000;
 
 	let devices = writable<DeviceResponse>({

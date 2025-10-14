@@ -1,14 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { get } from 'svelte/store';
-  import { settings, settingsLoading, settingsError, loadSettings, updateSettings } from '$lib/stores/settings';
+  import { settingsLoading, settingsError, loadSettings, updateSettings } from '$lib/stores/settings';
   import SettingsValidationMessage from '$lib/components/SettingsValidationMessage.svelte';
   import PianoKeyboardSelector from '$lib/components/PianoKeyboardSelector.svelte';
   import MidiDeviceSelector from '$lib/components/MidiDeviceSelector.svelte';
   import NetworkMidiConfig from '$lib/components/NetworkMidiConfig.svelte';
   import MidiConnectionStatus from '$lib/components/MidiConnectionStatus.svelte';
-  import { normalizeSettings } from '$lib/utils/normalizeSettings.js';
   import type { UsbMidiStatus, NetworkMidiStatus } from '$lib/types/midi';
 
   type MessageType = 'error' | 'success' | 'warning' | 'info' | 'validating';
@@ -67,46 +65,95 @@
   function prepareSettingsPayload(state: Record<string, any>): Record<string, any> {
     const led = state.led ?? {};
     const piano = state.piano ?? {};
+    const gpio = state.gpio ?? {};
+
     const ledCount = coerceNumber(
       led.led_count ?? led.ledCount ?? state.led_count ?? state.ledCount,
       246
     );
+
     const dataPin = coerceNumber(
-      led.data_pin ?? led.gpio_pin ?? state.gpio_pin,
+      led.data_pin ?? state.led_data_pin ?? state.gpio_pin ?? 18,
       18
     );
+
     const ledChannelCandidate = typeof led.led_channel === 'number' ? led.led_channel : state.led_channel;
     const ledChannel = Number.isFinite(ledChannelCandidate)
       ? clamp(Number(ledChannelCandidate), 0, 1)
       : computeLedChannel(dataPin);
 
-    let brightnessRaw = led.brightness;
-    if (brightnessRaw === undefined) brightnessRaw = state.brightness;
+    let brightnessRaw = led.brightness ?? state.brightness;
     let brightness = typeof brightnessRaw === 'number' ? brightnessRaw : parseFloat(String(brightnessRaw));
     if (!Number.isFinite(brightness)) brightness = 0.5;
     brightness = brightness > 1 ? brightness / 100 : brightness;
     brightness = clamp(brightness, 0, 1);
 
+    const octave = clamp(coerceNumber(piano.octave ?? state.piano_octave, 4), 0, 8);
+    const velocitySensitivity = clamp(
+      coerceNumber(piano.velocity_sensitivity ?? state.velocity_sensitivity, 64),
+      1,
+      127
+    );
+    const midiChannel = clamp(coerceNumber(piano.channel ?? state.piano_channel, 1), 1, 16);
+
+    const gpioEnabledSource =
+      typeof gpio.enabled === 'boolean'
+        ? gpio.enabled
+        : typeof state.gpio_enabled === 'boolean'
+        ? state.gpio_enabled
+        : typeof state.gpio?.enabled === 'boolean'
+        ? state.gpio.enabled
+        : undefined;
+    const gpioDataPin = coerceNumber(
+      gpio.data_pin ?? state.gpio_pin ?? dataPin,
+      dataPin
+    );
+
+    const clockPinSource =
+      gpio.clock_pin ??
+      state.led?.clock_pin ??
+      state.clock_pin ??
+      state.gpio?.clock_pin;
+
     const payload: Record<string, any> = {
       led: {
         enabled: led.enabled ?? true,
         led_count: ledCount,
-    led_orientation: led.led_orientation ?? state.led_orientation ?? 'normal',
-    brightness,
-    data_pin: dataPin,
-    led_channel: ledChannel,
-    update_rate: led.update_rate ?? 60
+        led_orientation: led.led_orientation ?? state.led_orientation ?? 'normal',
+        brightness,
+        data_pin: dataPin,
+        led_channel: ledChannel,
+        update_rate: coerceNumber(led.update_rate ?? state.update_rate ?? 60, 60)
       },
       piano: {
         enabled: piano.enabled ?? true,
         size: piano.size ?? state.piano_size ?? '88-key',
         keys: piano.keys ?? state.piano_keys ?? 88,
+        octave,
         octaves: piano.octaves ?? state.piano_octaves ?? 7,
         start_note: piano.start_note ?? state.piano_start_note ?? 'A0',
         end_note: piano.end_note ?? state.piano_end_note ?? 'C8',
-        key_mapping_mode: piano.key_mapping_mode ?? state.key_mapping_mode ?? 'chromatic'
+        key_mapping_mode: piano.key_mapping_mode ?? state.key_mapping_mode ?? 'chromatic',
+        velocity_sensitivity: velocitySensitivity,
+        channel: midiChannel
       }
     };
+
+    payload.gpio = {
+      data_pin: gpioDataPin
+    };
+
+    if (typeof gpioEnabledSource === 'boolean') {
+      payload.gpio.enabled = gpioEnabledSource;
+    }
+
+    if (Array.isArray(gpio.pins) && gpio.pins.length > 0) {
+      payload.gpio.pins = gpio.pins;
+    }
+
+    if (clockPinSource !== undefined) {
+      payload.gpio.clock_pin = coerceNumber(clockPinSource, 19);
+    }
 
     if (piano.key_mapping) {
       payload.piano.key_mapping = piano.key_mapping;
@@ -121,8 +168,8 @@
 
   async function loadSettingsData() {
     try {
-      await loadSettings();
-      const snapshot = normalizeSettings(get(settings));
+      const fetched = await loadSettings();
+      const snapshot = clone(fetched);
       currentSettings = clone(snapshot);
       originalSettings = clone(snapshot);
       hasUnsavedChanges = false;
@@ -168,6 +215,9 @@
     updateLocalSettings((draft) => {
       const channel = computeLedChannel(pin);
       draft.led = { ...(draft.led || {}), data_pin: pin, led_channel: channel };
+      draft.gpio = { ...(draft.gpio || {}), data_pin: pin };
+      draft.gpio_pin = pin;
+      draft.led_channel = channel;
     });
 
     showMessage(`Data pin set to GPIO ${pin}`, 'info');
@@ -206,7 +256,11 @@
   }
 
   function getDataPin(): number {
-    const raw = currentSettings?.led?.data_pin ?? currentSettings?.led?.gpio_pin ?? currentSettings?.gpio_pin ?? 18;
+    const raw = currentSettings?.led?.data_pin
+      ?? currentSettings?.gpio?.data_pin
+      ?? currentSettings?.led?.gpio_pin
+      ?? currentSettings?.gpio_pin
+      ?? 18;
     const value = Number(raw);
     return Number.isFinite(value) ? value : 18;
   }
@@ -279,10 +333,10 @@
       saving = true;
       const payload = prepareSettingsPayload(currentSettings);
       await updateSettings(payload);
-      await loadSettings();
-      const snapshot = normalizeSettings(get(settings));
-      currentSettings = clone(snapshot);
-      originalSettings = clone(snapshot);
+  const refreshedRaw = await loadSettings();
+  const refreshed = clone(refreshedRaw);
+      currentSettings = clone(refreshed);
+      originalSettings = clone(refreshed);
       hasUnsavedChanges = false;
       showMessage('Settings saved successfully!', 'success');
     } catch (err) {
@@ -622,6 +676,7 @@
             <summary>USB MIDI Devices</summary>
             <div class="panel-content">
               <MidiDeviceSelector
+                autoRefresh={false}
                 on:deviceSelected={handleMidiDeviceSelected}
                 on:devicesUpdated={handleMidiDevicesUpdated}
               />
@@ -636,6 +691,7 @@
             <summary>Network MIDI (RTP-MIDI)</summary>
             <div class="panel-content">
               <NetworkMidiConfig
+                autoDiscovery={false}
                 on:sessionConnected={handleNetworkMidiConnected}
                 on:sessionDisconnected={handleNetworkMidiDisconnected}
                 on:sessionsUpdated={handleNetworkMidiSessionsUpdated}

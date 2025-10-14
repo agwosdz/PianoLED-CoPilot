@@ -127,7 +127,7 @@ export const settingsSchema: SettingsSchema = {
         type: 'object',
         required: ['auto_detect_midi', 'auto_detect_gpio', 'auto_detect_led'],
         properties: {
-            auto_detect_midi: { type: 'boolean', default: true },
+            auto_detect_midi: { type: 'boolean', default: false },
             auto_detect_gpio: { type: 'boolean', default: true },
             auto_detect_led: { type: 'boolean', default: true },
             midi_device_id: { type: 'string', default: '' },

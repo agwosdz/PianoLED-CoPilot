@@ -123,7 +123,9 @@ class SettingsService:
             'gpio': {
                 'enabled': {'type': 'boolean', 'default': False},
                 'pins': {'type': 'array', 'default': []},
-                'debounce_time': {'type': 'number', 'default': 50, 'min': 0, 'max': 1000}
+                'debounce_time': {'type': 'number', 'default': 50, 'min': 0, 'max': 1000},
+                'data_pin': {'type': 'number', 'default': 18, 'min': 1, 'max': 40},
+                'clock_pin': {'type': 'number', 'default': 19, 'min': 1, 'max': 40}
             },
             'led': {
                 'enabled': {'type': 'boolean', 'default': False},
@@ -157,7 +159,7 @@ class SettingsService:
                 'gpio_pin': {'type': 'number', 'default': 19}
             },
             'hardware': {
-                'auto_detect_midi': {'type': 'boolean', 'default': True},
+                'auto_detect_midi': {'type': 'boolean', 'default': False},
                 'auto_detect_gpio': {'type': 'boolean', 'default': True},
                 'auto_detect_led': {'type': 'boolean', 'default': True},
                 'midi_device_id': {'type': 'string', 'default': ''},

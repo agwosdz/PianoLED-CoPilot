@@ -177,7 +177,8 @@
 <style>
 	.midi-connection-status {
 		display: flex;
-		gap: 2rem;
+		flex-direction: column;
+		gap: 1.25rem;
 		padding: 1.5rem;
 		background: #f8f9fa;
 		border-radius: 8px;
@@ -185,9 +186,7 @@
 	}
 
 	.status-section {
-		flex: 1;
-		min-width: 200px;
-		max-width: 300px;
+		width: 100%;
 	}
 
 	.status-section h3 {
@@ -313,11 +312,6 @@
 	}
 
 	@media (max-width: 768px) {
-		.midi-connection-status {
-			flex-direction: column;
-			gap: 1rem;
-		}
-
 		.activity-info {
 			flex-direction: column;
 			gap: 0.25rem;
