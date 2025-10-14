@@ -17,6 +17,18 @@ class SettingsValidator:
     Combines logic from config.py, schemas/settings_schema.py, and api normalization
     """
 
+    _KEY_ALIASES = {
+        'led': {
+            'ledOrientation': 'led_orientation',
+            'orientation': 'led_orientation'
+        }
+    }
+
+    @staticmethod
+    def resolve_key_alias(category: str, key: str) -> str:
+        """Return canonical schema key for recognized legacy aliases."""
+        return SettingsValidator._KEY_ALIASES.get(category, {}).get(key, key)
+
     @staticmethod
     def validate_and_normalize(settings_dict: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
         """
@@ -71,20 +83,22 @@ class SettingsValidator:
 
         # Process each setting in the category
         for key, value in settings.items():
-            if key not in schema:
-                errors[key] = f"Unknown setting '{key}' in category '{category}'"
+            canonical_key = SettingsValidator.resolve_key_alias(category, key)
+
+            if canonical_key not in schema:
+                errors[canonical_key] = f"Unknown setting '{key}' in category '{category}'"
                 continue
 
-            setting_config = schema[key]
-            
+            setting_config = schema[canonical_key]
+
             # Normalize first, then validate
-            normalized_value = SettingsValidator._normalize_setting_value(category, key, value)
-            validation_errors = SettingsValidator._validate_setting_value(category, key, normalized_value, setting_config)
-            
+            normalized_value = SettingsValidator._normalize_setting_value(category, canonical_key, value)
+            validation_errors = SettingsValidator._validate_setting_value(category, canonical_key, normalized_value, setting_config)
+
             if validation_errors:
-                errors[key] = validation_errors[0]  # Take first error
+                errors[canonical_key] = validation_errors[0]  # Take first error
             else:
-                normalized[key] = normalized_value
+                normalized[canonical_key] = normalized_value
 
         return normalized, errors
 
@@ -103,6 +117,13 @@ class SettingsValidator:
             Tuple of (normalized_value, error_messages)
         """
         errors = []
+
+        canonical_key = SettingsValidator.resolve_key_alias(category, key)
+        key = canonical_key
+
+        if not config:
+            schema = SettingsValidator._get_category_schema(category) or {}
+            config = schema.get(canonical_key, {})
 
         # Type validation
         expected_type = config.get('type')

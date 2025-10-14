@@ -51,6 +51,7 @@ class SettingsService:
         self._listeners = []
         self._init_database()
         self._load_default_settings()
+        self._migrate_legacy_keys()
         
     def _get_default_db_path(self) -> str:
         """Get the default database path."""
@@ -267,6 +268,101 @@ class SettingsService:
             logger.error(f"Error creating setting {category}.{key}: {e}")
             raise
 
+    def _delete_setting(self, category: str, key: str) -> None:
+        """Remove a setting from the database if it exists."""
+        try:
+            with self._get_db_connection() as conn:
+                conn.execute(
+                    'DELETE FROM settings WHERE category = ? AND key = ?',
+                    (category, key)
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.error(f"Error deleting setting {category}.{key}: {exc}")
+
+    def _migrate_legacy_keys(self) -> None:
+        """Normalize legacy/camelCase keys that may already exist in the database."""
+        legacy_key_mappings = {
+            ('led', 'ledOrientation'): ('led', 'led_orientation'),
+            ('led', 'orientation'): ('led', 'led_orientation'),
+        }
+
+        try:
+            with self._get_db_connection() as conn:
+                changes_made = False
+
+                for (old_category, old_key), (new_category, new_key) in legacy_key_mappings.items():
+                    cursor = conn.execute(
+                        'SELECT value, data_type FROM settings WHERE category = ? AND key = ?',
+                        (old_category, old_key)
+                    )
+                    row = cursor.fetchone()
+
+                    if not row:
+                        continue
+
+                    value = json.loads(row['value'])
+
+                    schema = SettingsValidator._get_category_schema(new_category) or {}
+                    normalized_value, errors = SettingsValidator._validate_and_normalize_setting(
+                        new_category,
+                        new_key,
+                        value,
+                        schema.get(new_key, {})
+                    )
+
+                    if errors:
+                        logger.warning(
+                            "Skipping migration for %s.%s due to validation error: %s",
+                            old_category,
+                            old_key,
+                            errors[0]
+                        )
+                        continue
+
+                    target_exists = conn.execute(
+                        'SELECT 1 FROM settings WHERE category = ? AND key = ?',
+                        (new_category, new_key)
+                    ).fetchone()
+
+                    if not target_exists:
+                        conn.execute(
+                            '''INSERT OR REPLACE INTO settings (category, key, value, data_type, updated_at)
+                               VALUES (?, ?, ?, ?, ?)''',
+                            (
+                                new_category,
+                                new_key,
+                                json.dumps(normalized_value),
+                                self._get_data_type(normalized_value),
+                                datetime.now().isoformat()
+                            )
+                        )
+                        logger.info(
+                            "Migrated legacy setting %s.%s to %s.%s",
+                            old_category,
+                            old_key,
+                            new_category,
+                            new_key
+                        )
+                    else:
+                        logger.info(
+                            "Removing legacy duplicate setting %s.%s (canonical key already present)",
+                            old_category,
+                            old_key
+                        )
+
+                    conn.execute(
+                        'DELETE FROM settings WHERE category = ? AND key = ?',
+                        (old_category, old_key)
+                    )
+                    changes_made = True
+
+                if changes_made:
+                    conn.commit()
+
+        except Exception as exc:
+            logger.error(f"Legacy settings migration failed: {exc}")
+
     def add_listener(self, callback: Callable[[str, str, Any], None]) -> None:
         """Register a callback to be notified when a setting changes."""
         if callback and callback not in self._listeners:
@@ -328,12 +424,19 @@ class SettingsService:
             True if successful, False otherwise
         """
         try:
+            storage_key = SettingsValidator.resolve_key_alias(category, key)
+            schema = SettingsValidator._get_category_schema(category) or {}
+
             # Validate and normalize the setting
-            normalized_value, errors = SettingsValidator._validate_and_normalize_setting(category, key, value, 
-                SettingsValidator._get_category_schema(category).get(key, {}))
+            normalized_value, errors = SettingsValidator._validate_and_normalize_setting(
+                category,
+                storage_key,
+                value,
+                schema.get(storage_key, {})
+            )
             
             if errors:
-                logger.error(f"Validation failed for {category}.{key}: {errors[0]}")
+                logger.error(f"Validation failed for {category}.{storage_key}: {errors[0]}")
                 return False
             
             data_type = self._get_data_type(normalized_value)
@@ -343,17 +446,17 @@ class SettingsService:
                     '''INSERT OR REPLACE INTO settings 
                        (category, key, value, data_type, updated_at) 
                        VALUES (?, ?, ?, ?, ?)''',
-                    (category, key, json.dumps(normalized_value), data_type, datetime.now().isoformat())
+                    (category, storage_key, json.dumps(normalized_value), data_type, datetime.now().isoformat())
                 )
                 conn.commit()
             
             # Notify internal listeners before broadcasting
-            self._notify_listeners(category, key, normalized_value)
+            self._notify_listeners(category, storage_key, normalized_value)
 
             # Broadcast the change via WebSocket
-            self._broadcast_setting_change(category, key, normalized_value)
+            self._broadcast_setting_change(category, storage_key, normalized_value)
             
-            logger.info(f"Setting updated: {category}.{key} = {normalized_value}")
+            logger.info(f"Setting updated: {category}.{storage_key} = {normalized_value}")
             return True
             
         except Exception as e:
