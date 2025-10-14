@@ -90,7 +90,7 @@ async function syncUploads() {
     
     for (const upload of pendingUploads) {
       try {
-        const response = await fetch('/api/upload', {
+  const response = await fetch('/api/upload-midi', {
           method: 'POST',
           body: upload.formData
         });

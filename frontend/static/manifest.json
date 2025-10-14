@@ -24,18 +24,13 @@
   "categories": ["music", "entertainment"],
   "shortcuts": [
     {
-      "name": "Play MIDI",
-      "short_name": "Play",
-      "description": "Play your MIDI files",
-      "url": "/play",
-      "icons": [{ "src": "/icons/play-icon.svg", "sizes": "96x96", "type": "image/svg+xml" }]
-    },
-    {
-      "name": "Upload MIDI",
-      "short_name": "Upload",
-      "description": "Upload a new MIDI file",
-      "url": "/upload",
-      "icons": [{ "src": "/icons/upload-icon.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+      "name": "Listen",
+      "short_name": "Listen",
+      "description": "Upload and play MIDI files",
+      "url": "/listen",
+      "icons": [
+        { "src": "/icons/play-icon.svg", "sizes": "96x96", "type": "image/svg+xml" }
+      ]
     }
   ]
 }

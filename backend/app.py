@@ -204,6 +204,51 @@ def upload_midi_file():
             'message': 'An unexpected error occurred during upload'
         }), 500
 
+
+@app.route('/api/uploaded-midi', methods=['GET'])
+def list_uploaded_midi_files():
+    """Return information about previously uploaded MIDI files."""
+    upload_folder = app.config.get('UPLOAD_FOLDER')
+    if not upload_folder or not os.path.exists(upload_folder):
+        return jsonify({
+            'status': 'success',
+            'files': []
+        }), 200
+
+    files = []
+    try:
+        for entry in os.scandir(upload_folder):
+            if not entry.is_file():
+                continue
+            if not _is_allowed_midi_file(entry.name):
+                continue
+
+            try:
+                stats = entry.stat()
+                files.append({
+                    'filename': entry.name,
+                    'path': entry.path,
+                    'size': stats.st_size,
+                    'modified': datetime.datetime.utcfromtimestamp(stats.st_mtime).isoformat() + 'Z'
+                })
+            except FileNotFoundError:
+                # File might be removed between scandir and stat; skip it
+                continue
+
+        files.sort(key=lambda item: item.get('modified', ''), reverse=True)
+
+        return jsonify({
+            'status': 'success',
+            'files': files
+        }), 200
+
+    except Exception as exc:
+        logger.error(f"Failed to list uploaded MIDI files: {exc}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not list uploaded files'
+        }), 500
+
 @app.route('/api/play', methods=['POST'])
 def play():
     """Start playback - frontend-compatible endpoint"""

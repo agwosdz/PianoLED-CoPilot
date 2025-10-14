@@ -8,6 +8,8 @@
     formatFileSize
   } from '$lib/upload';
   import { getSocket, socketStatus } from '$lib/socket';
+  import UploadedFileList from '$lib/components/UploadedFileList.svelte';
+  import type { UploadedFile as UploadedFileItem } from '$lib/components/UploadedFileList.svelte';
 
   type PlaybackState = 'idle' | 'playing' | 'paused' | 'stopped';
 
@@ -30,6 +32,10 @@
   let socketInstance: any = null;
   let unsubscribeSocketStatus: (() => void) | null = null;
   let pollingHandle: ReturnType<typeof setInterval> | null = null;
+
+  let uploadedFiles: UploadedFileItem[] = [];
+  let uploadedFilesError = '';
+  let isLoadingUploadedFiles = false;
 
   const autoPlayAfterUpload = true;
   const statusPollIntervalMs = 3000;
@@ -83,11 +89,34 @@
     }
   }
 
+  async function loadUploadedFiles(): Promise<void> {
+    if (!browser) return;
+    try {
+      isLoadingUploadedFiles = true;
+      uploadedFilesError = '';
+      const response = await fetch('/api/uploaded-midi');
+      if (!response.ok) {
+        uploadedFilesError = 'Failed to load uploaded files';
+        uploadedFiles = [];
+        return;
+      }
+
+      const data = await response.json();
+      uploadedFiles = Array.isArray(data?.files) ? data.files : [];
+    } catch (error) {
+      uploadedFilesError = 'Failed to load uploaded files';
+      uploadedFiles = [];
+    } finally {
+      isLoadingUploadedFiles = false;
+    }
+  }
+
   onMount(() => {
     if (!browser) return;
 
     fetchPlaybackStatus();
     pollingHandle = setInterval(fetchPlaybackStatus, statusPollIntervalMs);
+  loadUploadedFiles();
 
     try {
       socketInstance = getSocket();
@@ -182,6 +211,7 @@
       if (autoPlayAfterUpload && playbackFilename) {
         await handlePlay(true);
       }
+      await loadUploadedFiles();
     } catch (error) {
       uploadState = 'idle';
       uploadProgress = 0;
@@ -259,7 +289,30 @@
     return `${minutes}:${String(remainder).padStart(2, '0')}`;
   }
 
+  function handleUploadedFileSelection(file: UploadedFileItem): void {
+    playbackFilename = file.path;
+    playbackOriginalName = deriveOriginalName(file.filename);
+    uploadedSize = file.size;
+    playbackNotice = 'Ready to play';
+    if (browser) {
+      window.localStorage.setItem('lastUploadedFile', playbackFilename);
+    }
+    fetchPlaybackStatus();
+  }
+
   $: playbackProgress = totalDuration > 0 ? Math.min(100, Math.round((currentTime / totalDuration) * 100)) : 0;
+  $: if (playbackFilename && uploadedFiles.length > 0) {
+    const matchedFile = uploadedFiles.find((file) => file.path === playbackFilename);
+    if (matchedFile) {
+      if (uploadedSize !== matchedFile.size) {
+        uploadedSize = matchedFile.size;
+      }
+      const derivedName = deriveOriginalName(matchedFile.filename);
+      if (playbackOriginalName !== derivedName) {
+        playbackOriginalName = derivedName;
+      }
+    }
+  }
 </script>
 
 <svelte:head>
@@ -329,6 +382,24 @@
           {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'connecting' ? 'Connecting…' : connectionStatus === 'error' ? 'Socket error' : 'Offline'}
         </span>
       </header>
+
+      <div class="uploaded-files">
+        <div class="section-header">
+          <h3>Uploaded Files</h3>
+          {#if isLoadingUploadedFiles}
+            <span class="section-meta">Loading…</span>
+          {:else if uploadedFilesError}
+            <span class="section-meta error">{uploadedFilesError}</span>
+          {:else if uploadedFiles.length > 0}
+            <span class="section-meta">{uploadedFiles.length} {uploadedFiles.length === 1 ? 'file' : 'files'}</span>
+          {/if}
+        </div>
+        <UploadedFileList
+          files={uploadedFiles}
+          selectedPath={playbackFilename}
+          on:select={(event) => handleUploadedFileSelection(event.detail.file)}
+        />
+      </div>
 
       <div class="track-summary">
         <p class="track-name">{playbackOriginalName || playbackFilename || 'No file loaded'}</p>
@@ -543,6 +614,34 @@
     justify-content: space-between;
     align-items: center;
     gap: 0.75rem;
+  }
+
+  .uploaded-files {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .section-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #0f172a;
+  }
+
+  .section-meta {
+    font-size: 0.8rem;
+    color: #475569;
+  }
+
+  .section-meta.error {
+    color: #b91c1c;
   }
 
   .playback-header h2 {
