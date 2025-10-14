@@ -245,11 +245,7 @@ class MIDIParser:
         if logical_index >= self.led_count:
             return None
         
-        # Apply orientation mapping
-        if self.led_orientation == 'reversed':
-            return self.led_count - 1 - logical_index
-        else:
-            return logical_index
+        return logical_index
     
     def _extract_metadata(self, midi_file) -> Dict[str, Any]:
         """

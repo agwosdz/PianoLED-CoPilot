@@ -153,11 +153,11 @@ class TestMIDIMappingConfiguration:
         
         service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
         
-        # Test mapping for different MIDI notes (reversed with 246 LEDs)
+        # Test mapping for different MIDI notes (returns logical indices; controller applies orientation)
         test_cases = [
-            (21, 245),  # Lowest note (A0) -> LED 245 (reversed)
-            (65, 122),  # Middle range -> LED 122 (reversed)
-            (108, 0),   # Highest note (C8) -> LED 0 (reversed)
+            (21, 0),    # Lowest note (A0) -> logical LED 0
+            (65, 123),  # Middle range -> logical LED 123
+            (108, 245), # Highest note (C8) -> logical LED 245
         ]
         
         for midi_note, expected_led in test_cases:
@@ -382,5 +382,5 @@ class TestLEDOrientationMapping:
             reversed_led = service_reversed._map_note_to_led(midi_note)
             
             if normal_led is not None and reversed_led is not None:
-                # Should be exact opposites
-                assert normal_led + reversed_led == 245  # 246 - 1 = 245
+                # Mapping returns logical indices regardless of orientation; hardware layer handles inversion
+                assert normal_led == reversed_led
