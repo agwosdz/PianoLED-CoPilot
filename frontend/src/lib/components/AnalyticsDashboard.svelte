@@ -7,6 +7,12 @@
 	let loading = true;
 	let selectedTab = 'overview';
 
+// Locals that normalize the possibly-optional fields on AnalyticsReport
+$: errorEvents = report?.errorEvents ?? [];
+$: recoveryEvents = report?.recoveryEvents ?? [];
+$: preventionEvents = report?.preventionEvents ?? [];
+$: patternsList = report?.patterns ?? report?.topErrorPatterns ?? [];
+
 	onMount(() => {
 		loadReport();
 	});
@@ -110,26 +116,26 @@
 				<div class="stats-grid">
 					<div class="stat-card">
 						<h3>Total Errors</h3>
-						<div class="stat-value">{report.errorEvents.length}</div>
+						<div class="stat-value">{errorEvents.length}</div>
 					</div>
 					<div class="stat-card">
 						<h3>Recovery Attempts</h3>
-						<div class="stat-value">{report.recoveryEvents.length}</div>
+						<div class="stat-value">{recoveryEvents.length}</div>
 					</div>
 					<div class="stat-card">
 						<h3>Prevention Actions</h3>
-						<div class="stat-value">{report.preventionEvents.length}</div>
+						<div class="stat-value">{preventionEvents.length}</div>
 					</div>
 					<div class="stat-card">
 						<h3>Error Patterns</h3>
-						<div class="stat-value">{report.patterns.length}</div>
+						<div class="stat-value">{patternsList.length}</div>
 					</div>
 				</div>
 
 				<div class="recent-errors">
 					<h3>Recent Errors</h3>
 					<div class="error-list">
-						{#each report.errorEvents.slice(-10).reverse() as error}
+						{#each errorEvents.slice(-10).reverse() as error}
 							<div class="error-item">
 								<div class="error-header">
 									<span class="error-type" style="color: {getErrorSeverityColor(error.severity)}">
@@ -139,12 +145,12 @@
 										{error.severity}
 									</span>
 									<span class="error-time">
-										{error.timestamp.toLocaleString()}
+										{new Date(error.timestamp).toLocaleString()}
 									</span>
 								</div>
 								<div class="error-message">{error.message}</div>
-								{#if error.code}
-									<div class="error-code">Code: {error.code}</div>
+								{#if error.errorCode}
+									<div class="error-code">Code: {error.errorCode}</div>
 								{/if}
 							</div>
 						{/each}
@@ -155,20 +161,20 @@
 			<div class="patterns-section">
 				<h3>Error Patterns</h3>
 				<div class="patterns-list">
-					{#each report.patterns as pattern}
+					{#each patternsList as pattern}
 						<div class="pattern-card">
 							<div class="pattern-header">
-								<h4>{pattern.type}</h4>
-								<span class="pattern-count">{pattern.count} occurrences</span>
+								<h4>{pattern.category ?? pattern.type}</h4>
+								<span class="pattern-count">{pattern.frequency ?? pattern.count} occurrences</span>
 							</div>
 							<div class="pattern-timeline">
-								<span>First: {pattern.firstSeen.toLocaleString()}</span>
-								<span>Last: {pattern.lastSeen.toLocaleString()}</span>
+								<span>First: {pattern.firstSeen ? new Date(pattern.firstSeen).toLocaleString() : 'N/A'}</span>
+								<span>Last: {pattern.lastSeen ? new Date(pattern.lastSeen).toLocaleString() : 'N/A'}</span>
 							</div>
 							<div class="common-messages">
 								<h5>Common Messages:</h5>
 								<ul>
-									{#each pattern.commonMessages as message}
+									{#each (pattern.commonMessages ?? pattern.commonCauses ?? []) as message}
 										<li>{message}</li>
 									{/each}
 								</ul>
@@ -181,17 +187,17 @@
 			<div class="recovery-section">
 				<h3>Recovery Statistics</h3>
 				<div class="recovery-stats">
-					{#each report.recoveryEvents as recovery}
+					{#each recoveryEvents as recovery}
 						<div class="recovery-item">
 							<div class="recovery-header">
-								<span class="recovery-method">{recovery.method}</span>
-								<span class="recovery-status" class:success={recovery.success} class:failure={!recovery.success}>
-									{recovery.success ? '✅ Success' : '❌ Failed'}
+								<span class="recovery-method">{recovery.resolution?.method ?? recovery.metadata?.method ?? 'unknown'}</span>
+								<span class="recovery-status" class:success={recovery.resolution?.successful} class:failure={!recovery.resolution?.successful}>
+									{recovery.resolution?.successful ? '✅ Success' : '❌ Failed'}
 								</span>
-								<span class="recovery-time">{recovery.timestamp.toLocaleString()}</span>
+								<span class="recovery-time">{new Date(recovery.timestamp).toLocaleString()}</span>
 							</div>
 							<div class="recovery-details">
-								Error ID: {recovery.errorId} | Attempt: {recovery.attemptNumber}
+								Error ID: {recovery.metadata?.originalErrorId ?? 'N/A'} | Attempt: {recovery.resolution?.retryCount ?? recovery.metadata?.retryCount ?? 'N/A'}
 							</div>
 						</div>
 					{/each}
@@ -201,12 +207,12 @@
 			<div class="prevention-section">
 				<h3>Prevention Actions</h3>
 				<div class="prevention-list">
-					{#each report.preventionEvents as prevention}
+					{#each preventionEvents as prevention}
 						<div class="prevention-item">
 							<div class="prevention-header">
 								<span class="prevention-type">{prevention.type}</span>
-								<span class="prevention-action">{prevention.action}</span>
-								<span class="prevention-time">{prevention.timestamp.toLocaleString()}</span>
+								<span class="prevention-action">{prevention.message ?? prevention.action ?? ''}</span>
+								<span class="prevention-time">{new Date(prevention.timestamp).toLocaleString()}</span>
 							</div>
 						</div>
 					{/each}

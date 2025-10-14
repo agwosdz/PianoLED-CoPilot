@@ -1,44 +1,84 @@
-<script>
-	import { createEventDispatcher, onMount } from 'svelte';
-	import SettingsFormField from './SettingsFormField.svelte';
-	import { createCategoryValidation } from '../utils/settingsValidation.js';
+<script lang="ts">
+	  import { createEventDispatcher, onMount } from 'svelte';
+		import SettingsFormField from './SettingsFormField.svelte';
+		import { createCategoryValidation } from '../utils/settingsValidation.js';
 
-	const dispatch = createEventDispatcher();
+		const dispatch = createEventDispatcher();
 
-	export let settings = {
-		ledCount: 246,
-		maxLedCount: 300,
-		ledType: 'WS2812B',
-		ledOrientation: 'normal',
-		ledStripType: 'WS2811_STRIP_GRB',
-		powerSupplyVoltage: 5.0,
-		powerSupplyCurrent: 10.0,
-		brightness: 0.5,
-		colorProfile: 'Standard RGB',
-		performanceMode: 'Balanced',
-		advancedSettings: {
-			gamma: 2.2,
-			whiteBalance: { r: 1.0, g: 1.0, b: 1.0 },
-			colorTemp: 6500,
-			dither: false,
-			updateRate: 30,
-			powerLimiting: true,
-			maxPowerWatts: 50,
-			thermalProtection: true,
-			maxTemp: 70
-		}
-	};
+		type AdvancedSettings = {
+			gamma?: number;
+			whiteBalance?: { r: number; g: number; b: number };
+			colorTemp?: number;
+			dither?: boolean;
+			updateRate?: number;
+			powerLimiting?: boolean;
+			maxPowerWatts?: number;
+			thermalProtection?: boolean;
+			maxTemp?: number;
+			ambientTemp?: number;
+			thermalResistance?: number;
+			[key: string]: any;
+		};
+
+		// exported Settings type isn't allowed directly as TS 'export type' inside component script
+		// instead declare a local type alias
+		type Settings = {
+			ledCount: number;
+			maxLedCount: number;
+			ledType: string;
+			ledOrientation: string;
+			ledStripType: string;
+			powerSupplyVoltage: number;
+			powerSupplyCurrent: number;
+			brightness: number;
+			colorProfile: string;
+			performanceMode: string;
+			advancedSettings?: AdvancedSettings;
+			gamma?: number;
+			colorTemp?: number;
+			updateRate?: number;
+			maxPowerWatts?: number;
+			maxTemp?: number;
+			dither?: boolean;
+			powerLimiting?: boolean;
+			thermalProtection?: boolean;
+			[key: string]: any;
+		};
+
+		export let settings: Settings = {
+			ledCount: 246,
+			maxLedCount: 300,
+			ledType: 'WS2812B',
+			ledOrientation: 'normal',
+			ledStripType: 'WS2811_STRIP_GRB',
+			powerSupplyVoltage: 5.0,
+			powerSupplyCurrent: 10.0,
+			brightness: 0.5,
+			colorProfile: 'Standard RGB',
+			performanceMode: 'Balanced',
+			advancedSettings: {
+				gamma: 2.2,
+				whiteBalance: { r: 1.0, g: 1.0, b: 1.0 },
+				colorTemp: 6500,
+				dither: false,
+				updateRate: 30,
+				powerLimiting: true,
+				maxPowerWatts: 50,
+				thermalProtection: true,
+				maxTemp: 70
+			}
+		};
 	// Initialize validation for LED settings
 	const categoryValidation = createCategoryValidation('led');
 
 	// Validate individual field with proper category and field mapping
-	async function validateFieldMapped(field, value) {
+	async function validateFieldMapped(field: string, value: any): Promise<any> {
 		const mappedField = fieldMapping[field] || field;
 		return await categoryValidation.validateField(mappedField, value);
 	}
 	
 	// Map frontend field names to backend schema field names
-	const fieldMapping = {
+	const fieldMapping: Record<string, string> = {
 		'ledCount': 'led_count',
 		'maxLedCount': 'max_led_count',
 		'ledType': 'led_type',
@@ -170,8 +210,8 @@
 		'RGBW': 'SK6812_STRIP_RGBW'
 	};
 
-	let powerCalculation = {};
-	let validationErrors = {};
+	let powerCalculation: Record<string, any> = {};
+	let validationErrors: Record<string, string> = {};
 
 	// Enhanced power calculation with thermal considerations
 	function calculatePower() {
@@ -219,25 +259,25 @@
 
 	// Enhanced validation with thermal and performance checks
 	function validateConfig() {
-		const errors = {};
-		
-		if (settings.ledCount <= 0) {
+		const errors: Record<string, string> = {};
+
+		if (typeof settings.ledCount !== 'number' || settings.ledCount <= 0) {
 			errors.ledCount = 'LED count must be greater than 0';
 		}
-		
-		if (settings.ledCount > settings.maxLedCount) {
+
+		if (typeof settings.maxLedCount === 'number' && settings.ledCount > settings.maxLedCount) {
 			errors.ledCount = `LED count cannot exceed ${settings.maxLedCount}`;
 		}
-		
-		if (settings.brightness < 0 || settings.brightness > 100) {
+
+		if (typeof settings.brightness === 'number' && (settings.brightness < 0 || settings.brightness > 100)) {
 			errors.brightness = 'Brightness must be between 0 and 100';
 		}
-		
-		if (settings.powerSupplyVoltage < 3 || settings.powerSupplyVoltage > 24) {
+
+		if (typeof settings.powerSupplyVoltage === 'number' && (settings.powerSupplyVoltage < 3 || settings.powerSupplyVoltage > 24)) {
 			errors.powerSupplyVoltage = 'Voltage must be between 3V and 24V';
 		}
-		
-		if (settings.powerSupplyCurrent < 0.5 || settings.powerSupplyCurrent > 100) {
+
+		if (typeof settings.powerSupplyCurrent === 'number' && (settings.powerSupplyCurrent < 0.5 || settings.powerSupplyCurrent > 100)) {
 			errors.powerSupplyCurrent = 'Current must be between 0.5A and 100A';
 		}
 
@@ -245,10 +285,11 @@
 	}
 
 	// Handle configuration changes with validation
-	function handleConfigChange(field, value) {
+	function handleConfigChange(field: string | keyof Settings, value: any) {
 		if (field && value !== undefined) {
-			settings[field] = value;
-			validateFieldMapped(field, value);
+			// Use mapping to underlying setting keys where appropriate
+			(settings as any)[field as string] = value;
+			validateFieldMapped(String(field), value);
 		}
 		calculatePower();
 		validateConfig();
@@ -256,9 +297,9 @@
 	}
 
 	// Handle input changes for real-time validation
-	function handleInput(field, value) {
-		settings[field] = value;
-		validateFieldMapped(field, value);
+	function handleInput(field: string | keyof Settings, value: any) {
+		(settings as any)[field as string] = value;
+		validateFieldMapped(String(field), value);
 	}
 
 	// Initialize calculations on component mount

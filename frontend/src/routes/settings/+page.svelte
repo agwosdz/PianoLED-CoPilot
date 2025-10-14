@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { settings, settingsLoading, settingsError, loadSettings, updateSettings } from '$lib/stores/settings.js';
 	import PianoKeyboardSelector from '$lib/components/PianoKeyboardSelector.svelte';
 	import GPIOConfigPanel from '$lib/components/GPIOConfigPanel.svelte';
@@ -10,20 +11,39 @@
 	import DashboardControls from '$lib/components/DashboardControls.svelte';
 	import SettingsSection from '$lib/components/SettingsSection.svelte';
 	import SettingsValidationMessage from '$lib/components/SettingsValidationMessage.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import type { Settings, LEDSettings, GPIOSettings } from '$lib/stores/settings';
+	import MidiDeviceSelector from '$lib/components/MidiDeviceSelector.svelte';
+	import NetworkMidiConfig from '$lib/components/NetworkMidiConfig.svelte';
+	import MidiConnectionStatus from '$lib/components/MidiConnectionStatus.svelte';
+	import type { UsbMidiStatus, NetworkMidiStatus } from '$lib/types/midi';
+import { normalizeSettings } from '$lib/utils/normalizeSettings.js';
 
 	// Component state
-	let message = '';
-	let messageType = 'info';
-	let activeTab = 'piano';
-	let hasUnsavedChanges = false;
-	let originalSettings = {};
+	let message: string = '';
+	type MessageType = 'error' | 'success' | 'warning' | 'info' | 'validating';
+	let messageType: MessageType = 'info';
+	let activeTab: string = 'piano';
+	let hasUnsavedChanges: boolean = false;
+	let originalSettings: Record<string, any> = {};
+
+	// MIDI device management
+	let selectedMidiDevice: string | null = null;
+	let midiDevicesExpanded: boolean = true; // Expanded by default
+	let networkMidiExpanded: boolean = true; // Expanded by default
+
+	// MIDI connection status
+	let usbMidiStatus: UsbMidiStatus = { connected: false, deviceName: null, lastActivity: null, messageCount: 0 };
+
+	let networkMidiStatus: NetworkMidiStatus = { connected: false, activeSessions: [], lastActivity: null, messageCount: 0 };
 
 	// Reactive statements
+	let loading: boolean = false;
+	let error: string | null = null;
+	// currentSettings uses normalization util which returns a plain object
+	let currentSettings: Record<string, any> = {};
+
 	$: loading = $settingsLoading;
 	$: error = $settingsError;
-	$: currentSettings = $settings;
+	$: currentSettings = normalizeSettings($settings);
 
 	// Watch for changes to detect unsaved changes
 	$: {
@@ -34,6 +54,7 @@
 
 	const tabs = [
 		{ id: 'piano', label: 'Piano Setup', icon: '🎹' },
+		{ id: 'midi', label: 'MIDI Config', icon: '🎵' },
 		{ id: 'gpio', label: 'GPIO Config', icon: '🔌' },
 		{ id: 'led', label: 'LED Strip', icon: '💡' },
 		{ id: 'mapping', label: 'Key Mapping', icon: '🗂️' },
@@ -63,7 +84,8 @@
 	async function loadSettingsData() {
 		try {
 			await loadSettings();
-			originalSettings = JSON.parse(JSON.stringify($settings));
+			// Store a normalized snapshot for change detection
+			originalSettings = JSON.parse(JSON.stringify(normalizeSettings($settings)));
 			hasUnsavedChanges = false;
 		} catch (error) {
 			console.error('Error loading settings:', error);
@@ -79,7 +101,8 @@
 			showMessage('Settings saved successfully!', 'success');
 		} catch (error) {
 			console.error('Error saving settings:', error);
-			showMessage(error.message || 'Failed to save settings', 'error');
+			const msg = error instanceof Error ? error.message : String(error);
+			showMessage(msg || 'Failed to save settings', 'error');
 		}
 	}
 
@@ -118,11 +141,11 @@ async function testHardware() {
 	}
 }
 
-function handleSettingsChange(newSettings) {
+	function handleSettingsChange(newSettings: Record<string, any>) {
 	updateSettings({ ...currentSettings, ...newSettings });
 }
 
-function handleLEDSettingsChange(newLEDSettings) {
+function handleLEDSettingsChange(newLEDSettings: Record<string, any>) {
 	const updated = {
 		...currentSettings,
 		led: {
@@ -144,7 +167,7 @@ function handleLEDSettingsChange(newLEDSettings) {
 }
 
 // LED Test Event Handlers
-async function handleLEDTest(event) {
+async function handleLEDTest(event: CustomEvent<{ ledIndex: number; color: { r:number; g:number; b:number }; brightness: number }>) {
 	const { ledIndex, color, brightness } = event.detail;
 	
 	try {
@@ -206,7 +229,7 @@ async function handleLEDTest(event) {
 	}
 }
 
-async function handlePatternTest(event) {
+async function handlePatternTest(event: CustomEvent<{ pattern: string; duration: number }>) {
 	const { pattern, duration } = event.detail;
 	
 	try {
@@ -239,7 +262,7 @@ async function handlePatternTest(event) {
 	}
 }
 
-function handleLEDCountChange(event) {
+	function handleLEDCountChange(event: CustomEvent<{ ledCount: number }>) {
 	const { ledCount } = event.detail;
 	
 	// Update the LED count in settings
@@ -255,13 +278,82 @@ function handleLEDCountChange(event) {
 	showMessage(`LED count updated to ${ledCount}`, 'info');
 }
 
-function showMessage(text, type) {
+	function showMessage(text: string, type: MessageType) {
 	message = text;
 	messageType = type;
 	setTimeout(() => {
 		message = '';
 	}, 5000);
 }
+
+// MIDI device event handlers
+	async function handleMidiDeviceSelected(event: CustomEvent<{ id: string; name: string }>) {
+	console.log('MIDI device selected:', event.detail);
+	selectedMidiDevice = event.detail.id;
+	
+	// Connect to the selected MIDI device
+	try {
+		const response = await fetch('/api/midi-input/start', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				device_name: event.detail.name,
+				enable_usb: true,
+				enable_rtpmidi: false
+			})
+		});
+		
+		if (response.ok) {
+			const result = await response.json();
+			console.log('MIDI device connected successfully:', result);
+			showMessage('MIDI device connected successfully', 'success');
+		} else {
+			const error = await response.json();
+			console.error('Failed to connect to MIDI device:', error);
+			showMessage('Failed to connect to MIDI device', 'error');
+		}
+	} catch (error) {
+		console.error('Error connecting to MIDI device:', error);
+		showMessage('Error connecting to MIDI device', 'error');
+	}
+}
+
+	function handleMidiDevicesUpdated(event: CustomEvent<any>) {
+		console.log('MIDI devices updated:', event.detail);
+	}
+
+	function handleNetworkMidiConnected(event: CustomEvent<any>) {
+		console.log('Network MIDI session connected:', event.detail);
+		showMessage('Network MIDI session connected', 'success');
+	}
+
+	function handleNetworkMidiDisconnected(event: CustomEvent<any>) {
+		console.log('Network MIDI session disconnected:', event.detail);
+		showMessage('Network MIDI session disconnected', 'info');
+	}
+
+	function handleNetworkMidiSessionsUpdated(event: CustomEvent<any>) {
+		console.log('Network MIDI sessions updated:', event.detail);
+	}
+
+// MIDI connection status event handlers
+	function handleMidiStatusConnected(event: CustomEvent<any>) {
+		console.log('MIDI status WebSocket connected');
+	}
+
+	function handleMidiStatusDisconnected(event: CustomEvent<any>) {
+		console.log('MIDI status WebSocket disconnected');
+	}
+
+	function handleUsbStatusUpdate(event: CustomEvent<any>) {
+		usbMidiStatus = event.detail;
+	}
+
+	function handleNetworkStatusUpdate(event: CustomEvent<any>) {
+		networkMidiStatus = event.detail;
+	}
 </script>
 
 <svelte:head>
@@ -372,6 +464,77 @@ function showMessage(text, type) {
 						}}
 					/>
 				</SettingsSection>
+			{:else if activeTab === 'midi'}
+				<SettingsSection
+					title="MIDI Configuration"
+					description="Configure MIDI input devices and network connections"
+					icon="🎵"
+					loading={loading}
+					error={error}
+					showActions={false}
+				>
+					<div class="midi-config-section">
+						<!-- MIDI Connection Status -->
+						<div class="midi-status-container">
+							<h3>MIDI Connection Status</h3>
+							<MidiConnectionStatus 
+								{usbMidiStatus}
+								{networkMidiStatus}
+								on:connected={handleMidiStatusConnected}
+								on:disconnected={handleMidiStatusDisconnected}
+								on:usbStatusUpdate={handleUsbStatusUpdate}
+								on:networkStatusUpdate={handleNetworkStatusUpdate}
+							/>
+						</div>
+
+						<div class="midi-panels">
+							<div class="midi-panel">
+								<button 
+									class="panel-header" 
+									type="button"
+									on:click={() => midiDevicesExpanded = !midiDevicesExpanded}
+									on:keydown={(e) => e.key === 'Enter' && (midiDevicesExpanded = !midiDevicesExpanded)}
+								>
+									<h3>USB MIDI Devices</h3>
+									<span class="expand-icon {midiDevicesExpanded ? 'expanded' : ''}">
+										{midiDevicesExpanded ? '▼' : '▶'}
+									</span>
+								</button>
+								{#if midiDevicesExpanded}
+									<div class="panel-content">
+										<MidiDeviceSelector 
+											on:deviceSelected={handleMidiDeviceSelected}
+											on:devicesUpdated={handleMidiDevicesUpdated}
+										/>
+									</div>
+								{/if}
+							</div>
+
+							<div class="midi-panel">
+								<button 
+									class="panel-header" 
+									type="button"
+									on:click={() => networkMidiExpanded = !networkMidiExpanded}
+									on:keydown={(e) => e.key === 'Enter' && (networkMidiExpanded = !networkMidiExpanded)}
+								>
+									<h3>Network MIDI (RTP-MIDI)</h3>
+									<span class="expand-icon {networkMidiExpanded ? 'expanded' : ''}">
+										{networkMidiExpanded ? '▼' : '▶'}
+									</span>
+								</button>
+								{#if networkMidiExpanded}
+									<div class="panel-content">
+										<NetworkMidiConfig 
+											on:sessionConnected={handleNetworkMidiConnected}
+											on:sessionDisconnected={handleNetworkMidiDisconnected}
+											on:sessionsUpdated={handleNetworkMidiSessionsUpdated}
+										/>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</div>
+				</SettingsSection>
 			{:else if activeTab === 'gpio'}
 				<SettingsSection
 					title="GPIO Configuration"
@@ -385,7 +548,7 @@ function showMessage(text, type) {
 					showActions={false}
 				>
 					<GPIOConfigPanel 
-						settings={{
+						config={{
 							gpio_pin: currentSettings.gpio_pin || 19,
 							gpio_power_pin: currentSettings.gpio_power_pin || null,
 							gpio_ground_pin: currentSettings.gpio_ground_pin || null,
@@ -696,6 +859,81 @@ function showMessage(text, type) {
 		
 		.manual-controls-wrapper {
 			padding: 0.75rem;
+		}
+	}
+
+	/* MIDI Configuration Styles */
+	.midi-config-section {
+		display: flex;
+		flex-direction: column;
+		gap: 2rem;
+	}
+
+	.midi-status-container {
+		margin-bottom: 0;
+	}
+
+	.midi-status-container h3 {
+		margin-bottom: 1rem;
+		color: #495057;
+		font-size: 1.1rem;
+		font-weight: 600;
+	}
+
+	.midi-panels {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem;
+	}
+
+	.midi-panel {
+		border: 1px solid #e9ecef;
+		border-radius: 8px;
+		overflow: hidden;
+	}
+
+	.panel-header {
+		background-color: #f8f9fa;
+		padding: 1rem;
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		transition: background-color 0.2s;
+		border: none;
+		width: 100%;
+		text-align: left;
+		font-family: inherit;
+	}
+
+	.panel-header:hover {
+		background-color: #e9ecef;
+	}
+
+	.panel-header h3 {
+		margin: 0;
+		font-size: 1rem;
+		color: #495057;
+	}
+
+	.expand-icon {
+		font-size: 0.875rem;
+		color: #6c757d;
+		transition: transform 0.2s;
+	}
+
+	.expand-icon.expanded {
+		transform: rotate(0deg);
+	}
+
+	.panel-content {
+		padding: 1rem;
+		border-top: 1px solid #e9ecef;
+	}
+
+	@media (max-width: 768px) {
+		.midi-panels {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

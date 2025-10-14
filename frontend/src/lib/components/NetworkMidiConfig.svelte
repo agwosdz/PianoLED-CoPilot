@@ -229,19 +229,22 @@
 		}
 	}
 
-	// Auto-discovery event handlers
-	function handleDiscoveryCompleted(event) {
-		console.log('Auto-discovery completed:', event.detail);
+	// Auto-discovery event handlers (typed)
+	function handleDiscoveryCompleted(event: CustomEvent<any>) {
+		const detail = event?.detail ?? null;
+		console.log('Auto-discovery completed:', detail);
 	}
 
-	function handleDeviceConnected(event) {
-		console.log('Device connected from auto-discovery:', event.detail);
+	function handleDeviceConnected(event: CustomEvent<any>) {
+		const detail = event?.detail ?? null;
+		console.log('Device connected from auto-discovery:', detail);
 		// Refresh sessions after auto-connection
 		fetchSessions();
 	}
 
-	function handleConnectionError(event) {
-		console.error('Auto-discovery connection error:', event.detail);
+	function handleConnectionError(event: CustomEvent<any>) {
+		const detail = event?.detail ?? null;
+		console.error('Auto-discovery connection error:', detail);
 	}
 </script>
 

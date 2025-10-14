@@ -1,19 +1,19 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { writable } from 'svelte/store';
 
 	const dispatch = createEventDispatcher();
 
-	export let steps = [];
-	export let isActive = false;
-	export let showSkip = true;
-	export let showProgress = true;
-	export let theme = 'dark';
+	export let steps: Array<any> = [];
+	export let isActive: boolean = false;
+	export let showSkip: boolean = true;
+	export let showProgress: boolean = true;
+	export let theme: 'dark' | 'light' = 'dark';
 
-	let currentStep = 0;
-	let highlightElement = null;
-	let tourOverlay = null;
-	let stepElement = null;
+	let currentStep: number = 0;
+	let highlightElement: HTMLElement | null = null;
+	let tourOverlay: HTMLElement | null = null;
+	let stepElement: HTMLElement | null = null;
 
 	// Default steps for upload page
 	const defaultSteps = [
@@ -89,14 +89,15 @@
 		}
 	}
 
-	function positionStepTooltip(element) {
+	function positionStepTooltip(element: HTMLElement) {
 		if (!stepElement) return;
 
 		const rect = element.getBoundingClientRect();
 		const position = currentStepData.position || 'bottom';
 		const offset = 20;
 
-		let top, left;
+		let top: number = 0;
+		let left: number = 0;
 
 		switch (position) {
 			case 'top':
@@ -117,12 +118,17 @@
 				break;
 		}
 
-		// Ensure tooltip stays within viewport
-		top = Math.max(10, Math.min(top, window.innerHeight - stepElement.offsetHeight - 10));
-		left = Math.max(10, Math.min(left, window.innerWidth - stepElement.offsetWidth - 10));
+		// Ensure tooltip stays within viewport. Coalesce potential undefined offsets to safe numbers.
+		const tooltipHeight = stepElement?.offsetHeight ?? 0;
+		const tooltipWidth = stepElement?.offsetWidth ?? 0;
 
-		stepElement.style.top = `${top}px`;
-		stepElement.style.left = `${left}px`;
+		top = Math.max(10, Math.min(top, window.innerHeight - tooltipHeight - 10));
+		left = Math.max(10, Math.min(left, window.innerWidth - tooltipWidth - 10));
+
+		if (stepElement) {
+			stepElement.style.top = `${top}px`;
+			stepElement.style.left = `${left}px`;
+		}
 	}
 
 	function cleanupHighlight() {
@@ -132,7 +138,7 @@
 		}
 	}
 
-	function handleKeydown(event) {
+	function handleKeydown(event: KeyboardEvent) {
 		if (!isActive) return;
 
 		switch (event.key) {

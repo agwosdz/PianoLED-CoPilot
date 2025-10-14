@@ -2,7 +2,8 @@
 	import { createEventDispatcher } from 'svelte';
 
 	export let variant: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' = 'primary';
-	export let size: 'sm' | 'md' | 'lg' = 'md';
+	// Accept both shorthand ('sm'|'md'|'lg') and legacy full words ('small'|'medium'|'large')
+	export let size: 'sm' | 'md' | 'lg' | 'small' | 'medium' | 'large' = 'md';
 	export let disabled: boolean = false;
 	export let loading: boolean = false;
 	export let ripple: boolean = true;
@@ -10,6 +11,9 @@
 	export let type: 'button' | 'submit' | 'reset' = 'button';
 	export let ariaLabel: string | undefined = undefined;
 	export let className: string = '';
+	// Accept arbitrary HTML props from callers (e.g., class). We forward {...$$restProps}
+	// in the template. Do not declare/export it here to avoid conflicting with Svelte's
+	// internal $$restProps handling.
 
 	const dispatch = createEventDispatcher();
 
@@ -21,6 +25,15 @@
 		md: 'btn-md',
 		lg: 'btn-lg'
 	};
+
+	// Normalize legacy size names to shorthand keys
+	$: normalizedSize = ((): 'sm' | 'md' | 'lg' => {
+		if (size === 'small') return 'sm';
+		if (size === 'medium') return 'md';
+		if (size === 'large') return 'lg';
+		// assume already shorthand
+		return size as 'sm' | 'md' | 'lg';
+	})();
 
 	const variantClasses = {
 		primary: 'btn-primary',
@@ -77,7 +90,8 @@
 	<a
 		bind:this={buttonElement}
 		{href}
-		class="btn {variantClasses[variant]} {sizeClasses[size]} {className}"
+		class="btn {variantClasses[variant]} {sizeClasses[normalizedSize]} {className}"
+		{...$$restProps}
 		class:disabled
 		class:loading
 		class:btn-ripple={ripple}
@@ -97,7 +111,8 @@
 		bind:this={buttonElement}
 		{type}
 		{disabled}
-		class="btn {variantClasses[variant]} {sizeClasses[size]} {className}"
+		class="btn {variantClasses[variant]} {sizeClasses[normalizedSize]} {className}"
+		{...$$restProps}
 		class:loading
 		class:btn-ripple={ripple}
 		aria-label={ariaLabel}

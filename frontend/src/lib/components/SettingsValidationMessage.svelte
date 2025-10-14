@@ -1,23 +1,23 @@
-<script>
-	export let type = 'info'; // 'success', 'error', 'warning', 'info', 'validating'
-	export let message = '';
-	export let details = [];
-	export let dismissible = false;
-	export let compact = false;
-	export let showIcon = true;
-	
+<script lang="ts">
+	export let type: 'success' | 'error' | 'warning' | 'info' | 'validating' = 'info';
+	export let message: string = '';
+	export let details: string[] = [];
+	export let dismissible: boolean = false;
+	export let compact: boolean = false;
+	export let showIcon: boolean = true;
+
 	import { createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
-	
+
 	function dismiss() {
 		dispatch('dismiss');
 	}
-	
+
 	$: iconName = getIconForType(type);
 	$: colorClass = `validation-${type}`;
-	
-	function getIconForType(type) {
-		switch (type) {
+
+	function getIconForType(t: typeof type) {
+		switch (t) {
 			case 'success':
 				return 'check-circle';
 			case 'error':

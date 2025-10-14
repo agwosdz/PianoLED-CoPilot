@@ -46,10 +46,10 @@ const shouldShowOnboarding = derived(helpPreferences, ($help) => {
 });
 
 // Keyboard shortcuts for help system
-function setupHelpKeyboardShortcuts() {
-	if (typeof window === 'undefined') return;
+function setupHelpKeyboardShortcuts(): () => void {
+	if (typeof window === 'undefined') return () => {};
 
-	function handleKeydown(event) {
+	function handleKeydown(event: KeyboardEvent) {
 		// F1 - Show help
 		if (event.key === 'F1') {
 			event.preventDefault();
@@ -71,17 +71,18 @@ function setupHelpKeyboardShortcuts() {
 		}
 	}
 
-	document.addEventListener('keydown', handleKeydown);
+	const listener = (e: Event) => handleKeydown(e as KeyboardEvent);
+	document.addEventListener('keydown', listener);
 
 	// Return cleanup function
 	return () => {
-		document.removeEventListener('keydown', handleKeydown);
+		document.removeEventListener('keydown', listener);
 	};
 }
 import { onMount } from 'svelte';
 
-	let fileInput: HTMLInputElement;
-	let dropZone: HTMLDivElement;
+	let fileInput: HTMLInputElement | null = null;
+	let dropZone: HTMLDivElement | null = null;
 	let selectedFile: File | null = null;
 	let uploadStatus: 'idle' | 'uploading' | 'success' | 'error' = 'idle';
 	let uploadMessage = '';
@@ -89,7 +90,7 @@ import { onMount } from 'svelte';
 	let isDragOver = false;
 	let dragCounter = 0;
 	let showOnboardingTour = false;
-	let helpKeyboardCleanup = null;
+	let helpKeyboardCleanup: (() => void) | undefined = undefined;
 	let showPreferencesModal = false;
 	let validationResult: ValidationResult | null = null;
 	let currentError: ErrorContext | null = null;
@@ -115,7 +116,8 @@ import { onMount } from 'svelte';
 	$: shouldReduceMotion = preferenceUtils.shouldReduceMotion();
 	
 	// Smart defaults based on preferences
-	$: if (uploadPrefs?.autoUpload && selectedFile && !uploadStatus) {
+		// NOTE: uploadStatus is a string union; check explicitly for 'idle'
+		$: if (uploadPrefs?.autoUpload && selectedFile && uploadStatus === 'idle') {
 		// Auto-upload if enabled and file is selected
 		setTimeout(() => {
 			if (uploadStatus === 'idle') {
@@ -202,38 +204,53 @@ import { onMount } from 'svelte';
 		
 		if (!validation.valid) {
 			// Use enhanced error recovery system for validation errors
-			currentError = await handleValidationError(
-				validation.message,
-				{
-					fileName: file.name,
-					fileSize: file.size,
-					fileType: file.type,
-					validationDetails: validation
+			const ctx = errorRecovery.processError(validation, {
+				type: 'validation',
+				fileInfo: {
+					name: file.name,
+					size: file.size,
+					type: file.type
 				},
-				() => {
-					// Retry action - allow user to select a new file
-					fileInput?.click();
-				},
-				() => {
-					// Clear error and reset state
+				validationInfo: {
+					field: 'file',
+					expectedFormat: '.mid/.midi',
+					actualValue: file.name
+				}
+			});
+
+			// Add actionable recovery actions (retry/select new/clear)
+			ctx.recoveryActions = [];
+			ctx.recoveryActions.push({
+				id: 'select-new',
+				label: 'Choose Different File',
+				variant: 'secondary',
+				// wrap to ensure return type is void (not void | null)
+				action: () => { fileInput?.click(); }
+			});
+			ctx.recoveryActions.push({
+				id: 'clear-state',
+				label: 'Clear',
+				variant: 'secondary',
+				action: () => {
 					currentError = null;
 					uploadStatus = 'idle';
 					uploadMessage = '';
 					selectedFile = null;
 					fileMetadata = null;
-					if (fileInput) {
-						fileInput.value = '';
-					}
+					if (fileInput) fileInput.value = '';
 				}
-			);
-			
+			});
+
+			errorRecovery.displayError(ctx);
+			currentError = ctx;
+
 			uploadStatus = 'error';
 			uploadMessage = validation.message;
 			selectedFile = null;
 			fileMetadata = null;
-			
+
 			statusUtils.processingError(processingId, file.name, validation.message);
-			
+
 			// Clear the input if it was from file input
 			if (fileInput) {
 				fileInput.value = '';
@@ -309,25 +326,23 @@ import { onMount } from 'svelte';
 	async function processDroppedFile(file: File) {
 		// Validate file type
 		if (!file.name.toLowerCase().match(/\.(mid|midi)$/)) {
-			currentError = await handleValidationError(
-				'Only .mid and .midi files are supported',
-				{
-					fileName: file.name,
-					fileSize: file.size,
-					fileType: file.type,
-					validationDetails: { valid: false, message: 'Invalid file type', suggestion: 'Please select a MIDI file (.mid or .midi)' }
-				},
-				() => {
-					// Retry action - allow user to select a new file
-					fileInput?.click();
-				},
-				() => {
-					// Clear error
-					currentError = null;
-					uploadStatus = 'idle';
-					uploadMessage = '';
-				}
-			);
+			const ctx = errorRecovery.processError({ valid: false, message: 'Invalid file type' } as any, {
+				type: 'validation',
+				fileInfo: { name: file.name, size: file.size, type: file.type }
+			});
+			ctx.recoveryActions = [{
+				id: 'select-new',
+				label: 'Choose Different File',
+				variant: 'secondary',
+				action: () => { fileInput?.click(); }
+			}, {
+				id: 'clear',
+				label: 'Clear',
+				variant: 'secondary',
+				action: () => { currentError = null; uploadStatus = 'idle'; uploadMessage = ''; }
+			}];
+			errorRecovery.displayError(ctx);
+			currentError = ctx;
 			uploadMessage = 'Only .mid and .midi files are supported';
 			uploadStatus = 'error';
 			return;
@@ -335,25 +350,23 @@ import { onMount } from 'svelte';
 		
 		// Validate file size (1MB limit)
 		if (file.size > 1024 * 1024) {
-			currentError = await handleValidationError(
-				'File size must be less than 1MB',
-				{
-					fileName: file.name,
-					fileSize: file.size,
-					fileType: file.type,
-					validationDetails: { valid: false, message: 'File too large', suggestion: 'Please select a smaller MIDI file (under 1MB)' }
-				},
-				() => {
-					// Retry action - allow user to select a new file
-					fileInput?.click();
-				},
-				() => {
-					// Clear error
-					currentError = null;
-					uploadStatus = 'idle';
-					uploadMessage = '';
-				}
-			);
+			const ctx = errorRecovery.processError({ valid: false, message: 'File too large' } as any, {
+				type: 'validation',
+				fileInfo: { name: file.name, size: file.size, type: file.type }
+			});
+			ctx.recoveryActions = [{
+				id: 'select-new',
+				label: 'Choose Different File',
+				variant: 'secondary',
+				action: () => { fileInput?.click(); }
+			}, {
+				id: 'clear',
+				label: 'Clear',
+				variant: 'secondary',
+				action: () => { currentError = null; uploadStatus = 'idle'; uploadMessage = ''; }
+			}];
+			errorRecovery.displayError(ctx);
+			currentError = ctx;
 			uploadMessage = 'File size must be less than 1MB';
 			uploadStatus = 'error';
 			return;
@@ -396,7 +409,8 @@ import { onMount } from 'svelte';
 			uploadProgress = 100;
 			
 			// Complete upload with success status
-			statusUtils.uploadSuccess(progressId, result.filename, [
+			const uploadedFilename = result.filename ?? 'unknown';
+			statusUtils.uploadSuccess(progressId, uploadedFilename, [
 				{
 					label: 'Play Visualization',
 					action: () => window.location.href = '/play',
@@ -412,7 +426,7 @@ import { onMount } from 'svelte';
 			]);
 			
 			// Store the uploaded filename for the play page
-			localStorage.setItem('lastUploadedFile', result.filename);
+			localStorage.setItem('lastUploadedFile', uploadedFilename);
 			
 			// Save successful upload state
 			saveState(`Upload completed: ${result.filename}`);
@@ -426,25 +440,15 @@ import { onMount } from 'svelte';
 			// Use enhanced error recovery system for upload errors
 			const errorMessage = error instanceof UploadError ? error.message : 'An unexpected error occurred during upload';
 			
-			currentError = await handleUploadError(
-				errorMessage,
-				{
-					fileName: selectedFile.name,
-					fileSize: selectedFile.size,
-					fileType: selectedFile.type,
-					uploadProgress: uploadProgress,
-					error: error
-				},
-				() => {
-					// Retry action
-					handleUpload();
-				},
-				() => {
-					// Clear error and reset
-					currentError = null;
-					resetUpload();
-				}
+			// Use correct signature: (error: Error, fileName: string, onRetry?, onSelectNew?)
+			const uploadErr = error instanceof Error ? error : new UploadError(String(error));
+			const ctx = handleUploadError(
+				uploadErr,
+				selectedFile.name,
+				async () => { await handleUpload(); },
+				() => { currentError = null; resetUpload(); }
 			);
+			currentError = ctx;
 			
 			uploadStatus = 'error';
 			uploadMessage = errorMessage;
@@ -470,7 +474,7 @@ import { onMount } from 'svelte';
 		}
 	}
 
-	// Reset upload state
+			// Reset upload state
 	function resetUpload() {
 		// Show confirmation if preference is enabled and there's content to lose
 		if (uploadPrefs?.confirmBeforeReset && (selectedFile || uploadStatus === 'success')) {
@@ -484,10 +488,10 @@ import { onMount } from 'svelte';
 		uploadMessage = '';
 			uploadProgress = 0;
 			validationResult = null;
-			fileInput.value = '';
+			if (fileInput) fileInput.value = '';
 			
 			// Clear status messages
-			statusManager.clearAll();
+			statusManager.clearMessages();
 			
 			// Save reset state
 			saveState('Reset upload form');
@@ -766,11 +770,11 @@ import { onMount } from 'svelte';
 					on:dragleave={handleDragLeave}
 					on:dragover={handleDragOver}
 					on:drop={handleDrop}
-					on:click={() => fileInput.click()}
+					on:click={() => fileInput?.click()}
 					on:keydown={(e) => {
 						if (e.key === 'Enter' || e.key === ' ') {
 							e.preventDefault();
-							fileInput.click();
+							fileInput?.click();
 						}
 					}}
 					role="button"
@@ -827,11 +831,11 @@ import { onMount } from 'svelte';
 				on:dragleave={handleDragLeave}
 				on:dragover={handleDragOver}
 				on:drop={handleDrop}
-				on:click={() => fileInput.click()}
+				on:click={() => fileInput?.click()}
 				on:keydown={(e) => {
 					if (e.key === 'Enter' || e.key === ' ') {
 						e.preventDefault();
-						fileInput.click();
+						fileInput?.click();
 					}
 				}}
 				role="button"
@@ -1033,7 +1037,7 @@ import { onMount } from 'svelte';
 		{/if}
 
 		
-		{#if uploadMessage && uploadStatus !== 'error'}
+		{#if uploadMessage}
 			<div class="upload-status" class:success={uploadStatus === 'success'} class:error={uploadStatus === 'error'}>
 				{#if uploadStatus === 'uploading'}
 					<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -1067,11 +1071,13 @@ import { onMount } from 'svelte';
 		<!-- Enhanced Error Recovery Panel -->
 		{#if currentError}
 			<ErrorRecoveryPanel 
-				error={currentError}
+				errorContext={currentError}
 				on:action={(event) => {
-					const action = event.detail;
-					if (action.handler) {
-						action.handler();
+					// component dispatches { actionId, action }
+					const { action } = event.detail as { actionId: string; action: any };
+					if (action && typeof action.action === 'function') {
+						// call the underlying action (may be sync or async)
+						void action.action();
 					}
 				}}
 				on:dismiss={() => {
@@ -1109,7 +1115,7 @@ import { onMount } from 'svelte';
 		{#if uploadStatus === 'success'}
 			File uploaded successfully! You can now play your song.
 		{:else if uploadStatus === 'error'}
-			Upload failed: {message}
+			Upload failed: {uploadMessage}
 		{/if}
 	</div>
 </div>

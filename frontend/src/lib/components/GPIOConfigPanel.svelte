@@ -1,210 +1,196 @@
-<script>
-	import { createEventDispatcher } from 'svelte';
-	import SettingsFormField from '$lib/components/SettingsFormField.svelte';
-	import { canonicalLedCount, canonicalGpioPin } from '$lib/stores/settings';
+<script lang="ts">
+import { createEventDispatcher } from 'svelte';
+import SettingsFormField from '$lib/components/SettingsFormField.svelte';
+import { canonicalLedCount, canonicalGpioPin } from '$lib/stores/settings';
 
-	const dispatch = createEventDispatcher();
+const dispatch = createEventDispatcher<{ change: any }>();
 
-	export let config = {
-		gpio_pin: 19,
-		gpio_power_pin: null,
-		gpio_ground_pin: null,
-		signal_level: 3.3,
-		led_frequency: 800000,
-		led_dma: 10,
-		led_channel: 0,
-		led_invert: false,
-		auto_detect_hardware: false,
-		validate_gpio_pins: true,
-		hardware_test_enabled: true,
-		gpio_pull_up: false,
-		gpio_pull_down: false,
-		pwm_range: 1024,
-		spi_speed: 8000000,
-		pins: []
-	};
-	export let disabled = false;
-	export const hardwareDetected = null;
+// Minimal sane default config used when none is provided
+export let config: any = {
+	gpio_pin: 19,
+	gpio_power_pin: null,
+	gpio_ground_pin: null,
+	pins: [],
+	led_frequency: 800000,
+	led_dma: 5,
+	pwm_range: 1024,
+	spi_speed: 8000000,
+	gpio_pull_up: false,
+	gpio_pull_down: false,
+	auto_detect_hardware: false,
+	validate_gpio_pins: true,
+	hardware_test_enabled: false,
+	led_channel: 0,
+	led_invert: false,
+	debounce_time: 50
+};
 
-	// GPIO pin layout for Raspberry Pi 4
-	const gpioPinout = [
-		{ pin: 1, name: '3.3V', type: 'power', available: false, gpio: null },
-		{ pin: 2, name: '5V', type: 'power', available: false, gpio: null },
-		{ pin: 3, name: 'GPIO2 (SDA)', type: 'gpio', available: true, gpio: 2, special: 'I2C' },
-		{ pin: 4, name: '5V', type: 'power', available: false, gpio: null },
-		{ pin: 5, name: 'GPIO3 (SCL)', type: 'gpio', available: true, gpio: 3, special: 'I2C' },
-		{ pin: 6, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 7, name: 'GPIO4', type: 'gpio', available: true, gpio: 4 },
-		{ pin: 8, name: 'GPIO14 (TXD)', type: 'gpio', available: false, gpio: 14, special: 'UART' },
-		{ pin: 9, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 10, name: 'GPIO15 (RXD)', type: 'gpio', available: false, gpio: 15, special: 'UART' },
-		{ pin: 11, name: 'GPIO17', type: 'gpio', available: true, gpio: 17 },
-		{ pin: 12, name: 'GPIO18 (PWM)', type: 'gpio', available: true, gpio: 18, special: 'PWM' },
-		{ pin: 13, name: 'GPIO27', type: 'gpio', available: true, gpio: 27 },
-		{ pin: 14, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 15, name: 'GPIO22', type: 'gpio', available: true, gpio: 22 },
-		{ pin: 16, name: 'GPIO23', type: 'gpio', available: true, gpio: 23 },
-		{ pin: 17, name: '3.3V', type: 'power', available: false, gpio: null },
-		{ pin: 18, name: 'GPIO24', type: 'gpio', available: true, gpio: 24 },
-		{ pin: 19, name: 'GPIO10 (MOSI)', type: 'gpio', available: true, gpio: 10, special: 'SPI' },
-		{ pin: 20, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 21, name: 'GPIO9 (MISO)', type: 'gpio', available: true, gpio: 9, special: 'SPI' },
-		{ pin: 22, name: 'GPIO25', type: 'gpio', available: true, gpio: 25 },
-		{ pin: 23, name: 'GPIO11 (SCLK)', type: 'gpio', available: true, gpio: 11, special: 'SPI' },
-		{ pin: 24, name: 'GPIO8 (CE0)', type: 'gpio', available: true, gpio: 8, special: 'SPI' },
-		{ pin: 25, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 26, name: 'GPIO7 (CE1)', type: 'gpio', available: true, gpio: 7, special: 'SPI' },
-		{ pin: 27, name: 'GPIO0 (ID_SD)', type: 'gpio', available: false, gpio: 0, special: 'ID' },
-		{ pin: 28, name: 'GPIO1 (ID_SC)', type: 'gpio', available: false, gpio: 1, special: 'ID' },
-		{ pin: 29, name: 'GPIO5', type: 'gpio', available: true, gpio: 5 },
-		{ pin: 30, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 31, name: 'GPIO6', type: 'gpio', available: true, gpio: 6 },
-		{ pin: 32, name: 'GPIO12 (PWM)', type: 'gpio', available: true, gpio: 12, special: 'PWM' },
-		{ pin: 33, name: 'GPIO13 (PWM)', type: 'gpio', available: true, gpio: 13, special: 'PWM' },
-		{ pin: 34, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 35, name: 'GPIO19 (PWM)', type: 'gpio', available: true, gpio: 19, special: 'PWM' },
-		{ pin: 36, name: 'GPIO16', type: 'gpio', available: true, gpio: 16 },
-		{ pin: 37, name: 'GPIO26', type: 'gpio', available: true, gpio: 26 },
-		{ pin: 38, name: 'GPIO20 (PWM)', type: 'gpio', available: true, gpio: 20, special: 'PWM' },
-		{ pin: 39, name: 'GND', type: 'ground', available: false, gpio: null },
-		{ pin: 40, name: 'GPIO21 (PWM)', type: 'gpio', available: true, gpio: 21, special: 'PWM' }
-	];
+// Raspberry Pi board pinout (subset used by the UI)
+const gpioPinout = [
+	{ pin: 16, name: 'GPIO23', type: 'gpio', available: true, gpio: 23 },
+	{ pin: 17, name: '3.3V', type: 'power', available: false, gpio: null },
+	{ pin: 18, name: 'GPIO24', type: 'gpio', available: true, gpio: 24 },
+	{ pin: 19, name: 'GPIO10 (MOSI)', type: 'gpio', available: true, gpio: 10, special: 'SPI' },
+	{ pin: 20, name: 'GND', type: 'ground', available: false, gpio: null },
+	{ pin: 21, name: 'GPIO9 (MISO)', type: 'gpio', available: true, gpio: 9, special: 'SPI' },
+	{ pin: 22, name: 'GPIO25', type: 'gpio', available: true, gpio: 25 },
+	{ pin: 23, name: 'GPIO11 (SCLK)', type: 'gpio', available: true, gpio: 11, special: 'SPI' },
+	{ pin: 24, name: 'GPIO8 (CE0)', type: 'gpio', available: true, gpio: 8, special: 'SPI' },
+	{ pin: 25, name: 'GND', type: 'ground', available: false, gpio: null },
+	{ pin: 26, name: 'GPIO7 (CE1)', type: 'gpio', available: true, gpio: 7, special: 'SPI' },
+	{ pin: 27, name: 'GPIO0 (ID_SD)', type: 'gpio', available: false, gpio: 0, special: 'ID' },
+	{ pin: 28, name: 'GPIO1 (ID_SC)', type: 'gpio', available: false, gpio: 1, special: 'ID' },
+	{ pin: 29, name: 'GPIO5', type: 'gpio', available: true, gpio: 5 },
+	{ pin: 30, name: 'GND', type: 'ground', available: false, gpio: null },
+	{ pin: 31, name: 'GPIO6', type: 'gpio', available: true, gpio: 6 },
+	{ pin: 32, name: 'GPIO12 (PWM)', type: 'gpio', available: true, gpio: 12, special: 'PWM' },
+	{ pin: 33, name: 'GPIO13 (PWM)', type: 'gpio', available: true, gpio: 13, special: 'PWM' },
+	{ pin: 34, name: 'GND', type: 'ground', available: false, gpio: null },
+	{ pin: 35, name: 'GPIO19 (PWM)', type: 'gpio', available: true, gpio: 19, special: 'PWM' },
+	{ pin: 36, name: 'GPIO16', type: 'gpio', available: true, gpio: 16 },
+	{ pin: 37, name: 'GPIO26', type: 'gpio', available: true, gpio: 26 },
+	{ pin: 38, name: 'GPIO20 (PWM)', type: 'gpio', available: true, gpio: 20, special: 'PWM' },
+	{ pin: 39, name: 'GND', type: 'ground', available: false, gpio: null },
+	{ pin: 40, name: 'GPIO21 (PWM)', type: 'gpio', available: true, gpio: 21, special: 'PWM' }
+];
 
-	let validationErrors = {};
-	let hardwareTestResults = null;
-	let testingInProgress = false;
+let validationErrors: Record<string, string | null> = {};
+// UI disabled state (used by parent pages to disable inputs during save/loads)
+let disabled: boolean = false;
+let hardwareTestResults: any = null;
+let testingInProgress: boolean = false;
 
-	// Extract GPIO number from pin name (e.g., "GPIO19 (PWM)" -> 19)
-	function extractGpioNumber(pinName) {
-		const match = pinName.match(/GPIO(\d+)/);
-		return match ? parseInt(match[1]) : null;
+// Extract GPIO number from pin name (e.g., "GPIO19 (PWM)" -> 19)
+function extractGpioNumber(pinName: string): number | null {
+	const match = pinName.match(/GPIO(\d+)/);
+	return match ? parseInt(match[1]) : null;
+}
+
+// Get GPIO number for a board pin
+function getBoardPinGpio(boardPin: number): number | null {
+	const pin = gpioPinout.find((p: any) => p.pin === boardPin);
+	return pin ? pin.gpio : null;
+}
+
+// Find board pin by GPIO number
+function findBoardPinByGpio(gpioNumber: number | null): number | null {
+	const pin = gpioPinout.find((p: any) => p.gpio === gpioNumber);
+	return pin ? pin.pin : null;
+}
+
+// Get pin information by GPIO number
+function getPinInfo(gpioNumber: number | null): any {
+	return gpioPinout.find((p: any) => p.gpio === gpioNumber);
+}
+
+function validatePin(pinNumber: number, pinType: string): string | null {
+	const pin = gpioPinout.find((p: any) => p.pin === pinNumber);
+
+	if (!pin) {
+		return 'Invalid pin number';
 	}
 
-	// Get GPIO number for a board pin
-	function getBoardPinGpio(boardPin) {
-		const pin = gpioPinout.find(p => p.pin === boardPin);
-		return pin ? pin.gpio : null;
+	if (!pin.available) {
+		return `Pin ${pinNumber} is reserved (${pin.name})`;
 	}
 
-	// Find board pin by GPIO number
-	function findBoardPinByGpio(gpioNumber) {
-		const pin = gpioPinout.find(p => p.gpio === gpioNumber);
-		return pin ? pin.pin : null;
+	// Check for conflicts with other assigned pins (convert GPIO numbers to board pins for comparison)
+	const currentBoardPins = [
+		findBoardPinByGpio(config.gpio_pin),
+		findBoardPinByGpio(config.gpio_power_pin),
+		findBoardPinByGpio(config.gpio_ground_pin)
+	].filter((p) => p !== null && p !== pinNumber) as number[];
+
+	if (currentBoardPins.includes(pinNumber)) {
+		return 'Pin already in use';
 	}
 
-	// Get pin information by GPIO number
-	function getPinInfo(gpioNumber) {
-		return gpioPinout.find(p => p.gpio === gpioNumber);
+	// Warn about special function pins
+	if (pin.special && pinType === 'gpio_pin') {
+		return `Warning: Pin has special function (${pin.special})`;
 	}
 
-	function validatePin(pinNumber, pinType) {
-		const pin = gpioPinout.find(p => p.pin === pinNumber);
-		
-		if (!pin) {
-			return 'Invalid pin number';
-		}
-		
-		if (!pin.available) {
-			return `Pin ${pinNumber} is reserved (${pin.name})`;
-		}
-		
-		// Check for conflicts with other assigned pins (convert GPIO numbers to board pins for comparison)
-		const currentBoardPins = [
-			findBoardPinByGpio(config.gpio_pin),
-			findBoardPinByGpio(config.gpio_power_pin), 
-			findBoardPinByGpio(config.gpio_ground_pin)
-		].filter(p => p !== null && p !== pinNumber);
-		
-		if (currentBoardPins.includes(pinNumber)) {
-			return 'Pin already in use';
-		}
+	return null;
+}
 
-		// Warn about special function pins
-		if (pin.special && pinType === 'gpio_pin') {
-			return `Warning: Pin has special function (${pin.special})`;
-		}
-		
-		return null;
+function validateAdvancedConfig(): Record<string, string> {
+	const errors: Record<string, string> = {};
+
+	// Validate frequency
+	if (config.led_frequency < 400000 || config.led_frequency > 1000000) {
+		errors.led_frequency = 'Frequency should be between 400kHz and 1MHz';
 	}
 
-	function validateAdvancedConfig() {
-		const errors = {};
-
-		// Validate frequency
-		if (config.led_frequency < 400000 || config.led_frequency > 1000000) {
-			errors.led_frequency = 'Frequency should be between 400kHz and 1MHz';
-		}
-
-		// Validate DMA channel
-		if (config.led_dma < 0 || config.led_dma > 14) {
-			errors.led_dma = 'DMA channel must be between 0 and 14';
-		}
-
-		// Validate PWM range
-		if (config.pwm_range < 256 || config.pwm_range > 4096) {
-			errors.pwm_range = 'PWM range should be between 256 and 4096';
-		}
-
-		// Validate SPI speed
-		if (config.spi_speed < 1000000 || config.spi_speed > 32000000) {
-			errors.spi_speed = 'SPI speed should be between 1MHz and 32MHz';
-		}
-
-		// Check for conflicting pull resistor settings
-		if (config.gpio_pull_up && config.gpio_pull_down) {
-			errors.gpio_pull = 'Cannot enable both pull-up and pull-down resistors';
-		}
-
-		return errors;
+	// Validate DMA channel
+	if (config.led_dma < 0 || config.led_dma > 14) {
+		errors.led_dma = 'DMA channel must be between 0 and 14';
 	}
 
-	function handleConfigChange(key, value) {
-		// Convert board pin number to GPIO number for pin-related configs
-		if (key.includes('pin') && value !== null) {
-			const gpioNumber = getBoardPinGpio(value);
-			if (gpioNumber !== null) {
-				config = { ...config, [key]: gpioNumber };
-			} else {
-				config = { ...config, [key]: value };
-			}
-			
-			// Validate using board pin number
-			const error = validatePin(value, key);
-			validationErrors = { ...validationErrors, [key]: error };
-		} else if (key.includes('pin')) {
-			// Clear error if pin is set to null
-			config = { ...config, [key]: null };
-			const { [key]: removed, ...rest } = validationErrors;
-			validationErrors = rest;
+	// Validate PWM range
+	if (config.pwm_range < 256 || config.pwm_range > 4096) {
+		errors.pwm_range = 'PWM range should be between 256 and 4096';
+	}
+
+	// Validate SPI speed
+	if (config.spi_speed < 1000000 || config.spi_speed > 32000000) {
+		errors.spi_speed = 'SPI speed should be between 1MHz and 32MHz';
+	}
+
+	// Check for conflicting pull resistor settings
+	if (config.gpio_pull_up && config.gpio_pull_down) {
+		errors.gpio_pull = 'Cannot enable both pull-up and pull-down resistors';
+	}
+
+	return errors;
+}
+
+function handleConfigChange(key: string, value: any): void {
+	// Convert board pin number to GPIO number for pin-related configs
+	if (key.includes('pin') && value !== null) {
+		const gpioNumber = getBoardPinGpio(value);
+		if (gpioNumber !== null) {
+			config = { ...config, [key]: gpioNumber };
 		} else {
 			config = { ...config, [key]: value };
 		}
 
-		// Validate advanced configuration
-		const advancedErrors = validateAdvancedConfig();
-		validationErrors = { ...validationErrors, ...advancedErrors };
-		
-		dispatch('change', config);
+		// Validate using board pin number
+		const error = validatePin(value, key);
+		validationErrors = { ...validationErrors, [key]: error };
+	} else if (key.includes('pin')) {
+		// Clear error if pin is set to null
+		config = { ...config, [key]: null };
+		const { [key]: removed, ...rest } = validationErrors;
+		validationErrors = rest;
+	} else {
+		config = { ...config, [key]: value };
 	}
 
-	async function testHardware() {
-		testingInProgress = true;
-		hardwareTestResults = null;
+	// Validate advanced configuration
+	const advancedErrors = validateAdvancedConfig();
+	validationErrors = { ...validationErrors, ...advancedErrors };
 
-		try {
-			// Fetch system capabilities first
-			await fetch('/api/hardware-test/system/capabilities');
+	dispatch('change', config);
+}
 
-			const response = await fetch('/api/hardware-test/', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					gpio_pin: $canonicalGpioPin,
-					led_count: $canonicalLedCount
-				})
-			});
-			
-			const data = await response.json();
+async function testHardware(): Promise<void> {
+	testingInProgress = true;
+	hardwareTestResults = null;
+
+	try {
+		// Fetch system capabilities first
+		await fetch('/api/hardware-test/system/capabilities');
+
+		const response = await fetch('/api/hardware-test/', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				gpio_pin: $canonicalGpioPin,
+				led_count: $canonicalLedCount
+			})
+		});
+
+		const data = await response.json();
 			if (response.ok) {
 				hardwareTestResults = data;
 			} else {
@@ -219,7 +205,7 @@
 		}
 	}
 
-	async function detectHardware() {
+	async function detectHardware(): Promise<void> {
 		try {
 			const response = await fetch('/api/hardware-test/system/capabilities');
 			const detected = await response.json();
@@ -241,7 +227,7 @@
 		}
 	}
 
-	function getPinStatus(pinNumber) {
+	function getPinStatus(pinNumber: number) : string | null {
 		// Convert GPIO numbers to board pins for comparison
 		const dataBoardPin = findBoardPinByGpio(config.gpio_pin);
 		const powerBoardPin = findBoardPinByGpio(config.gpio_power_pin);
@@ -253,7 +239,7 @@
 		return null;
 	}
 
-	function getPinClass(pin) {
+	function getPinClass(pin: any): string {
 		const status = getPinStatus(pin.pin);
 		if (status) return `assigned assigned-${status}`;
 		if (!pin.available) return 'unavailable';
@@ -262,7 +248,7 @@
 	}
 
 	// Per-pin assignments handlers
-	function addPinAssignment() {
+	function addPinAssignment(): void {
 		const defaultBoardPin = 12; // reasonable default (GPIO18 PWM board pin 12)
 		const newPin = { pin: defaultBoardPin, mode: 'output', note: 60, pullup: false };
 		const pins = [...(config.pins || []), newPin];
@@ -273,7 +259,7 @@
 		dispatch('change', config);
 	}
 
-	function updatePinField(index, field, value) {
+	function updatePinField(index: number, field: string, value: any): void {
 		const pins = [...(config.pins || [])];
 		pins[index] = { ...pins[index], [field]: value };
 		config = { ...config, pins };
@@ -285,8 +271,9 @@
 		dispatch('change', config);
 	}
 
-	function removePinAssignment(index) {
-		const pins = (config.pins || []).filter((_, i) => i !== index);
+
+	function removePinAssignment(index: number): void {
+			const pins = (config.pins || []).filter((_: any, i: number) => i !== index);
 		config = { ...config, pins };
 		const { [`pins_${index}`]: removed, ...rest } = validationErrors;
 		validationErrors = rest;
@@ -312,7 +299,7 @@
 				<select
 					id="gpio-data-pin"
 					bind:value={selectedDataPin}
-					on:change={(e) => handleConfigChange('gpio_pin', parseInt(e.target.value))}
+					on:change={(e) => handleConfigChange('gpio_pin', parseInt((e.target as HTMLSelectElement).value))}
 					{disabled}
 					class:error={validationErrors.gpio_pin}
 				>
@@ -338,7 +325,7 @@
 				<select
 					id="gpio-power-pin"
 					bind:value={selectedPowerPin}
-					on:change={(e) => handleConfigChange('gpio_power_pin', e.target.value === '' ? null : parseInt(e.target.value))}
+					on:change={(e) => handleConfigChange('gpio_power_pin', (e.target as HTMLSelectElement).value === '' ? null : parseInt((e.target as HTMLSelectElement).value))}
 					{disabled}
 					class:error={validationErrors.gpio_power_pin}
 				>
@@ -357,7 +344,7 @@
 				<select
 					id="gpio-ground-pin"
 					bind:value={selectedGroundPin}
-					on:change={(e) => handleConfigChange('gpio_ground_pin', e.target.value === '' ? null : parseInt(e.target.value))}
+					on:change={(e) => handleConfigChange('gpio_ground_pin', (e.target as HTMLSelectElement).value === '' ? null : parseInt((e.target as HTMLSelectElement).value))}
 					{disabled}
 					class:error={validationErrors.gpio_ground_pin}
 				>
@@ -378,7 +365,7 @@
 				<select
 					id="signal-level"
 					bind:value={config.signal_level}
-					on:change={(e) => handleConfigChange('signal_level', parseFloat(e.target.value))}
+					on:change={(e) => handleConfigChange('signal_level', parseFloat((e.target as HTMLSelectElement).value))}
 					{disabled}
 				>
 					<option value={3.3}>3.3V (Raspberry Pi GPIO)</option>
@@ -397,7 +384,7 @@
 					category="gpio"
 					settingKey="data_pin"
 					helpText="Select the GPIO pin used for LED data"
-					on:change={(e) => handleConfigChange('gpio_pin', parseInt(e.detail.value))}
+					on:change={(e: CustomEvent) => handleConfigChange('gpio_pin', parseInt((e.detail as any).value))}
 				/>
 				{#if validationErrors.led_frequency}
 					<span class="error-message">{validationErrors.led_frequency}</span>
@@ -416,7 +403,7 @@
 					category="led"
 					settingKey="update_rate"
 					helpText="PWM/Signal frequency for LED driver"
-					on:change={(e) => handleConfigChange('led_frequency', parseInt(e.detail.value))}
+					on:change={(e: CustomEvent) => handleConfigChange('led_frequency', parseInt((e.detail as any).value))}
 				/>
 				{#if validationErrors.led_frequency}
 					<span class="error-message">{validationErrors.led_frequency}</span>
@@ -431,7 +418,7 @@
 					min="0"
 					max="14"
 					bind:value={config.led_dma}
-					on:input={(e) => handleConfigChange('led_dma', parseInt(e.target.value))}
+					on:input={(e) => handleConfigChange('led_dma', parseInt((e.target as HTMLInputElement).value))}
 					{disabled}
 					class:error={validationErrors.led_dma}
 				/>
@@ -445,7 +432,7 @@
 				<select
 					id="led-channel"
 					bind:value={config.led_channel}
-					on:change={(e) => handleConfigChange('led_channel', parseInt(e.target.value))}
+					on:change={(e) => handleConfigChange('led_channel', parseInt((e.target as HTMLSelectElement).value))}
 					{disabled}
 				>
 					<option value={0}>Channel 0</option>
@@ -462,7 +449,7 @@
 					category="led"
 					settingKey="reverse_order"
 					helpText="Invert signal polarity"
-					on:change={(e) => handleConfigChange('led_invert', !!e.detail.value)}
+					on:change={(e: CustomEvent) => handleConfigChange('led_invert', !!(e.detail as any).value)}
 				/>
 			</div>
 		</div>
@@ -482,7 +469,7 @@
 					max="4096"
 					step="256"
 					bind:value={config.pwm_range}
-					on:input={(e) => handleConfigChange('pwm_range', parseInt(e.target.value))}
+					on:input={(e) => handleConfigChange('pwm_range', parseInt((e.target as HTMLInputElement).value))}
 					{disabled}
 					class:error={validationErrors.pwm_range}
 				/>
@@ -496,7 +483,7 @@
 				<select
 					id="spi-speed"
 					bind:value={config.spi_speed}
-					on:change={(e) => handleConfigChange('spi_speed', parseInt(e.target.value))}
+					on:change={(e) => handleConfigChange('spi_speed', parseInt((e.target as HTMLSelectElement).value))}
 					{disabled}
 					class:error={validationErrors.spi_speed}
 				>
@@ -517,7 +504,7 @@
 						id="gpio-pull-up"
 						type="checkbox"
 						bind:checked={config.gpio_pull_up}
-						on:change={(e) => handleConfigChange('gpio_pull_up', e.target.checked)}
+						on:change={(e) => handleConfigChange('gpio_pull_up', (e.target as HTMLInputElement).checked)}
 						{disabled}
 					/>
 					Enable Pull-up Resistor
@@ -530,7 +517,7 @@
 						id="gpio-pull-down"
 						type="checkbox"
 						bind:checked={config.gpio_pull_down}
-						on:change={(e) => handleConfigChange('gpio_pull_down', e.target.checked)}
+						on:change={(e) => handleConfigChange('gpio_pull_down', (e.target as HTMLInputElement).checked)}
 						{disabled}
 					/>
 					Enable Pull-down Resistor
@@ -540,6 +527,25 @@
 			{#if validationErrors.gpio_pull}
 				<span class="error-message">{validationErrors.gpio_pull}</span>
 			{/if}
+
+				<div class="config-row">
+					<label for="debounce-time">Debounce Time (ms)</label>
+					<SettingsFormField
+						type="number"
+						id="debounce-time"
+						bind:value={config.debounce_time}
+						min="0"
+						max="1000"
+						step="10"
+						category="gpio"
+						settingKey="debounce_time"
+						helpText="Debounce time for GPIO inputs (0–1000 ms)"
+						on:change={(e: CustomEvent) => handleConfigChange('debounce_time', parseInt((e.detail as any).value))}
+					/>
+					{#if validationErrors.debounce_time}
+						<span class="error-message">{validationErrors.debounce_time}</span>
+					{/if}
+				</div>
 		</div>
 	</div>
 
@@ -559,7 +565,7 @@
 						category="gpio"
 						settingKey="pins"
 						helpText="Select the board header pin (1–40)"
-						on:change={(e) => updatePinField(index, 'pin', parseInt(e.detail.value))}
+						on:change={(e) => updatePinField(index, 'pin', parseInt(String(e.detail.value)))}
 					/>
 
 					<SettingsFormField
@@ -571,7 +577,7 @@
 						category="gpio"
 						settingKey="pins"
 						helpText="Select pin function"
-						on:change={(e) => updatePinField(index, 'mode', e.detail.value)}
+						on:change={(e) => updatePinField(index, 'mode', String(e.detail.value))}
 					/>
 
 					<SettingsFormField
@@ -584,7 +590,7 @@
 						category="gpio"
 						settingKey="pins"
 						helpText="MIDI note (0–127) if applicable"
-						on:change={(e) => updatePinField(index, 'note', parseInt(e.detail.value))}
+						on:change={(e) => updatePinField(index, 'note', parseInt(String(e.detail.value)))}
 					/>
 
 					<SettingsFormField
@@ -614,18 +620,18 @@
 		<h3>Hardware Detection & Testing</h3>
 		
 		<div class="hardware-controls">
-			<div class="config-row checkbox-row">
-				<label for="auto-detect">
-					<input
-						id="auto-detect"
-						type="checkbox"
-						bind:checked={config.auto_detect_hardware}
-						on:change={(e) => handleConfigChange('auto_detect_hardware', e.target.checked)}
-						{disabled}
-					/>
-					Auto-detect Hardware
-				</label>
-			</div>
+				<div class="config-row checkbox-row">
+					<label for="auto-detect">
+						<input
+							id="auto-detect"
+							type="checkbox"
+							bind:checked={config.auto_detect_hardware}
+							on:change={(e) => handleConfigChange('auto_detect_hardware', (e.target as HTMLInputElement).checked)}
+							{disabled}
+						/>
+						Auto-detect Hardware
+					</label>
+				</div>
 
 			<div class="config-row checkbox-row">
 				<SettingsFormField
@@ -691,10 +697,26 @@
 								{/each}
 							</ul>
 						{/if}
+						{#if hardwareTestResults.suggestions}
+							<div class="suggestions">
+								<strong>Suggestions:</strong>
+								<ul>
+									{#each hardwareTestResults.suggestions as suggestion}
+										<li>{suggestion}</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
 					</div>
 				{:else}
 					<div class="error-message">
-						❌ Hardware test failed: {hardwareTestResults.error}
+						⚠️ Hardware test failed.
+						{#if hardwareTestResults.error}
+							<p>{hardwareTestResults.error}</p>
+						{/if}
+						{#if hardwareTestResults.message}
+							<p>{hardwareTestResults.message}</p>
+						{/if}
 						{#if hardwareTestResults.suggestions}
 							<div class="suggestions">
 								<strong>Suggestions:</strong>
@@ -709,50 +731,10 @@
 				{/if}
 			</div>
 		{/if}
-	</div>
 
-	<div class="pinout-diagram">
-		<h4>Raspberry Pi GPIO Pinout</h4>
-		<div class="pinout-grid">
-			{#each gpioPinout as pin}
-				<div
-					class="pin {getPinClass(pin)}"
-					title="{pin.name} - {pin.available ? 'Available' : 'Reserved'}{pin.special ? ' (' + pin.special + ')' : ''}"
-				>
-					<span class="pin-number">{pin.pin}</span>
-					<span class="pin-name">{pin.name.split(' ')[0]}</span>
-					{#if pin.special}
-						<span class="pin-special">⚡</span>
-					{/if}
-				</div>
-			{/each}
-		</div>
-		<div class="pinout-legend">
-			<div class="legend-item">
-				<div class="legend-color assigned assigned-data"></div>
-				<span>Data Pin</span>
-			</div>
-			<div class="legend-item">
-				<div class="legend-color assigned assigned-power"></div>
-				<span>Power Control</span>
-			</div>
-			<div class="legend-item">
-				<div class="legend-color assigned assigned-ground"></div>
-				<span>Ground Reference</span>
-			</div>
-			<div class="legend-item">
-				<div class="legend-color special"></div>
-				<span>Special Function</span>
-			</div>
-			<div class="legend-item">
-				<div class="legend-color available"></div>
-				<span>Available</span>
-			</div>
-			<div class="legend-item">
-				<div class="legend-color unavailable"></div>
-				<span>Reserved</span>
-			</div>
-		</div>
+	<!-- PINOUT DIAGRAM (temporarily disabled for parser isolation) -->
+	<div class="pinout-diagram-placeholder">
+		<p>Pinout diagram temporarily disabled while debugging parser issues.</p>
 	</div>
 
 	{#if hasErrors}
@@ -767,6 +749,9 @@
 			</ul>
 		</div>
 	{/if}
+</div>
+
+<!-- End of component root -->
 </div>
 
 <style>
@@ -1124,22 +1109,4 @@
 		.pin-row { grid-template-columns: 1fr; }
 	}
 </style>
-
-<div class="config-row">
-	<label for="debounce-time">Debounce Time (ms)</label>
-	<SettingsFormField
-		type="number"
-		id="debounce-time"
-		bind:value={config.debounce_time}
-		min="0"
-		max="1000"
-		step="10"
-		category="gpio"
-		settingKey="debounce_time"
-		helpText="Debounce time for GPIO inputs (0–1000 ms)"
-		on:change={(e) => handleConfigChange('debounce_time', parseInt(e.detail.value))}
-	/>
-	{#if validationErrors.debounce_time}
-		<span class="error-message">{validationErrors.debounce_time}</span>
-	{/if}
-</div>
+ 

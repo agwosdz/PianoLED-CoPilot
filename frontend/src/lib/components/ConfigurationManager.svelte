@@ -1,15 +1,19 @@
-<script>
+<script lang="ts">
     import { onMount } from 'svelte';
     import { writable } from 'svelte/store';
 
     // Stores
-    const validationResult = writable(null);
-    const configHistory = writable([]);
-    const isLoading = writable(false);
-    const message = writable('');
-    const messageType = writable('info'); // 'success', 'error', 'info', 'warning'
+    // Start with a safe default shape so templates can access properties without narrowing issues
+    type ValidationResult = { is_valid: boolean; errors: string[]; warnings: string[] };
+    const validationResult = writable<ValidationResult>({ is_valid: false, errors: [], warnings: [] });
+    type HistoryEntry = { timestamp: string | number; action?: string; description?: string };
+    const configHistory = writable<HistoryEntry[]>([]);
+    const isLoading = writable<boolean>(false);
+    const message = writable<string>('');
+    const messageType = writable<'success' | 'error' | 'info' | 'warning'>('info'); // 'success', 'error', 'info', 'warning'
 
     // Component state
+    export let settings: any = {}; // allow parent to bind settings (kept as any to be permissive)
     let showValidation = false;
     let showHistory = false;
     let exportPath = '';
@@ -31,8 +35,12 @@
             } else {
                 showMessage(data.message, 'error');
             }
-        } catch (error) {
-            showMessage(`Failed to load configuration history: ${error.message}`, 'error');
+        } catch (err) {
+            if (err instanceof Error) {
+                showMessage(`Failed to load configuration history: ${err.message}`, 'error');
+            } else {
+                showMessage(`Failed to load configuration history: ${String(err)}`, 'error');
+            }
         } finally {
             $isLoading = false;
         }
@@ -75,8 +83,12 @@
             } else {
                 showMessage(data.message, 'error');
             }
-        } catch (error) {
-            showMessage(`Validation failed: ${error.message}`, 'error');
+        } catch (err) {
+            if (err instanceof Error) {
+                showMessage(`Validation failed: ${err.message}`, 'error');
+            } else {
+                showMessage(`Validation failed: ${String(err)}`, 'error');
+            }
         } finally {
             $isLoading = false;
         }
@@ -99,8 +111,12 @@
             } else {
                 showMessage(data.message, 'error');
             }
-        } catch (error) {
-            showMessage(`Backup failed: ${error.message}`, 'error');
+        } catch (err) {
+            if (err instanceof Error) {
+                showMessage(`Backup failed: ${err.message}`, 'error');
+            } else {
+                showMessage(`Backup failed: ${String(err)}`, 'error');
+            }
         } finally {
             $isLoading = false;
         }
@@ -129,8 +145,12 @@
             } else {
                 showMessage(data.message, 'error');
             }
-        } catch (error) {
-            showMessage(`Restore failed: ${error.message}`, 'error');
+        } catch (err) {
+            if (err instanceof Error) {
+                showMessage(`Restore failed: ${err.message}`, 'error');
+            } else {
+                showMessage(`Restore failed: ${String(err)}`, 'error');
+            }
         } finally {
             $isLoading = false;
         }
@@ -159,8 +179,12 @@
             } else {
                 showMessage(data.message, 'error');
             }
-        } catch (error) {
-            showMessage(`Reset failed: ${error.message}`, 'error');
+        } catch (err) {
+            if (err instanceof Error) {
+                showMessage(`Reset failed: ${err.message}`, 'error');
+            } else {
+                showMessage(`Reset failed: ${String(err)}`, 'error');
+            }
         } finally {
             $isLoading = false;
         }
@@ -187,14 +211,23 @@
             } else {
                 showMessage(data.message, 'error');
             }
-        } catch (error) {
-            showMessage(`Export failed: ${error.message}`, 'error');
+        } catch (err) {
+            if (err instanceof Error) {
+                showMessage(`Export failed: ${err.message}`, 'error');
+            } else {
+                showMessage(`Export failed: ${String(err)}`, 'error');
+            }
         } finally {
             $isLoading = false;
         }
     }
 
-    function showMessage(msg, type) {
+    /**
+     * Show a temporary message in the UI
+     * @param {string} msg
+     * @param {'success'|'error'|'info'|'warning'} type
+     */
+    function showMessage(msg: string, type: 'success' | 'error' | 'info' | 'warning') {
         $message = msg;
         $messageType = type;
         setTimeout(() => {
@@ -202,7 +235,8 @@
         }, 5000);
     }
 
-    function formatTimestamp(timestamp) {
+    /** Format timestamp for display */
+    function formatTimestamp(timestamp: number | string | Date): string {
         return new Date(timestamp).toLocaleString();
     }
 </script>

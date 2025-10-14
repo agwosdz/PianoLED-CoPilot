@@ -1,16 +1,16 @@
-<script>
+<script lang="ts">
 	import { historyStore } from '../stores/historyStore.js';
 	import { createEventDispatcher, onMount } from 'svelte';
-	
+    
 	const dispatch = createEventDispatcher();
-	
-	let canUndo = false;
-	let canRedo = false;
-	let currentStateInfo = null;
+    
+	let canUndo: boolean = false;
+	let canRedo: boolean = false;
+	let currentStateInfo: { description?: string; index: number; total: number } | null = null;
 	
 	// Subscribe to history store changes
 	$: {
-		historyStore.subscribe(store => {
+		historyStore.subscribe((store: any) => {
 			canUndo = store.currentIndex > 0;
 			canRedo = store.currentIndex < store.history.length - 1;
 			currentStateInfo = store.currentIndex >= 0 ? {

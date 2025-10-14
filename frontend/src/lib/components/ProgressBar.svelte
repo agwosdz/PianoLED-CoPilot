@@ -4,7 +4,8 @@
 	export let showPercentage: boolean = true;
 	export let showTimeEstimate: boolean = false;
 	export let estimatedTimeRemaining: number = 0; // in seconds
-	export let size: 'sm' | 'md' | 'lg' = 'md';
+	// Accept both shorthand and legacy names
+	export let size: 'sm' | 'md' | 'lg' | 'small' | 'medium' | 'large' = 'md';
 	export let variant: 'default' | 'success' | 'warning' | 'error' = 'default';
 	export let animated: boolean = true;
 
@@ -34,6 +35,13 @@
 		lg: 'h-4'
 	};
 
+	$: normalizedSize = ((): 'sm' | 'md' | 'lg' => {
+		if (size === 'small') return 'sm';
+		if (size === 'medium') return 'md';
+		if (size === 'large') return 'lg';
+		return size as 'sm' | 'md' | 'lg';
+	})();
+
 	const variantClasses = {
 		default: 'bg-primary',
 		success: 'bg-success',
@@ -59,9 +67,9 @@
 		</div>
 	{/if}
 	
-	<div class="progress-track {sizeClasses[size]}">
+	<div class="progress-track {sizeClasses[normalizedSize]}">
 		<div 
-			class="progress-fill {variantClasses[variant]} {sizeClasses[size]} {animated ? 'animated' : ''}" 
+			class="progress-fill {variantClasses[variant]} {sizeClasses[normalizedSize]} {animated ? 'animated' : ''}" 
 			style="width: {clampedProgress}%"
 		></div>
 	</div>

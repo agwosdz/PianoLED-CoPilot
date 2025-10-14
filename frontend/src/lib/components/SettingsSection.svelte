@@ -1,19 +1,20 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	
+    
 	const dispatch = createEventDispatcher();
-	
-	export let title = '';
-	export let description = '';
-	export let loading = false;
-	export let error = '';
-	export let hasUnsavedChanges = false;
-	export let canSave = true;
-	export let canReset = true;
-	export let showActions = true;
-	export let collapsible = false;
-	export let collapsed = false;
-	export let icon = '';
+    
+	export let title: string = '';
+	export let description: string = '';
+	export let loading: boolean = false;
+	// Allow null to be passed from pages that use `string | null` for errors
+	export let error: string | null = null;
+	export let hasUnsavedChanges: boolean = false;
+	export let canSave: boolean = true;
+	export let canReset: boolean = true;
+	export let showActions: boolean = true;
+	export let collapsible: boolean = false;
+	export let collapsed: boolean = false;
+	export let icon: string = '';
 	
 	function handleSave() {
 		dispatch('save');

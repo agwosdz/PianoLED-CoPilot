@@ -1,18 +1,21 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 
-	const dispatch = createEventDispatcher();
+	const dispatch = createEventDispatcher<{ change: any }>();
 
-	export let settings = {};
-	export let pianoSpecs = null;
+	export let settings: any = {};
+	export let pianoSpecs: any = null;
 
-	let draggedKey = null;
-	let draggedLed = null;
-	let mappingMode = settings.mapping_mode || 'auto';
-	let keyOffset = settings.key_offset || 0;
-	let ledsPerKey = settings.leds_per_key || 3;
-	let mappingBaseOffset = settings.mapping_base_offset || 0;
-	let showAdvanced = false;
+	type PianoKey = { id: string; midi: number; note: string; type: 'white' | 'black'; ledIndices: number[] | number };
+	type LED = { id: string; index: number; assignedKey: number | null; color: string };
+
+	let draggedKey: PianoKey | null = null;
+	let draggedLed: LED | null = null;
+	let mappingMode: string = settings.mapping_mode || 'auto';
+	let keyOffset: number = settings.key_offset || 0;
+	let ledsPerKey: number = settings.leds_per_key || 3;
+	let mappingBaseOffset: number = settings.mapping_base_offset || 0;
+	let showAdvanced: boolean = false;
 
 	// Piano key data
 	const keyTypes = {
@@ -21,17 +24,21 @@
 	};
 
 	// Generate piano keys based on specs
+	let pianoKeys: PianoKey[] = [];
+	let ledStrip: LED[] = [];
+	let keyMapping: Record<number, number | number[]> = settings.key_mapping || {};
+
 	$: pianoKeys = generatePianoKeys();
 	$: ledStrip = generateLEDStrip();
 	$: keyMapping = settings.key_mapping || {};
 
-	function generatePianoKeys() {
+	function generatePianoKeys(): PianoKey[] {
 		if (!pianoSpecs) return [];
-		
-		const keys = [];
+
+		const keys: PianoKey[] = [];
 		const startOctave = Math.floor(pianoSpecs.midi_start / 12) - 1;
 		const endOctave = Math.floor(pianoSpecs.midi_end / 12) - 1;
-		
+
 		for (let octave = startOctave; octave <= endOctave; octave++) {
 			for (const note of keyTypes.white) {
 				const midiNote = (octave + 1) * 12 + ['C', 'D', 'E', 'F', 'G', 'A', 'B'].indexOf(note);
@@ -41,11 +48,11 @@
 						midi: midiNote,
 						note: `${note}${octave}`,
 						type: 'white',
-						ledIndices: keyMapping[midiNote] || []
+						ledIndices: (keyMapping as any)[midiNote] || []
 					});
 				}
 			}
-			
+
 			for (const note of keyTypes.black) {
 				const baseNote = note.replace('#', '');
 				const midiNote = (octave + 1) * 12 + ['C', 'D', 'E', 'F', 'G', 'A', 'B'].indexOf(baseNote) + 1;
@@ -55,19 +62,19 @@
 						midi: midiNote,
 						note: `${note}${octave}`,
 						type: 'black',
-						ledIndices: keyMapping[midiNote] || []
+						ledIndices: (keyMapping as any)[midiNote] || []
 					});
 				}
 			}
 		}
-		
+
 		return keys.sort((a, b) => a.midi - b.midi);
 	}
 
-	function generateLEDStrip() {
-		const ledCount = settings.ledCount || 246;
-		const leds = [];
-		
+	function generateLEDStrip(): LED[] {
+		const ledCount: number = settings.ledCount || 246;
+		const leds: LED[] = [];
+
 		for (let i = 0; i < ledCount; i++) {
 			leds.push({
 				id: `led-${i}`,
@@ -76,40 +83,40 @@
 				color: getLEDColor(i)
 			});
 		}
-		
+
 		return leds;
 	}
 
-	function findKeyForLED(ledIndex) {
+	function findKeyForLED(ledIndex: number): number | null {
 		for (const [midi, ledIndices] of Object.entries(keyMapping)) {
 			const indices = Array.isArray(ledIndices) ? ledIndices : [ledIndices];
-			if (indices.includes(ledIndex)) {
+			if ((indices as number[]).includes(ledIndex)) {
 				return parseInt(midi);
 			}
 		}
 		return null;
 	}
 
-	function getLEDColor(ledIndex) {
+	function getLEDColor(ledIndex: number): string {
 		const assignedKey = findKeyForLED(ledIndex);
 		if (assignedKey) {
-			const key = pianoKeys.find(k => k.midi === assignedKey);
+			const key = pianoKeys.find((k) => k.midi === assignedKey);
 			return key?.type === 'black' ? '#2d3748' : '#f7fafc';
 		}
 		return '#e2e8f0';
 	}
 
-	function generateAutoMapping() {
-		const newMapping = {};
-		const whiteKeys = pianoKeys.filter(k => k.type === 'white');
+	function generateAutoMapping(): void {
+		const newMapping: Record<number, number | number[]> = {};
+		const whiteKeys = pianoKeys.filter((k) => k.type === 'white');
 		const ledCount = settings.ledCount || 246;
-		
+
 		if (mappingMode === 'auto') {
 			// Auto linear mapping with multi-LED support
 			whiteKeys.forEach((key, index) => {
 				const baseIndex = mappingBaseOffset + (index * ledsPerKey);
 				if (ledsPerKey > 1) {
-					const ledIndices = [];
+					const ledIndices: number[] = [];
 					for (let i = 0; i < ledsPerKey; i++) {
 						const ledIndex = baseIndex + i;
 						if (ledIndex < ledCount) {
@@ -117,11 +124,11 @@
 						}
 					}
 					if (ledIndices.length > 0) {
-						newMapping[key.midi] = ledIndices;
+						(newMapping as any)[key.midi] = ledIndices;
 					}
 				} else {
 					if (baseIndex < ledCount) {
-						newMapping[key.midi] = baseIndex;
+						(newMapping as any)[key.midi] = baseIndex;
 					}
 				}
 			});
@@ -130,11 +137,11 @@
 			const totalKeys = whiteKeys.length;
 			const availableLeds = ledCount - mappingBaseOffset;
 			const ledsPerKeyFloat = availableLeds / totalKeys;
-			
+
 			whiteKeys.forEach((key, index) => {
 				const baseIndex = mappingBaseOffset + Math.floor(index * ledsPerKeyFloat);
 				if (ledsPerKey > 1) {
-					const ledIndices = [];
+					const ledIndices: number[] = [];
 					for (let i = 0; i < ledsPerKey; i++) {
 						const ledIndex = baseIndex + i;
 						if (ledIndex < ledCount) {
@@ -142,16 +149,16 @@
 						}
 					}
 					if (ledIndices.length > 0) {
-						newMapping[key.midi] = ledIndices;
+						(newMapping as any)[key.midi] = ledIndices;
 					}
 				} else {
 					if (baseIndex < ledCount) {
-						newMapping[key.midi] = baseIndex;
+						(newMapping as any)[key.midi] = baseIndex;
 					}
 				}
 			});
 		}
-		
+
 		updateMapping(newMapping);
 	}
 
@@ -159,7 +166,7 @@
 		updateMapping({});
 	}
 
-	function updateMapping(newMapping) {
+	function updateMapping(newMapping?: Record<number, number | number[]>): void {
 		const updatedSettings = {
 			...settings,
 			key_mapping: newMapping,
@@ -173,93 +180,102 @@
 	}
 
 	// Drag and drop handlers
-	function handleKeyDragStart(event, key) {
+	function handleKeyDragStart(event: DragEvent, key: PianoKey): void {
 		draggedKey = key;
-		event.dataTransfer.effectAllowed = 'move';
-		event.dataTransfer.setData('text/plain', key.id);
+		const dt = event.dataTransfer as DataTransfer;
+		if (dt) {
+			dt.effectAllowed = 'move';
+			dt.setData('text/plain', key.id);
+		}
 	}
 
-	function handleLEDDragStart(event, led) {
+	function handleLEDDragStart(event: DragEvent, led: LED): void {
 		draggedLed = led;
-		event.dataTransfer.effectAllowed = 'move';
-		event.dataTransfer.setData('text/plain', led.id);
+		const dt = event.dataTransfer as DataTransfer;
+		if (dt) {
+			dt.effectAllowed = 'move';
+			dt.setData('text/plain', led.id);
+		}
 	}
 
-	function handleKeyDrop(event, targetKey) {
+	function handleKeyDrop(event: DragEvent, targetKey: PianoKey): void {
 		event.preventDefault();
-		
+
 		if (draggedLed) {
 			// LED dropped on key
-			const newMapping = { ...keyMapping };
-			
+			const newMapping: Record<number, number | number[]> = { ...(keyMapping as any) };
+
 			// Remove existing mapping for this LED
 			for (const [midi, ledIndex] of Object.entries(newMapping)) {
-				if (ledIndex === draggedLed.index) {
-					delete newMapping[midi];
+				const indices = Array.isArray(ledIndex) ? ledIndex : [ledIndex];
+				if ((indices as number[]).includes(draggedLed.index)) {
+					delete (newMapping as any)[midi];
 				}
 			}
-			
+
 			// For multi-LED mapping, add to existing array or create new array
 			if (ledsPerKey > 1) {
-				if (!newMapping[targetKey.midi]) {
-					newMapping[targetKey.midi] = [];
+				if (!(newMapping as any)[targetKey.midi]) {
+					(newMapping as any)[targetKey.midi] = [];
 				}
-				if (!Array.isArray(newMapping[targetKey.midi])) {
-					newMapping[targetKey.midi] = [newMapping[targetKey.midi]];
+				if (!Array.isArray((newMapping as any)[targetKey.midi])) {
+					(newMapping as any)[targetKey.midi] = [(newMapping as any)[targetKey.midi]];
 				}
-				if (!newMapping[targetKey.midi].includes(draggedLed.index)) {
-					newMapping[targetKey.midi].push(draggedLed.index);
+				if (!(newMapping as any)[targetKey.midi].includes(draggedLed.index)) {
+					(newMapping as any)[targetKey.midi].push(draggedLed.index);
 					// Limit to ledsPerKey
-					if (newMapping[targetKey.midi].length > ledsPerKey) {
-						newMapping[targetKey.midi] = newMapping[targetKey.midi].slice(-ledsPerKey);
+					if ((newMapping as any)[targetKey.midi].length > ledsPerKey) {
+						(newMapping as any)[targetKey.midi] = (newMapping as any)[targetKey.midi].slice(-ledsPerKey);
 					}
 				}
 			} else {
 				// Single LED mapping
-				newMapping[targetKey.midi] = draggedLed.index;
+				(newMapping as any)[targetKey.midi] = draggedLed.index;
 			}
 			updateMapping(newMapping);
 		}
-		
+
 		draggedKey = null;
 		draggedLed = null;
 	}
 
-	function handleLEDDrop(event, targetLed) {
+	function handleLEDDrop(event: DragEvent, targetLed: LED): void {
 		event.preventDefault();
-		
+
 		if (draggedKey) {
 			// Key dropped on LED
-			const newMapping = { ...keyMapping };
-			
+			const newMapping: Record<number, number | number[]> = { ...(keyMapping as any) };
+
 			// Remove existing mapping for this key
-			delete newMapping[draggedKey.midi];
-			
+			delete (newMapping as any)[draggedKey.midi];
+
 			// Remove existing mapping for this LED
 			for (const [midi, ledIndex] of Object.entries(newMapping)) {
-				if (ledIndex === targetLed.index) {
-					delete newMapping[midi];
+				const indices = Array.isArray(ledIndex) ? ledIndex : [ledIndex];
+				if ((indices as number[]).includes(targetLed.index)) {
+					delete (newMapping as any)[midi];
 				}
 			}
-			
+
 			// Add new mapping
-			newMapping[draggedKey.midi] = targetLed.index;
+			(newMapping as any)[draggedKey.midi] = targetLed.index;
 			updateMapping(newMapping);
 		}
-		
+
 		draggedKey = null;
 		draggedLed = null;
 	}
 
-	function handleDragOver(event) {
+	function handleDragOver(event: DragEvent): void {
 		event.preventDefault();
-		event.dataTransfer.dropEffect = 'move';
+		const dt = event.dataTransfer as DataTransfer;
+		if (dt) dt.dropEffect = 'move';
 	}
 
-	function removeKeyMapping(key) {
-		if (keyMapping[key.note]) {
-			delete keyMapping[key.note];
-			keyMapping = { ...keyMapping };
+	function removeKeyMapping(key: PianoKey): void {
+		if ((keyMapping as any)[key.note]) {
+			delete (keyMapping as any)[key.note];
+			keyMapping = { ...(keyMapping as any) };
 			updateMapping();
 		}
 	}
@@ -367,6 +383,8 @@
 					{#each pianoKeys as key (key.id)}
 						<div
 							class="flex items-center justify-between p-2 rounded border {key.type === 'black' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white border-gray-300'} cursor-move hover:shadow-md transition-shadow"
+							role="button"
+							tabindex="0"
 							draggable="true"
 							on:dragstart={(e) => handleKeyDragStart(e, key)}
 							on:dragover={handleDragOver}
@@ -377,7 +395,7 @@
 								<span class="text-xs text-gray-500">MIDI {key.midi}</span>
 							</div>
 							<div class="flex items-center space-x-2">
-								{#if key.ledIndices && key.ledIndices.length > 0}
+								{#if (Array.isArray(key.ledIndices) ? key.ledIndices.length > 0 : key.ledIndices !== null && key.ledIndices !== undefined)}
 									{#if Array.isArray(key.ledIndices)}
 										<div class="flex flex-wrap gap-1">
 											{#each key.ledIndices as ledIndex}
@@ -411,6 +429,8 @@
 					{#each ledStrip as led (led.id)}
 						<div
 							class="w-6 h-6 rounded-full border-2 cursor-move flex items-center justify-center text-xs font-mono transition-all hover:scale-110"
+							role="button"
+							tabindex="0"
 							style="background-color: {led.color}; border-color: {led.assignedKey ? '#3b82f6' : '#d1d5db'}"
 							title="LED {led.index}{led.assignedKey ? ` → Key ${led.assignedKey}` : ''}"
 							draggable="true"

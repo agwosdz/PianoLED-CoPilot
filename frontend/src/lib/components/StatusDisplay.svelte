@@ -38,8 +38,27 @@
 		statusManager.removeMessage(id);
 	}
 
-	function executeAction(action: any) {
-		action.action();
+	type MessageAction = {
+		label?: string;
+		icon?: string;
+		variant?: string;
+		// action may be a function or an object with an action() method
+		action?: (() => void | Promise<void>) | { action: () => void | Promise<void> };
+	};
+
+	function executeAction(action: MessageAction | undefined): void {
+		if (!action) return;
+		try {
+			if (typeof action.action === 'function') {
+				// call and ignore returned promise (UI handles loading separately)
+				void action.action();
+			} else if (action && typeof (action as any).action === 'function') {
+				void (action as any).action();
+			}
+		} catch (err) {
+			// swallow errors to avoid unhandled exceptions from UI clicks
+			console.error('Error executing status action', err);
+		}
 	}
 
 	function getTransitionParams(index: number) {
@@ -81,7 +100,7 @@
 	}
 </script>
 
-<div class="status-display" class:position-{position} style="--max-width: {maxWidth}">
+<div class={"status-display " + ("position-" + position)} style="--max-width: {maxWidth}">
 	<!-- Progress Indicators -->
 	{#if showProgress && progressStatuses.length > 0}
 		<div class="progress-container">

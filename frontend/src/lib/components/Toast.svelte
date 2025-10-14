@@ -11,7 +11,7 @@
 
 	const dispatch = createEventDispatcher();
 	let visible = false;
-	let timeoutId: number;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
 	const typeConfig = {
 		success: {
@@ -53,10 +53,11 @@
 				dismiss();
 			}, duration);
 		}
-		
+
 		return () => {
-			if (timeoutId) {
-				clearTimeout(timeoutId);
+			if (timeoutId !== null) {
+				clearTimeout(timeoutId as ReturnType<typeof setTimeout>);
+				timeoutId = null;
 			}
 		};
 	});

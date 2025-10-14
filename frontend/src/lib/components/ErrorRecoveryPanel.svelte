@@ -27,11 +27,14 @@
 	let showContextInfo = false;
 	let showContextualHelp = false;
 
-	$: shouldShowInlineHelp = errorContext.showInlineHelp && errorContext.helpContext;
+	$: shouldShowInlineHelp = (errorContext as any).showInlineHelp && (errorContext as any).helpContext;
+
+	// alias for template access to optional/extended fields not present on the strict type
+	$: anyError = errorContext as any;
 
 	// Get severity-based styling
-	$: severityClass = getSeverityClass(errorContext.severity);
-	$: iconForSeverity = getIconForSeverity(errorContext.severity);
+	$: severityClass = getSeverityClass(anyError.severity ?? errorContext.severity);
+	$: iconForSeverity = getIconForSeverity(anyError.severity ?? errorContext.severity);
 
 	function getSeverityClass(severity: ErrorContext['severity']): string {
 		const classes = {
@@ -98,8 +101,14 @@
 	}
 
 	// Get primary and secondary actions
-	$: primaryActions = errorContext.recoveryActions.filter(a => a.variant === 'primary');
-	$: secondaryActions = errorContext.recoveryActions.filter(a => a.variant !== 'primary');
+	$: primaryActions = (anyError.recoveryActions ?? []).filter((a: any) => a.variant === 'primary');
+	$: secondaryActions = (anyError.recoveryActions ?? []).filter((a: any) => a.variant !== 'primary');
+
+	function toggleSection(section: string) {
+		if (section === 'help') {
+			showContextualHelp = !showContextualHelp;
+		}
+	}
 </script>
 
 <div class="error-recovery-panel {severityClass} {compact ? 'compact' : ''}" role="alert">
@@ -117,10 +126,12 @@
 			</p>
 			
 			<!-- Primary suggestion -->
-			{#if errorContext.suggestions && errorContext.suggestions.length > 0}
-				<p class="error-suggestion">
-					💡 {errorContext.suggestions[0]}
-				</p>
+						{#if anyError.suggestions && anyError.suggestions.length > 0}
+				{#if errorContext.suggestions && errorContext.suggestions.length > 0}
+					<p class="error-suggestion">
+						💡 {errorContext.suggestions[0]}
+					</p>
+				{/if}
 			{/if}
 		</div>
 		
@@ -145,7 +156,7 @@
 					disabled={action.disabled || isExecutingAction}
 					loading={executingActionId === action.id}
 					on:click={() => executeAction(action)}
-					class="recovery-action primary"
+					className="recovery-action primary"
 				>
 					{#if action.icon && executingActionId !== action.id}
 						<span class="action-icon">{action.icon}</span>
@@ -166,7 +177,7 @@
 					disabled={action.disabled || isExecutingAction}
 					loading={executingActionId === action.id}
 					on:click={() => executeAction(action)}
-					class="recovery-action secondary"
+					className="recovery-action secondary"
 				>
 					{#if action.icon && executingActionId !== action.id}
 						<span class="action-icon">{action.icon}</span>
@@ -190,7 +201,7 @@
 						{/each}
 					</ul>
 					
-					{#if errorContext.suggestions.length > 2}
+						{#if anyError.suggestions.length > 2}
 						<button 
 							class="expand-toggle"
 							on:click={toggleMainDetails}
@@ -208,7 +219,7 @@
 								transition:slide={{ duration: 300, easing: quintOut }}
 							>
 								<ul class="suggestions-list">
-									{#each errorContext.suggestions.slice(2) as suggestion}
+									{#each anyError.suggestions.slice(2) as suggestion}
 										<li>{suggestion}</li>
 									{/each}
 								</ul>
@@ -219,7 +230,7 @@
 			{/if}
 
 			<!-- Context Information -->
-			{#if errorContext.context}
+					{#if anyError.context}
 				<div class="expandable-section">
 					<button 
 						class="expand-toggle"
@@ -231,35 +242,35 @@
 						Context Information
 					</button>
 					
-					{#if showContextInfo}
+							{#if showContextInfo}
 						<div 
 							id="context-info" 
 							class="expanded-content"
 							transition:slide={{ duration: 300, easing: quintOut }}
 						>
 							<div class="context-details">
-								{#if errorContext.context.fileName}
+								{#if anyError.context.fileName}
 									<div class="context-item">
 										<span class="context-label">File:</span>
-										<span class="context-value">{errorContext.context.fileName}</span>
+										<span class="context-value">{anyError.context.fileName}</span>
 									</div>
 								{/if}
-								{#if errorContext.context.fileSize}
+								{#if anyError.context.fileSize}
 									<div class="context-item">
 										<span class="context-label">Size:</span>
-										<span class="context-value">{(errorContext.context.fileSize / 1024).toFixed(1)} KB</span>
+										<span class="context-value">{(anyError.context.fileSize / 1024).toFixed(1)} KB</span>
 									</div>
 								{/if}
-								{#if errorContext.context.fileType}
+								{#if anyError.context.fileType}
 									<div class="context-item">
 										<span class="context-label">Type:</span>
-										<span class="context-value">{errorContext.context.fileType}</span>
+										<span class="context-value">{anyError.context.fileType}</span>
 									</div>
 								{/if}
-								{#if errorContext.context.uploadProgress !== undefined}
+								{#if anyError.context.uploadProgress !== undefined}
 									<div class="context-item">
 										<span class="context-label">Progress:</span>
-										<span class="context-value">{errorContext.context.uploadProgress}%</span>
+										<span class="context-value">{anyError.context.uploadProgress}%</span>
 									</div>
 								{/if}
 							</div>
@@ -269,7 +280,7 @@
 			{/if}
 
 			<!-- Prevention Tips -->
-			{#if showPreventionTips && errorContext.preventionTips?.length > 0}
+			{#if showPreventionTips && anyError.preventionTips?.length > 0}
 				<div class="expandable-section">
 					<button 
 						class="expand-toggle"
@@ -288,7 +299,7 @@
 							transition:slide={{ duration: 300, easing: quintOut }}
 						>
 							<ul class="prevention-list">
-								{#each errorContext.preventionTips as tip}
+								{#each anyError.preventionTips as tip}
 									<li>{tip}</li>
 								{/each}
 							</ul>
@@ -298,7 +309,7 @@
 			{/if}
 
 			<!-- Technical Information (for developers/advanced users) -->
-			{#if showTechnicalDetails && errorContext.technicalMessage}
+					{#if showTechnicalDetails && anyError.technicalMessage}
 				<div class="expandable-section technical">
 					<button 
 						class="expand-toggle technical"
@@ -317,26 +328,26 @@
 							transition:slide={{ duration: 300, easing: quintOut }}
 						>
 							<div class="technical-details-enhanced">
-								{#if errorContext.errorCode}
+								{#if anyError.errorCode}
 									<div class="tech-item">
 										<span class="tech-label">Error Code:</span>
-										<code class="tech-value">{errorContext.errorCode}</code>
+										<code class="tech-value">{anyError.errorCode}</code>
 									</div>
 								{/if}
-								{#if errorContext.timestamp}
+								{#if anyError.timestamp}
 									<div class="tech-item">
 										<span class="tech-label">Timestamp:</span>
-										<code class="tech-value">{new Date(errorContext.timestamp).toLocaleString()}</code>
+										<code class="tech-value">{new Date(anyError.timestamp).toLocaleString()}</code>
 									</div>
 								{/if}
 								<div class="tech-item">
 									<span class="tech-label">Technical Message:</span>
-									<pre class="tech-value stack-trace">{errorContext.technicalMessage}</pre>
+									<pre class="tech-value stack-trace">{anyError.technicalMessage}</pre>
 								</div>
-								{#if errorContext.requestId}
+								{#if anyError.requestId}
 									<div class="tech-item">
 										<span class="tech-label">Request ID:</span>
-										<code class="tech-value">{errorContext.requestId}</code>
+										<code class="tech-value">{anyError.requestId}</code>
 									</div>
 								{/if}
 							</div>

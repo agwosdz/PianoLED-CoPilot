@@ -1,17 +1,27 @@
-<script>
+<script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { createEventDispatcher } from 'svelte';
 
 	const dispatch = createEventDispatcher();
 
+	type MidiDevice = {
+		host: string;
+		port: number;
+		name?: string;
+		type?: 'bonjour' | 'upnp' | 'manual' | string;
+		services?: string[];
+		[key: string]: any;
+	};
+
 	// Discovery state
 	let isDiscovering = false;
-	let discoveredDevices = [];
+	let discoveredDevices: MidiDevice[] = [];
 	let discoveryProgress = 0;
-	let discoveryStatus = 'idle'; // idle, scanning, completed, error
-	let lastDiscoveryTime = null;
+	type DiscoveryStatus = 'idle' | 'scanning' | 'completed' | 'error';
+	let discoveryStatus: DiscoveryStatus = 'idle';
+	let lastDiscoveryTime: Date | null = null;
 	let autoDiscoveryEnabled = false;
-	let discoveryInterval = null;
+	let discoveryInterval: number | null = null;
 
 	// Discovery settings
 	let discoveryTimeout = 10000; // 10 seconds
@@ -21,9 +31,9 @@
 	let customPorts = '5004,5005,21928';
 
 	// Error handling
-	let discoveryError = null;
+	let discoveryError: string | null = null;
 
-	async function startDiscovery() {
+	async function startDiscovery(): Promise<void> {
 		if (isDiscovering) return;
 
 		isDiscovering = true;
@@ -52,21 +62,25 @@
 			}
 
 			// Poll for discovery progress
-			const pollInterval = setInterval(async () => {
+			const pollInterval = window.setInterval(async () => {
 				try {
 					const progressResponse = await fetch('/api/rtpmidi/discovery-status');
 					if (progressResponse.ok) {
 						const progressData = await progressResponse.json();
-						discoveryProgress = progressData.progress || 0;
-						discoveredDevices = progressData.devices || [];
+						discoveryProgress = progressData.progress ?? 0;
+						discoveredDevices = (progressData.devices ?? []) as MidiDevice[];
 
 						if (progressData.completed) {
 							clearInterval(pollInterval);
 							completeDiscovery();
 						}
 					}
-				} catch (error) {
-					console.error('Error polling discovery status:', error);
+				} catch (err: unknown) {
+					if (err instanceof Error) {
+						console.error('Error polling discovery status:', err);
+					} else {
+						console.error('Error polling discovery status:', String(err));
+					}
 				}
 			}, 500);
 
@@ -78,32 +92,40 @@
 				}
 			}, discoveryTimeout + 1000);
 
-		} catch (error) {
-			console.error('Discovery error:', error);
-			discoveryError = error.message;
-			discoveryStatus = 'error';
-			isDiscovering = false;
-			dispatch('discoveryError', { error: error.message });
+		} catch (err: unknown) {
+			if (err instanceof Error) {
+				console.error('Discovery error:', err);
+				discoveryError = err.message;
+				discoveryStatus = 'error';
+				isDiscovering = false;
+				dispatch('discoveryError', { error: err.message });
+			} else {
+				console.error('Discovery error:', String(err));
+				discoveryError = String(err);
+				discoveryStatus = 'error';
+				isDiscovering = false;
+				dispatch('discoveryError', { error: String(err) });
+			}
 		}
 	}
 
-	function completeDiscovery() {
+	function completeDiscovery(): void {
 		isDiscovering = false;
 		discoveryStatus = 'completed';
 		lastDiscoveryTime = new Date();
-		dispatch('discoveryCompleted', { 
+		dispatch('discoveryCompleted', {
 			devices: discoveredDevices,
 			count: discoveredDevices.length
 		});
 	}
 
-	function stopDiscovery() {
+	function stopDiscovery(): void {
 		isDiscovering = false;
 		discoveryStatus = 'idle';
 		discoveryProgress = 0;
 	}
 
-	async function connectToDevice(device) {
+	async function connectToDevice(device: MidiDevice): Promise<void> {
 		try {
 			const response = await fetch('/api/rtpmidi/connect', {
 				method: 'POST',
@@ -123,15 +145,20 @@
 			} else {
 				throw new Error(`Connection failed: ${response.statusText}`);
 			}
-		} catch (error) {
-			console.error('Connection error:', error);
-			dispatch('connectionError', { device, error: error.message });
+		} catch (err: unknown) {
+			if (err instanceof Error) {
+				console.error('Connection error:', err);
+				dispatch('connectionError', { device, error: err.message });
+			} else {
+				console.error('Connection error:', String(err));
+				dispatch('connectionError', { device, error: String(err) });
+			}
 		}
 	}
 
-	function toggleAutoDiscovery() {
+	function toggleAutoDiscovery(): void {
 		autoDiscoveryEnabled = !autoDiscoveryEnabled;
-		
+
 		if (autoDiscoveryEnabled) {
 			startAutoDiscovery();
 		} else {
@@ -139,35 +166,35 @@
 		}
 	}
 
-	function startAutoDiscovery() {
-		if (discoveryInterval) return;
-		
-		discoveryInterval = setInterval(() => {
+	function startAutoDiscovery(): void {
+		if (discoveryInterval !== null) return;
+
+		discoveryInterval = window.setInterval(() => {
 			if (!isDiscovering) {
 				startDiscovery();
 			}
 		}, autoDiscoveryIntervalMs);
 	}
 
-	function stopAutoDiscovery() {
-		if (discoveryInterval) {
+	function stopAutoDiscovery(): void {
+		if (discoveryInterval !== null) {
 			clearInterval(discoveryInterval);
 			discoveryInterval = null;
 		}
 	}
 
-	function formatLastDiscovery() {
+	function formatLastDiscovery(): string {
 		if (!lastDiscoveryTime) return 'Never';
 		const now = new Date();
-		const diff = now - lastDiscoveryTime;
+		const diff = now.getTime() - lastDiscoveryTime.getTime();
 		const minutes = Math.floor(diff / 60000);
 		const seconds = Math.floor((diff % 60000) / 1000);
-		
+
 		if (minutes > 0) return `${minutes}m ${seconds}s ago`;
 		return `${seconds}s ago`;
 	}
 
-	function getDeviceTypeIcon(device) {
+	function getDeviceTypeIcon(device: MidiDevice): string {
 		if (device.type === 'bonjour') return '🔍';
 		if (device.type === 'upnp') return '🌐';
 		if (device.type === 'manual') return '⚙️';

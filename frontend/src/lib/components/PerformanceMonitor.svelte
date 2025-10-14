@@ -1,110 +1,216 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
 
-	// Props
-	export let performanceMetrics = {
-		update_frequency: 0,
-		latency_ms: 0,
-		connection_health: 'unknown'
-	};
+		// Props (primary shape)
+		/**
+		 * @type {{ update_frequency: number; latency_ms: number; connection_health: string }}
+		 */
+		export let performanceMetrics = {
+			update_frequency: 0,
+			latency_ms: 0,
+			connection_health: 'unknown'
+		};
 
-	// Historical data for charts
-	let frequencyHistory = [];
-	let latencyHistory = [];
-	const maxHistoryLength = 60; // Keep last 60 data points
+		// Backwards-compatible legacy props (some tests and callers still use these)
+		/** @type {number|undefined} */
+		export let updateFrequency = undefined;
+		/** @type {number|undefined} */
+		export let latency = undefined;
+		/** @type {string|{ color: string; text: string; icon: string }|undefined} */
+		export let connectionHealth = undefined;
+		/** @type {number|undefined} */
+		export let lastUpdateTime = undefined;
 
-	// Performance thresholds
-	const thresholds = {
-		frequency: {
-			good: 30,
-			warning: 15
-		},
-		latency: {
-			good: 50,
-			warning: 100
+		// Historical data for charts
+		/** @type {{ timestamp: number; value: number }[]} */
+		let frequencyHistory = [];
+		/** @type {{ timestamp: number; value: number }[]} */
+		let latencyHistory = [];
+		/** @type {number} */
+		const maxHistoryLength = 60; // Keep last 60 data points
+
+		// Performance thresholds
+		const thresholds = {
+			frequency: {
+				good: 30,
+				warning: 15
+			},
+			latency: {
+				good: 50,
+				warning: 100
+			}
+		};
+
+		// Update history when metrics change
+		// If legacy flat props are provided, map them into the canonical performanceMetrics shape
+		$: {
+			if (updateFrequency !== undefined || latency !== undefined || connectionHealth !== undefined) {
+				const healthStr = typeof connectionHealth === 'string' ? connectionHealth : performanceMetrics.connection_health;
+				performanceMetrics = {
+					update_frequency: updateFrequency ?? performanceMetrics.update_frequency,
+					latency_ms: latency ?? performanceMetrics.latency_ms,
+					connection_health: healthStr
+				};
+			}
+
+			if (performanceMetrics.update_frequency !== undefined) {
+				updateHistory();
+			}
 		}
-	};
 
-	// Update history when metrics change
-	$: {
-		if (performanceMetrics.update_frequency !== undefined) {
-			updateHistory();
+		function updateHistory() {
+			const timestamp = Date.now();
+        
+			// Add new data points
+			frequencyHistory = [...frequencyHistory, {
+				timestamp,
+				value: performanceMetrics.update_frequency || 0
+			}].slice(-maxHistoryLength);
+        
+			latencyHistory = [...latencyHistory, {
+				timestamp,
+				value: performanceMetrics.latency_ms || 0
+			}].slice(-maxHistoryLength);
 		}
-	}
 
-	function updateHistory() {
-		const timestamp = Date.now();
-		
-		// Add new data points
-		frequencyHistory = [...frequencyHistory, {
-			timestamp,
-			value: performanceMetrics.update_frequency || 0
-		}].slice(-maxHistoryLength);
-		
-		latencyHistory = [...latencyHistory, {
-			timestamp,
-			value: performanceMetrics.latency_ms || 0
-		}].slice(-maxHistoryLength);
-	}
-
-	// Get status color based on value and thresholds
-	function getStatusColor(value, type) {
-		const threshold = thresholds[type];
-		if (!threshold) return 'gray';
-		
-		if (type === 'frequency') {
-			if (value >= threshold.good) return 'green';
-			if (value >= threshold.warning) return 'orange';
-			return 'red';
-		} else if (type === 'latency') {
-			if (value <= threshold.good) return 'green';
-			if (value <= threshold.warning) return 'orange';
-			return 'red';
+		// Get status color based on value and thresholds
+		/**
+		 * @param {number} value
+		 * @param {'frequency'|'latency'} type
+		 */
+		function getStatusColor(value, type) {
+			const threshold = thresholds[type];
+			if (!threshold) return 'gray';
+        
+			if (type === 'frequency') {
+				if (value >= threshold.good) return 'green';
+				if (value >= threshold.warning) return 'orange';
+				return 'red';
+			} else if (type === 'latency') {
+				if (value <= threshold.good) return 'green';
+				if (value <= threshold.warning) return 'orange';
+				return 'red';
+			}
+			return 'gray';
 		}
-		return 'gray';
-	}
 
-	// Get connection health status
-	function getConnectionHealthStatus(health) {
-		switch (health) {
-			case 'connected':
-				return { color: 'green', text: 'Healthy', icon: '✅' };
-			case 'reconnecting':
-				return { color: 'orange', text: 'Reconnecting', icon: '🔄' };
-			case 'disconnected':
-				return { color: 'red', text: 'Disconnected', icon: '❌' };
-			case 'error':
-				return { color: 'red', text: 'Error', icon: '⚠️' };
-			case 'failed':
-				return { color: 'red', text: 'Failed', icon: '💥' };
-			default:
-				return { color: 'gray', text: 'Unknown', icon: '❓' };
+		// Get connection health status
+		/**
+		 * @param {string|undefined} health
+		 */
+		function getConnectionHealthStatus(health) {
+			switch (health) {
+				case 'connected':
+					return { color: 'green', text: 'Healthy', icon: '\u2705' };
+				case 'reconnecting':
+					return { color: 'orange', text: 'Reconnecting', icon: '\ud83d\udd04' };
+				case 'disconnected':
+					return { color: 'red', text: 'Disconnected', icon: '\u274c' };
+				case 'error':
+					return { color: 'red', text: 'Error', icon: '\u26a0\ufe0f' };
+				case 'failed':
+					return { color: 'red', text: 'Failed', icon: '\ud83d\udca5' };
+				default:
+					return { color: 'gray', text: 'Unknown', icon: '\u2753' };
+			}
 		}
-	}
 
-	// Calculate average values
-	$: avgFrequency = frequencyHistory.length > 0 
-		? Math.round(frequencyHistory.reduce((sum, item) => sum + item.value, 0) / frequencyHistory.length)
-		: 0;
-	
-	$: avgLatency = latencyHistory.length > 0 
-		? Math.round(latencyHistory.reduce((sum, item) => sum + item.value, 0) / latencyHistory.length)
-		: 0;
+		// Calculate average values
+		$: avgFrequency = frequencyHistory.length > 0 
+			? Math.round(frequencyHistory.reduce((sum, item) => sum + item.value, 0) / frequencyHistory.length)
+			: 0;
+    
+		$: avgLatency = latencyHistory.length > 0 
+			? Math.round(latencyHistory.reduce((sum, item) => sum + item.value, 0) / latencyHistory.length)
+			: 0;
 
-	// Get min/max values for scaling
-	$: frequencyRange = {
-		min: Math.min(...frequencyHistory.map(h => h.value), 0),
-		max: Math.max(...frequencyHistory.map(h => h.value), 60)
-	};
-	
-	$: latencyRange = {
-		min: Math.min(...latencyHistory.map(h => h.value), 0),
-		max: Math.max(...latencyHistory.map(h => h.value), 200)
-	};
+		// Get min/max values for scaling
+		$: frequencyRange = {
+			min: Math.min(...frequencyHistory.map(h => h.value), 0),
+			max: Math.max(...frequencyHistory.map(h => h.value), 60)
+		};
+    
+		$: latencyRange = {
+			min: Math.min(...latencyHistory.map(h => h.value), 0),
+			max: Math.max(...latencyHistory.map(h => h.value), 200)
+		};
 
-	$: connectionHealth = getConnectionHealthStatus(performanceMetrics.connection_health);
-</script>
+		// compute connectionHealthObj from legacy prop or canonical performanceMetrics
+		/** @type {{ color: string; text: string; icon: string }} */
+		let connectionHealthObj = { color: 'gray', text: 'Unknown', icon: '?' };
 
+		$: {
+			if (connectionHealth && typeof connectionHealth === 'object') {
+				connectionHealthObj = connectionHealth;
+			} else {
+				const healthStr = typeof connectionHealth === 'string' ? connectionHealth : performanceMetrics.connection_health;
+				connectionHealthObj = getConnectionHealthStatus(healthStr);
+			}
+		}
+
+		// Computed SVG points and threshold Y positions for charts
+		/** @type {string} */
+		let frequencyPoints = '';
+		/** @type {string} */
+		let latencyPoints = '';
+		/** @type {number} */
+		let frequencyThresholdGoodY = 0;
+		/** @type {number} */
+		let frequencyThresholdWarningY = 0;
+		/** @type {number} */
+		let latencyThresholdGoodY = 0;
+		/** @type {number} */
+		let latencyThresholdWarningY = 0;
+
+		/**
+		 * Computed connection health object used in templates
+		 * Renamed to avoid clashing with exported legacy prop `connectionHealth`
+		 * @type {{ color: string; text: string; icon: string }}
+		 */
+		let connectionHealthComputed = { color: 'gray', text: 'Unknown', icon: '?' };
+
+		$: {
+			const count = frequencyHistory.length;
+			if (count > 0) {
+				const denom = (frequencyRange.max - frequencyRange.min) || 1;
+				const step = count > 1 ? 300 / (count - 1) : 0;
+				frequencyPoints = frequencyHistory.map((h, i) => {
+					const x = step * i;
+					const y = 100 - ((h.value - frequencyRange.min) / denom) * 100;
+					return `${x},${y}`;
+				}).join(' ');
+				frequencyThresholdGoodY = 100 - ((thresholds.frequency.good - frequencyRange.min) / denom) * 100;
+				frequencyThresholdWarningY = 100 - ((thresholds.frequency.warning - frequencyRange.min) / denom) * 100;
+			} else {
+				frequencyPoints = '';
+				frequencyThresholdGoodY = frequencyThresholdWarningY = 0;
+			}
+		}
+
+		$: {
+			const count = latencyHistory.length;
+			if (count > 0) {
+				const denom = (latencyRange.max - latencyRange.min) || 1;
+				const step = count > 1 ? 300 / (count - 1) : 0;
+				latencyPoints = latencyHistory.map((h, i) => {
+					const x = step * i;
+					const y = 100 - ((h.value - latencyRange.min) / denom) * 100;
+					return `${x},${y}`;
+				}).join(' ');
+				latencyThresholdGoodY = 100 - ((thresholds.latency.good - latencyRange.min) / denom) * 100;
+				latencyThresholdWarningY = 100 - ((thresholds.latency.warning - latencyRange.min) / denom) * 100;
+			} else {
+				latencyPoints = '';
+				latencyThresholdGoodY = latencyThresholdWarningY = 0;
+			}
+		}
+
+	// consume legacy exported props to avoid unused-export warning when they're intentionally provided by parents
+	// this reference is intentionally side-effect free
+	// @ts-ignore
+	const _exported_refs = { updateFrequency, latency, connectionHealth, lastUpdateTime };
+
+	</script>
 <div class="performance-monitor">
 	<!-- Real-time Metrics -->
 	<div class="metrics-grid">
@@ -141,11 +247,11 @@
 		<div class="metric-card connection-card">
 			<div class="metric-header">
 				<h4>Connection Health</h4>
-				<span class="connection-icon">{connectionHealth.icon}</span>
+				<span class="connection-icon">{connectionHealthObj.icon}</span>
 			</div>
 			<div class="metric-value">
-				<span class="connection-status status-{connectionHealth.color}">
-					{connectionHealth.text}
+				<span class="connection-status status-{connectionHealthObj.color}">
+					{connectionHealthObj.text}
 				</span>
 			</div>
 			<div class="metric-details">
@@ -170,24 +276,11 @@
 						<rect width="300" height="100" fill="url(#grid)" />
 						
 						<!-- Threshold lines -->
-						<line x1="0" y1="{100 - (thresholds.frequency.good / frequencyRange.max) * 100}" 
-							  x2="300" y2="{100 - (thresholds.frequency.good / frequencyRange.max) * 100}" 
-							  stroke="green" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
-						<line x1="0" y1="{100 - (thresholds.frequency.warning / frequencyRange.max) * 100}" 
-							  x2="300" y2="{100 - (thresholds.frequency.warning / frequencyRange.max) * 100}" 
-							  stroke="orange" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
+						<line x1="0" y1="{frequencyThresholdGoodY}" x2="300" y2="{frequencyThresholdGoodY}" stroke="green" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
+						<line x1="0" y1="{frequencyThresholdWarningY}" x2="300" y2="{frequencyThresholdWarningY}" stroke="orange" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
 						
 						<!-- Data line -->
-						<polyline 
-							points={frequencyHistory.map((point, index) => {
-								const x = (index / (frequencyHistory.length - 1)) * 300;
-								const y = 100 - ((point.value / frequencyRange.max) * 100);
-								return `${x},${y}`;
-							}).join(' ')}
-							fill="none" 
-							stroke="#007bff" 
-							stroke-width="2"
-						/>
+						<polyline points={frequencyPoints} fill="none" stroke="#007bff" stroke-width="2" />
 					</svg>
 				{:else}
 					<div class="no-data">Collecting data...</div>
@@ -204,24 +297,11 @@
 						<rect width="300" height="100" fill="url(#grid)" />
 						
 						<!-- Threshold lines -->
-						<line x1="0" y1="{100 - (thresholds.latency.good / latencyRange.max) * 100}" 
-							  x2="300" y2="{100 - (thresholds.latency.good / latencyRange.max) * 100}" 
-							  stroke="green" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
-						<line x1="0" y1="{100 - (thresholds.latency.warning / latencyRange.max) * 100}" 
-							  x2="300" y2="{100 - (thresholds.latency.warning / latencyRange.max) * 100}" 
-							  stroke="orange" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
+						<line x1="0" y1="{latencyThresholdGoodY}" x2="300" y2="{latencyThresholdGoodY}" stroke="green" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
+						<line x1="0" y1="{latencyThresholdWarningY}" x2="300" y2="{latencyThresholdWarningY}" stroke="orange" stroke-width="1" stroke-dasharray="5,5" opacity="0.5" />
 						
 						<!-- Data line -->
-						<polyline 
-							points={latencyHistory.map((point, index) => {
-								const x = (index / (latencyHistory.length - 1)) * 300;
-								const y = 100 - ((point.value / latencyRange.max) * 100);
-								return `${x},${y}`;
-							}).join(' ')}
-							fill="none" 
-							stroke="#dc3545" 
-							stroke-width="2"
-						/>
+						<polyline points={latencyPoints} fill="none" stroke="#dc3545" stroke-width="2" />
 					</svg>
 				{:else}
 					<div class="no-data">Collecting data...</div>
@@ -236,7 +316,7 @@
 		<div class="summary-grid">
 			<div class="summary-item">
 				<span class="label">Status:</span>
-				<span class="value status-{connectionHealth.color}">{connectionHealth.text}</span>
+				<span class="value status-{connectionHealthObj.color}">{connectionHealthObj.text}</span>
 			</div>
 			<div class="summary-item">
 				<span class="label">Avg FPS:</span>

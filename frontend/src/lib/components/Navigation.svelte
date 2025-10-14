@@ -3,34 +3,11 @@
 	import { onMount } from 'svelte';
 	import { socketStatus } from '$lib/socket';
 
-	let isOpen = false;
 	let mounted = false;
-	let isMobile = false;
 	$: wsConnected = $socketStatus === 'connected';
-
-	function toggleMenu() {
-		isOpen = !isOpen;
-	}
-
-	function closeMenu() {
-		isOpen = false;
-	}
-
-	function handleResize() {
-		isMobile = window.innerWidth <= 768;
-		if (!isMobile) {
-			isOpen = false; // Close mobile menu when switching to desktop
-		}
-	}
 
 	onMount(() => {
 		mounted = true;
-		handleResize();
-		window.addEventListener('resize', handleResize);
-		
-		return () => {
-			window.removeEventListener('resize', handleResize);
-		};
 	});
 
 	$: currentPath = $page.url.pathname;
@@ -77,57 +54,6 @@
 		</div>
 	</div>
 </nav>
-
-<!-- Mobile Navigation -->
-<div class="mobile-nav-container {mounted ? 'mounted' : ''}">
-	<button 
-		class="menu-toggle" 
-		on:click={toggleMenu}
-		aria-label="{isOpen ? 'Close menu' : 'Open menu'}"
-		aria-expanded={isOpen}
-	>
-		<div class="hamburger {isOpen ? 'open' : ''}">
-			<span></span>
-			<span></span>
-			<span></span>
-		</div>
-	</button>
-
-	<nav class="mobile-nav {isOpen ? 'open' : ''}" aria-hidden={!isOpen} aria-label="Mobile navigation">
-		<div class="mobile-nav-header">
-			<div class="mobile-logo">
-				<span class="logo-icon">🎹</span>
-				<span class="logo-text">Piano LED Visualizer</span>
-			</div>
-			<div class="socket-indicator {wsConnected ? 'connected' : 'disconnected'}" title={wsConnected ? 'Socket Connected' : 'Socket Disconnected'}>
-				<span class="dot"></span>
-				<span class="text">{wsConnected ? 'Connected' : 'Disconnected'}</span>
-			</div>
-		</div>
-		
-		<ul class="mobile-nav-list">
-			{#each navigationItems as item}
-				<li>
-					<a 
-						href={item.href}
-						class:active={currentPath === item.href}
-						on:click={closeMenu}
-					>
-						<span class="icon">{item.icon}</span>
-						<div class="nav-content">
-							<span class="text">{item.text}</span>
-							<span class="description">{item.description}</span>
-						</div>
-					</a>
-				</li>
-			{/each}
-		</ul>
-	</nav>
-
-	{#if isOpen}
-		<div class="overlay" on:click={closeMenu} aria-hidden="true"></div>
-	{/if}
-</div>
 
 <style>
 	/* Desktop Navigation Styles */
@@ -244,102 +170,16 @@
 		background: currentColor;
 	}
 
-	/* Mobile Navigation Styles */
-	.mobile-nav-container {
-		position: fixed;
-		top: 0;
-		left: 0;
-		width: 100%;
-		z-index: 200;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		background: linear-gradient(180deg, #0f172a 0%, #0f172a 100%);
-		border-bottom: 1px solid #334155;
-		padding: 0.5rem 1rem;
-	}
-
-	.menu-toggle {
-		background: none;
-		border: none;
-		color: #f8fafc;
-	}
-
-	.hamburger {
-		width: 24px;
-		height: 16px;
-		position: relative;
-	}
-
-	.hamburger span {
-		position: absolute;
-		left: 0;
-		right: 0;
-		height: 2px;
-		background: #f8fafc;
-		transition: transform 0.2s ease;
-	}
-
-	.hamburger span:nth-child(1) { top: 0; }
-	.hamburger span:nth-child(2) { top: 7px; }
-	.hamburger span:nth-child(3) { top: 14px; }
-
-	.hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-	.hamburger.open span:nth-child(2) { opacity: 0; }
-	.hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-
-	.mobile-nav {
-		position: fixed;
-		top: 48px;
-		left: 0;
-		right: 0;
-		background: #0f172a;
-		border-bottom: 1px solid #334155;
-		transform: translateY(-110%);
-		transition: transform 0.3s ease;
-	}
-	.mobile-nav.open { transform: translateY(0); }
-
-	.mobile-nav-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.75rem 1rem;
-		color: #f8fafc;
-	}
-
-	.mobile-logo {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.mobile-nav-list {
-		list-style: none;
-		margin: 0;
-		padding: 0.5rem 0;
-	}
-
-	.mobile-nav-list a {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0.75rem 1rem;
-		color: #cbd5e1;
-		text-decoration: none;
-	}
-
-	.mobile-nav-list a.active {
-		background: rgba(255, 255, 255, 0.08);
-		color: white;
-	}
-
-	.overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(0, 0, 0, 0.4);
+	/* Mobile Layout */
+	@media (max-width: 768px) {
+		.app-container {
+			display: block;
+		}
+		
+		.main-content {
+			margin-left: 0;
+			padding: 1rem;
+			min-height: 100vh;
+		}
 	}
 </style>

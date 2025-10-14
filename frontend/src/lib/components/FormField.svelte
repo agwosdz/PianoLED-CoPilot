@@ -35,7 +35,9 @@
 	function handleInput(event: Event) {
 		const target = event.target as HTMLInputElement | HTMLTextAreaElement;
 		if (type === 'number') {
-			value = target.valueAsNumber || 0;
+			// valueAsNumber exists on HTMLInputElement only
+			const input = target as HTMLInputElement;
+			value = input.valueAsNumber ?? 0;
 		} else {
 			value = target.value;
 		}

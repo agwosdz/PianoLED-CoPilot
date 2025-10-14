@@ -1,124 +1,127 @@
-<script>
-  import { onMount, onDestroy } from 'svelte';
-  import { createEventDispatcher } from 'svelte';
-  import { getSocket, socketStatus } from '$lib/socket';
+<script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+	import { createEventDispatcher } from 'svelte';
+	import { getSocket, socketStatus } from '$lib/socket';
+	import type { UsbMidiStatus, NetworkMidiStatus, MidiStatusUpdate } from '$lib/types/midi';
 
-  const dispatch = createEventDispatcher();
+	const dispatch = createEventDispatcher();
 
-  // Connection status data
-  export let usbMidiStatus = {
-    connected: false,
-    deviceName: null,
-    lastActivity: null,
-    messageCount: 0
-  };
 
-  export let networkMidiStatus = {
-    connected: false,
-    activeSessions: [],
-    lastActivity: null,
-    messageCount: 0
-  };
+	export let usbMidiStatus: UsbMidiStatus = {
+		connected: false,
+		deviceName: null,
+		lastActivity: null,
+		messageCount: 0
+	};
 
-  let socket = null;
-  let statusUnsubscribe = null;
+	export let networkMidiStatus: NetworkMidiStatus = {
+		connected: false,
+		activeSessions: [],
+		lastActivity: null,
+		messageCount: 0
+	};
 
-  function connectSocket() {
-    socket = getSocket();
+	let socket: ReturnType<typeof getSocket> | null = null;
+	let statusUnsubscribe: (() => void) | null = null;
 
-    // Reflect global socket status
-    statusUnsubscribe = socketStatus.subscribe((st) => {
-      if (st === 'connected') {
-        dispatch('connected');
-      } else if (st === 'disconnected') {
-        dispatch('disconnected');
-      } else if (st === 'error') {
-        dispatch('error', { error: 'Socket error' });
-      }
-    });
+	function connectSocket(): void {
+		socket = getSocket();
 
-    // Attach listeners
-    socket.on('midi_input_status', (data) => {
-      handleMidiStatusUpdate({
-        type: 'usb_midi_status',
-        status: {
-          connected: data.active,
-          deviceName: data.device_name,
-          lastActivity: data.last_event_time,
-          messageCount: data.notes_received || 0
-        }
-      });
-    });
+		// Reflect global socket status
+		statusUnsubscribe = socketStatus.subscribe((st: string) => {
+			if (st === 'connected') {
+				dispatch('connected');
+			} else if (st === 'disconnected') {
+				dispatch('disconnected');
+			} else if (st === 'error') {
+				dispatch('error', { error: 'Socket error' });
+			}
+		});
 
-    socket.on('midi_manager_status', (data) => {
-      if (data.sources) {
-        if (data.sources.USB) {
-          handleMidiStatusUpdate({
-            type: 'usb_midi_status',
-            status: {
-              connected: data.sources.USB.connected,
-              deviceName: data.sources.USB.device_name,
-              lastActivity: data.performance?.last_event_time,
-              messageCount: data.event_counts?.USB || 0
-            }
-          });
-        }
-        if (data.sources.RTP_MIDI) {
-          handleMidiStatusUpdate({
-            type: 'network_midi_status',
-            status: {
-              connected: data.sources.RTP_MIDI.connected,
-              activeSessions: data.sources.RTP_MIDI.active_sessions || [],
-              lastActivity: data.performance?.last_event_time,
-              messageCount: data.event_counts?.RTP_MIDI || 0
-            }
-          });
-        }
-      }
-    });
+		// Attach listeners with typed payloads
+		socket.on('midi_input_status', (data: any) => {
+			const payload: MidiStatusUpdate = {
+				type: 'usb_midi_status',
+				status: {
+					connected: Boolean(data?.active),
+					deviceName: data?.device_name ?? null,
+					lastActivity: data?.last_event_time ?? null,
+					messageCount: data?.notes_received ?? 0
+				}
+			};
+			handleMidiStatusUpdate(payload);
+		});
 
-    socket.on('disconnect', (reason) => {
-      dispatch('disconnected');
-    });
+		socket.on('midi_manager_status', (data: any) => {
+			if (data?.sources) {
+				if (data.sources.USB) {
+					handleMidiStatusUpdate({
+						type: 'usb_midi_status',
+						status: {
+							connected: Boolean(data.sources.USB.connected),
+							deviceName: data.sources.USB.device_name ?? null,
+							lastActivity: data.performance?.last_event_time ?? null,
+							messageCount: data.event_counts?.USB ?? 0
+						}
+					});
+				}
+				if (data.sources.RTP_MIDI) {
+					handleMidiStatusUpdate({
+						type: 'network_midi_status',
+						status: {
+							connected: Boolean(data.sources.RTP_MIDI.connected),
+							activeSessions: data.sources.RTP_MIDI.active_sessions ?? [],
+							lastActivity: data.performance?.last_event_time ?? null,
+							messageCount: data.event_counts?.RTP_MIDI ?? 0
+						}
+					});
+				}
+			}
+		});
 
-    socket.on('connect_error', (error) => {
-      dispatch('error', { error });
-    });
-  }
+		socket.on('disconnect', (reason: any) => {
+			dispatch('disconnected');
+		});
 
-  function handleMidiStatusUpdate(data) {
-    if (data.type === 'usb_midi_status') {
-      usbMidiStatus = { ...usbMidiStatus, ...data.status };
-      dispatch('usbStatusUpdate', usbMidiStatus);
-    } else if (data.type === 'network_midi_status') {
-      networkMidiStatus = { ...networkMidiStatus, ...data.status };
-      dispatch('networkStatusUpdate', networkMidiStatus);
-    }
-  }
+		socket.on('connect_error', (error: unknown) => {
+			if (error instanceof Error) dispatch('error', { error: error.message });
+			else dispatch('error', { error: String(error) });
+		});
+	}
 
-  function formatLastActivity(timestamp) {
-    if (!timestamp) return 'Never';
-    const now = new Date();
-    const activity = new Date(timestamp);
-    const diffMs = now - activity;
-    const diffSecs = Math.floor(diffMs / 1000);
-    const diffMins = Math.floor(diffSecs / 60);
-    const diffHours = Math.floor(diffMins / 60);
+	function handleMidiStatusUpdate(data: MidiStatusUpdate): void {
+		if (data.type === 'usb_midi_status') {
+			usbMidiStatus = { ...usbMidiStatus, ...(data.status as Partial<UsbMidiStatus>) };
+			dispatch('usbStatusUpdate', usbMidiStatus);
+		} else if (data.type === 'network_midi_status') {
+			networkMidiStatus = { ...networkMidiStatus, ...(data.status as Partial<NetworkMidiStatus>) };
+			dispatch('networkStatusUpdate', networkMidiStatus);
+		}
+	}
 
-    if (diffSecs < 60) return `${diffSecs}s ago`;
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return activity.toLocaleDateString();
-  }
+	function formatLastActivity(timestamp: string | null | undefined): string {
+		if (!timestamp) return 'Never';
+		const now = Date.now();
+		const activity = new Date(timestamp).getTime();
+		const diffMs = now - activity;
+		const diffSecs = Math.floor(diffMs / 1000);
+		const diffMins = Math.floor(diffSecs / 60);
+		const diffHours = Math.floor(diffMins / 60);
 
-  onMount(() => {
-    connectSocket();
-  });
+		if (diffSecs < 60) return `${diffSecs}s ago`;
+		if (diffMins < 60) return `${diffMins}m ago`;
+		if (diffHours < 24) return `${diffHours}h ago`;
+		return new Date(activity).toLocaleDateString();
+	}
 
-  onDestroy(() => {
-    if (statusUnsubscribe) statusUnsubscribe();
-    // Do not disconnect shared socket here; other components rely on it
-  });
+	onMount(() => {
+		connectSocket();
+	});
+
+	onDestroy(() => {
+		if (statusUnsubscribe) statusUnsubscribe();
+		// Do not disconnect shared socket here; other components rely on it
+	});
 </script>
 
 <div class="midi-connection-status">

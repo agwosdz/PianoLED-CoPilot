@@ -1,45 +1,54 @@
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getSocket, socketStatus } from '$lib/socket';
   import { get } from 'svelte/store';
   import { canonicalLedCount, canonicalGpioPin } from '$lib/stores/settings';
   
+  // Minimal types for this component
+  type PatternStep = { color: string; duration: number; brightness: number };
+  type SequenceDef = { id: string; name: string; description: string };
+
   // Receive bound settings from parent
-  export let settings = {};
+  export let settings: any = {};
+
+  // Quietly reference settings to keep Svelte from warning when the prop is provided but not used directly
+  // This is intentional: the parent binds settings for convenience/testing; component reads canonical stores instead.
+  // @ts-ignore
+  const _bound_settings_ref = settings;
 
   // Component state
-  let activeTab = 'sequence';
-  let isTestRunning = false;
-  let testProgress = 0;
-  let testStatus = '';
-  let testError = '';
-  let currentTest = null;
-  let currentTestId = null;
-  let systemCapabilities = null;
-  let loadingCapabilities = false;
+  let activeTab: string = 'sequence';
+  let isTestRunning: boolean = false;
+  let testProgress: number = 0;
+  let testStatus: '' | 'running' | 'success' | 'error' = '';
+  let testError: string = '';
+  let currentTest: any = null;
+  let currentTestId: string | null = null;
+  let systemCapabilities: any = null;
+  let loadingCapabilities: boolean = false;
 
   // Test configuration
-  let selectedSequence = 'rainbow';
-  let testDuration = 5;
-  let brightness = 100;
-  let speed = 50;
-  let showAdvanced = false;
-  let customPattern = [
+  let selectedSequence: string = 'rainbow';
+  let testDuration: number = 5;
+  let brightness: number = 100;
+  let speed: number = 50;
+  let showAdvanced: boolean = false;
+  let customPattern: PatternStep[] = [
     { color: '#FF0000', duration: 1000, brightness: 100 },
     { color: '#00FF00', duration: 1000, brightness: 100 },
     { color: '#0000FF', duration: 1000, brightness: 100 }
   ];
 
   // Individual LED test
-  let ledPin = 18;
-  let ledColor = '#FF0000';
-  let ledBrightness = 100;
+  let ledPin: number = 18;
+  let ledColor: string = '#FF0000';
+  let ledBrightness: number = 100;
 
   // GPIO validation
-  let gpioPin = 18;
+  let gpioPin: number = 18;
 
   // Available sequences
-  const sequences = [
+  const sequences: SequenceDef[] = [
     { id: 'rainbow', name: 'Rainbow Cycle', description: 'Smooth color transitions through the spectrum' },
     { id: 'chase', name: 'Color Chase', description: 'Moving color pattern across LEDs' },
     { id: 'pulse', name: 'Pulse', description: 'Breathing effect with selected color' },
@@ -49,12 +58,12 @@
   ];
 
   // Helper functions for API requests and error handling
-  async function makeApiRequest(url, options = {}) {
+  async function makeApiRequest(url: string, options: RequestInit = {}): Promise<any> {
     try {
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
-          ...options.headers
+          ...(options.headers as Record<string,string> | undefined)
         },
         ...options
       });
@@ -65,19 +74,20 @@
       }
 
       return await response.json();
-    } catch (error) {
-      console.error(`API request failed for ${url}:`, error);
-      throw error;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`API request failed for ${url}:`, msg);
+      throw new Error(msg);
     }
   }
 
-  function setTestError(message) {
+  function setTestError(message?: string) {
     testStatus = 'error';
-    testError = message;
+    testError = message ?? 'Unknown error';
     isTestRunning = false;
   }
 
-  function setTestSuccess(message) {
+  function setTestSuccess(message?: string) {
     testStatus = 'success';
     testError = '';
     if (message) {
@@ -94,17 +104,17 @@
     isTestRunning = false;
   }
 
-  function handleTestCompletion(data) {
+  function handleTestCompletion(data: any) {
     setTestSuccess('Test completed successfully');
     testProgress = 100;
     isTestRunning = false;
-    if (data.results) {
+    if (data?.results) {
       currentTest = data.results;
     }
   }
 
-  function handleTestError(data) {
-    setTestError(data.error || 'Test failed');
+  function handleTestError(data: any) {
+    setTestError(data?.error || 'Test failed');
     testProgress = 0;
   }
 
@@ -114,9 +124,9 @@
     // Subscribe to WebSocket events
     const ws = getSocket();
     if (ws) {
-      ws.on('led_sequence_complete', handleTestCompletion);
+      ws.on('led_sequence_complete', handleTestCompletion as any);
       ws.on('led_sequence_stop', () => resetTestState());
-      ws.on('led_sequence_error', handleTestError);
+      ws.on('led_sequence_error', handleTestError as any);
     }
   });
 
@@ -124,9 +134,10 @@
     // Cleanup is handled by the socket library
   });
 
-  function handleWebSocketMessage(event) {
+  function handleWebSocketMessage(event: MessageEvent | any) {
     try {
-      const data = JSON.parse(event.data);
+      const raw = typeof event.data === 'string' ? event.data : JSON.stringify(event.data);
+      const data = JSON.parse(raw);
       
       switch (data.type) {
         case 'led_sequence_progress':
@@ -135,60 +146,55 @@
             currentTest = data.current_step;
           }
           break;
-          
         case 'led_sequence_complete':
           handleTestCompletion(data);
           break;
-          
         case 'led_sequence_stop':
           resetTestState();
           break;
-          
         case 'led_sequence_error':
           handleTestError(data);
           break;
-          
         case 'led_test_complete':
           setTestSuccess('LED test completed');
           break;
-          
         case 'led_test_error':
           handleTestError(data);
           break;
-          
         case 'gpio_validation_complete':
           setTestSuccess(`GPIO pin ${data.pin} validation completed`);
           break;
-          
         case 'gpio_validation_error':
           handleTestError(data);
           break;
       }
-    } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Error parsing WebSocket message:', msg);
     }
   }
 
   // API functions
-  async function loadSystemCapabilities() {
+  async function loadSystemCapabilities(): Promise<void> {
     loadingCapabilities = true;
     try {
       systemCapabilities = await makeApiRequest('/api/hardware-test/system/capabilities');
-    } catch (error) {
-      setTestError(`Failed to load system capabilities: ${error.message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestError(`Failed to load system capabilities: ${msg}`);
     } finally {
       loadingCapabilities = false;
     }
   }
 
-  async function startTestSequence() {
+  async function startTestSequence(): Promise<void> {
     resetTestState();
     isTestRunning = true;
     testStatus = 'running';
 
-    const config = {
+    const config: any = {
       sequence_type: selectedSequence,
-      duration: parseInt(testDuration),
+      duration: Number(testDuration),
       brightness: brightness / 100,
       speed: speed / 100,
       gpio_pin: $canonicalGpioPin,
@@ -214,12 +220,13 @@
         body: JSON.stringify(config)
       });
       currentTestId = result?.test_id ?? null;
-    } catch (error) {
-      setTestError(`Failed to start test sequence: ${error.message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestError(`Failed to start test sequence: ${msg}`);
     }
   }
 
-  async function stopTestSequence() {
+  async function stopTestSequence(): Promise<void> {
     try {
       if (currentTestId) {
         await makeApiRequest(`/api/hardware-test/led/sequence/${currentTestId}/stop`, {
@@ -229,29 +236,32 @@
       // Force turn off all LEDs regardless of controller state
       await turnOffAllLEDs();
       resetTestState();
-    } catch (error) {
-      setTestError(`Failed to stop test sequence: ${error.message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestError(`Failed to stop test sequence: ${msg}`);
     }
   }
 
-  async function turnOffAllLEDs() {
+  async function turnOffAllLEDs(): Promise<void> {
     try {
-      const result = await makeApiRequest('/api/hardware-test/led/off', {
+      await makeApiRequest('/api/hardware-test/led/off', {
         method: 'POST'
       });
       setTestSuccess('All LEDs turned off');
-    } catch (error) {
-      setTestError(`Failed to turn off LEDs: ${error.message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestError(`Failed to turn off LEDs: ${msg}`);
     }
   }
-  function hexToRgbArray(hex) {
+
+  function hexToRgbArray(hex: string): number[] {
     const r = parseInt(hex.slice(1,3), 16);
     const g = parseInt(hex.slice(3,5), 16);
     const b = parseInt(hex.slice(5,7), 16);
     return [r, g, b];
   }
 
-  async function testIndividualLED() {
+  async function testIndividualLED(): Promise<void> {
     resetTestState();
     testStatus = 'running';
 
@@ -269,37 +279,40 @@
         method: 'POST',
         body: JSON.stringify(config)
       });
-    } catch (error) {
-      setTestError(`Failed to test LED: ${error.message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestError(`Failed to test LED: ${msg}`);
     }
   }
 
-  async function validateGPIO() {
+  async function validateGPIO(): Promise<void> {
     resetTestState();
     testStatus = 'running';
 
     try {
-      const result = await makeApiRequest('/api/hardware-test/gpio/validate', {
+      await makeApiRequest('/api/hardware-test/gpio/validate', {
         method: 'POST',
         body: JSON.stringify({ pins: [gpioPin], mode: 'output' })
       });
       setTestSuccess(`GPIO pin ${gpioPin} validation completed`);
-    } catch (error) {
-      setTestError(`GPIO validation failed: ${error.message}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTestError(`GPIO validation failed: ${msg}`);
     }
   }
 
   // Custom pattern management
-  function addPatternStep() {
+  function addPatternStep(): void {
     customPattern = [...customPattern, { color: '#FFFFFF', duration: 1000, brightness: 100 }];
   }
 
-  function removePatternStep(index) {
+  function removePatternStep(index: number): void {
     customPattern = customPattern.filter((_, i) => i !== index);
   }
 
-  function updatePatternStep(index, field, value) {
-    customPattern[index][field] = value;
+  function updatePatternStep(index: number, field: keyof PatternStep, value: string | number): void {
+    // ensure proper types for numeric fields
+    (customPattern[index] as any)[field] = (field === 'duration' || field === 'brightness') ? Number(value) : String(value);
     customPattern = [...customPattern];
   }
 </script>
@@ -465,7 +478,7 @@
                       id={`custom-color-${index}`}
                       type="color" 
                       value={step.color}
-                      on:input={(e) => updatePatternStep(index, 'color', e.target.value)}
+                      on:input={(e) => updatePatternStep(index, 'color', (e.target as HTMLInputElement).value)}
                       disabled={isTestRunning}
                     />
                   </div>
@@ -477,7 +490,7 @@
                       min="100" 
                       max="10000" 
                       value={step.duration}
-                      on:input={(e) => updatePatternStep(index, 'duration', parseInt(e.target.value))}
+                      on:input={(e) => updatePatternStep(index, 'duration', parseInt((e.target as HTMLInputElement).value))}
                       disabled={isTestRunning}
                     />
                   </div>
@@ -489,7 +502,7 @@
                       min="1" 
                       max="100" 
                       value={step.brightness}
-                      on:input={(e) => updatePatternStep(index, 'brightness', parseInt(e.target.value))}
+                      on:input={(e) => updatePatternStep(index, 'brightness', parseInt((e.target as HTMLInputElement).value))}
                       disabled={isTestRunning}
                     />
                     <span class="range-value">{step.brightness}%</span>

@@ -4,55 +4,63 @@
 	export let validation: ValidationResult | null = null;
 	export let showDetails = false;
 	export let variant: 'inline' | 'card' | 'toast' = 'inline';
-	export let size: 'small' | 'medium' | 'large' = 'medium';
+	// Accept legacy sizing strings and normalize to sm/md/lg
+	export let size: 'small' | 'medium' | 'large' | 'sm' | 'md' | 'lg' = 'medium';
+
+	$: normalizedSize = ((): 'sm' | 'md' | 'lg' => {
+		if (size === 'small') return 'sm';
+		if (size === 'medium') return 'md';
+		if (size === 'large') return 'lg';
+		return size as 'sm' | 'md' | 'lg';
+	})();
 
 	$: hasError = validation && !validation.valid;
 	$: hasDetails = validation?.details || validation?.suggestion;
 </script>
 
 {#if hasError}
-	<div class="validation-message {variant} {size}" role="alert" aria-live="polite">
+	<div class="validation-message {variant} {normalizedSize}" role="alert" aria-live="polite">
 		<div class="message-header">
 			<svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 				<circle cx="12" cy="12" r="10"/>
 				<line x1="15" y1="9" x2="9" y2="15"/>
 				<line x1="9" y1="9" x2="15" y2="15"/>
 			</svg>
-			<span class="message-text">{validation.message}</span>
+			<span class="message-text">{validation?.message}</span>
 		</div>
 
-		{#if validation.suggestion && (showDetails || variant === 'card')}
+		{#if validation?.suggestion && (showDetails || variant === 'card')}
 			<div class="suggestion">
 				<svg class="suggestion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 					<circle cx="12" cy="12" r="10"/>
 					<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
 					<line x1="12" y1="17" x2="12.01" y2="17"/>
 				</svg>
-				<span>{validation.suggestion}</span>
+				<span>{validation?.suggestion}</span>
 			</div>
 		{/if}
 
-		{#if validation.details && showDetails}
+		{#if validation?.details && showDetails}
 			<div class="details">
-				{#if validation.details.actualExtension && validation.details.allowedExtensions}
+				{#if validation.details?.actualExtension && validation.details?.allowedExtensions}
 					<div class="detail-item">
-						<strong>Found:</strong> .{validation.details.actualExtension}
+						<strong>Found:</strong> .{validation.details?.actualExtension}
 					</div>
 					<div class="detail-item">
-						<strong>Allowed:</strong> {validation.details.allowedExtensions.join(', ')}
-					</div>
-				{/if}
-				{#if validation.details.actualSize && validation.details.maxSize}
-					<div class="detail-item">
-						<strong>File size:</strong> {validation.details.actualSize}
-					</div>
-					<div class="detail-item">
-						<strong>Maximum:</strong> {validation.details.maxSize}
+						<strong>Allowed:</strong> {validation.details?.allowedExtensions?.join(', ')}
 					</div>
 				{/if}
-				{#if validation.details.actualSize && !validation.details.maxSize}
+				{#if validation.details?.actualSize && validation.details?.maxSize}
 					<div class="detail-item">
-						<strong>File size:</strong> {validation.details.actualSize}
+						<strong>File size:</strong> {validation.details?.actualSize}
+					</div>
+					<div class="detail-item">
+						<strong>Maximum:</strong> {validation.details?.maxSize}
+					</div>
+				{/if}
+				{#if validation.details?.actualSize && !validation.details?.maxSize}
+					<div class="detail-item">
+						<strong>File size:</strong> {validation.details?.actualSize}
 					</div>
 				{/if}
 			</div>

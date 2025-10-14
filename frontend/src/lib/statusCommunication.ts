@@ -375,23 +375,34 @@ export const statusUtils = {
 	},
 
 	// Processing status patterns
-	processingStart: (operation: string) => {
-		return statusManager.loading('Processing', `${operation} in progress...`);
+	processingStart: (...args: any[]) => {
+		// Accept either (operation) or (label, message) or (filename) call patterns
+		const label = typeof args[0] === 'string' ? args[0] : 'Processing';
+		const message = typeof args[1] === 'string' ? args[1] : `${label} in progress...`;
+		const id = `proc-${label}-${Date.now()}`;
+		statusManager.startProgress(id, label);
+		statusManager.loading(label, message);
+		return id;
 	},
 
-	processingSuccess: (operation: string, result?: string) => {
-		return statusManager.success(
-			'Processing Complete',
-			`${operation} completed successfully${result ? `: ${result}` : ''}`
-		);
+	processingSuccess: (...args: any[]) => {
+		// Accept (operation, result?) or (id, filename?) patterns
+		if (args.length === 1 && typeof args[0] === 'string') {
+			return statusManager.success('Processing Complete', `${args[0]} completed successfully`);
+		}
+		const [operation, result] = args;
+		return statusManager.success('Processing Complete', `${operation} completed successfully${result ? `: ${result}` : ''}`);
 	},
 
-	processingError: (operation: string, error: string, actions?: StatusAction[]) => {
-		return statusManager.error(
-			'Processing Failed',
-			`${operation} failed: ${error}`,
-			actions
-		);
+	processingError: (...args: any[]) => {
+		// Flexible: (operation, error, actions?) OR (id, filename, message)
+		if (args.length >= 3 && typeof args[0] === 'string' && typeof args[1] === 'string' && typeof args[2] === 'string') {
+			// Treat as (id, filename, errorMessage)
+			const [, filename, errorMessage] = args as string[];
+			return statusManager.error('Processing Failed', `${filename} failed: ${errorMessage}`);
+		}
+		const [operation, error, actions] = args;
+		return statusManager.error('Processing Failed', `${operation} failed: ${error}`, actions);
 	},
 
 	// Validation status patterns

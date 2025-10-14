@@ -6,8 +6,9 @@
 	import { page } from '$app/stores';
 
 	let { children } = $props();
-	
+
 	// Force page re-render when route changes to prevent content stacking
+	// Use $derived in runes mode to compute a reactive value from the $page store
 	let currentPath = $derived($page.url.pathname);
 </script>
 
@@ -18,9 +19,11 @@
 
 <div class="app-container">
 	<Navigation />
-	<main class="main-content" key={currentPath}>
-		{@render children?.()}
-	</main>
+	{#key currentPath}
+		<main class="main-content">
+			{@render children?.()}
+		</main>
+	{/key}
 </div>
 
 <!-- Global Toast Container -->

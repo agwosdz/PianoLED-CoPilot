@@ -2,84 +2,18 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { settings, getSetting } from '$lib/stores/settings.js';
-	import LEDVisualization from '$lib/components/LEDVisualization.svelte';
-	import PerformanceMonitor from '$lib/components/PerformanceMonitor.svelte';
-	import MidiDeviceSelector from '$lib/components/MidiDeviceSelector.svelte';
-	import NetworkMidiConfig from '$lib/components/NetworkMidiConfig.svelte';
-	import MidiConnectionStatus from '$lib/components/MidiConnectionStatus.svelte';
 
-	import { getSocket, socketStatus } from '$lib/socket';
-
-	let backendStatus = 'Checking...';
-	let backendMessage = '';
-	
-	// Visualization toggle
-	let visualizationEnabled = true;
-
-	// WebSocket connection for real-time LED updates
-	let websocket = null;
-	let connectionStatus = 'disconnected';
-	let reconnectAttempts = 0;
-	let connectionError = null;
-	let lastConnectionTime = null;
-	const maxReconnectAttempts = 5;
+	let backendStatus: string = 'Checking...';
+	let backendMessage: string = '';
 
 	// System status from backend dashboard endpoint
-	let systemStatus = null;
-	let systemStatusLoading = true;
-	let systemStatusError = null;
+	let systemStatus: any = null;
+	let systemStatusLoading: boolean = true;
+	let systemStatusError: string | null = null;
 
-	// LED state management
-	let ledState = [];
-	let ledCount = 246; // Default LED count, configurable
-	let performanceMetrics = {
-		update_frequency: 0,
-		latency_ms: 0,
-		connection_health: 'unknown'
-	};
-
-	// Performance tracking
-	let lastUpdateTime = 0;
-	let updateCount = 0;
-	let fpsInterval;
-	let connectionHealthInterval;
-
-	// MIDI device management
-	let selectedMidiDevice = null;
-	let midiDevicesExpanded = true; // Expanded by default
-	let networkMidiExpanded = true; // Expanded by default
-
-	// MIDI connection status
-	let usbMidiStatus = {
-		connected: false,
-		deviceName: null,
-		lastActivity: null,
-		messageCount: 0
-	};
-
-	let networkMidiStatus = {
-		connected: false,
-		activeSessions: [],
-		lastActivity: null,
-		messageCount: 0
-	};
-
-	// Initialize LED state with default values
-	function initializeLEDState(count) {
-		ledState = [];
-		for (let i = 0; i < count; i++) {
-			ledState.push({
-				index: i,
-				r: 0,
-				g: 0,
-				b: 0,
-				brightness: 0
-			});
-		}
-	}
-
-	// Initialize with default LED count
-	initializeLEDState(ledCount);
+	// USB MIDI status object (populated from systemStatus if available)
+	type UsbMidiStatus = { connected: boolean; deviceName?: string | null; lastActivity?: string | null; messageCount: number };
+	let usbMidiStatus: UsbMidiStatus | null = null;
 
 	onMount(async () => {
 		// Check backend health first
@@ -100,140 +34,13 @@
 
 		// Initialize dashboard functionality if backend is healthy
 		if (backendStatus === 'healthy') {
-			initializeWebSocket();
-			startPerformanceTracking();
-			startConnectionHealthCheck();
 			fetchSystemStatus();
-			fetchLEDCount();
 		}
 	});
 
 	onDestroy(() => {
-		if (websocket) {
-			websocket.close();
-		}
-		if (fpsInterval) {
-			clearInterval(fpsInterval);
-		}
-		if (connectionHealthInterval) {
-			clearInterval(connectionHealthInterval);
-		}
+		// No cleanup needed for removed features
 	});
-
-	function initializeWebSocket() {
-		try {
-			const s = getSocket();
-			socketStatus.subscribe((st) => {
-				if (st === 'connected') {
-					connectionStatus = 'connected';
-					reconnectAttempts = 0;
-					connectionError = null;
-					lastConnectionTime = new Date();
-					performanceMetrics.connection_health = 'connected';
-					s.emit('subscribe_led_updates');
-				} else if (st === 'connecting') {
-					connectionStatus = 'connecting';
-				} else if (st === 'disconnected') {
-					connectionStatus = 'disconnected';
-					attemptReconnect();
-				} else if (st === 'error') {
-					connectionStatus = 'error';
-					connectionError = 'Socket error';
-				}
-			});
-
-			s.on('led_update', (data) => updateLEDState(data));
-			s.on('led_count_updated', (data) => {
-				if (data.ledCount && data.ledCount !== ledCount) {
-					ledCount = data.ledCount;
-					initializeLEDState(ledCount);
-				}
-			});
-		} catch (error) {
-			console.error('Failed to initialize dashboard WebSocket:', error);
-			connectionStatus = 'error';
-			connectionError = `Initialization failed: ${error.message}`;
-			performanceMetrics.connection_health = 'error';
-		}
-	}
-
-	function updateLEDState(data) {
-		const updateStartTime = performance.now();
-		
-		try {
-			if (data.leds && Array.isArray(data.leds)) {
-				ledState = data.leds;
-			}
-			if (data.performance) {
-				performanceMetrics = {
-					...performanceMetrics,
-					...data.performance,
-					connection_health: connectionStatus
-				};
-			}
-			
-			// Calculate latency
-			const latency = performance.now() - updateStartTime;
-			performanceMetrics.latency_ms = Math.round(latency);
-			
-			// Track update frequency
-			updateCount++;
-			lastUpdateTime = performance.now();
-			
-		} catch (error) {
-			console.error('Error handling LED update:', error);
-			connectionError = `Update error: ${error.message}`;
-		}
-	}
-
-	function attemptReconnect() {
-		if (reconnectAttempts < maxReconnectAttempts) {
-			reconnectAttempts++;
-			connectionStatus = 'reconnecting';
-			connectionError = `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
-			performanceMetrics.connection_health = 'reconnecting';
-			setTimeout(() => {
-				initializeWebSocket();
-			}, 2000 * reconnectAttempts); // Exponential backoff
-		} else {
-			connectionStatus = 'failed';
-			connectionError = `Failed to reconnect after ${maxReconnectAttempts} attempts`;
-			performanceMetrics.connection_health = 'failed';
-		}
-	}
-
-	function startPerformanceTracking() {
-		fpsInterval = setInterval(() => {
-			// Calculate FPS based on update count
-			performanceMetrics.update_frequency = updateCount;
-			updateCount = 0;
-		}, 1000);
-	}
-
-	function startConnectionHealthCheck() {
-		connectionHealthInterval = setInterval(() => {
-			// Update connection health based on recent activity
-			if (connectionStatus === 'connected') {
-				const timeSinceLastUpdate = performance.now() - lastUpdateTime;
-				if (timeSinceLastUpdate > 5000) {
-					// No updates for 5 seconds, might be stale
-					performanceMetrics.connection_health = 'stale';
-				} else {
-					performanceMetrics.connection_health = 'connected';
-				}
-			}
-		}, 2000);
-	}
-
-	// Manual reconnection function
-	function manualReconnect() {
-		if (websocket) {
-			websocket.close();
-		}
-		connectionError = null;
-		reconnectAttempts = 0;
-		initializeWebSocket();
-	}
 
 	// Fetch system status from backend
 	async function fetchSystemStatus() {
@@ -261,92 +68,13 @@
 			systemStatusLoading = false;
 		}
 	}
-	
-	// Fetch saved LED count from backend settings
-	async function fetchLEDCount() {
-		try {
-			const count = await getSetting('led', 'led_count');
-			if (typeof count === 'number' && count > 0) {
-				ledCount = count;
-				initializeLEDState(ledCount);
-			}
-		} catch (e) {
-			console.warn('Failed to fetch LED count from settings DB:', e);
-		}
-	}
-
-	// MIDI device event handlers
-	async function handleMidiDeviceSelected(event) {
-		console.log('MIDI device selected:', event.detail);
-		selectedMidiDevice = event.detail.id;
-		
-		// Connect to the selected MIDI device
-		try {
-			const response = await fetch('/api/midi-input/start', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					device_name: event.detail.name,
-					enable_usb: true,
-					enable_rtpmidi: false
-				})
-			});
-			
-			if (response.ok) {
-				const result = await response.json();
-				console.log('MIDI device connected successfully:', result);
-				// Refresh system status to update the connection status display
-				await fetchSystemStatus();
-			} else {
-				const error = await response.json();
-				console.error('Failed to connect to MIDI device:', error);
-			}
-		} catch (error) {
-			console.error('Error connecting to MIDI device:', error);
-		}
-	}
-
-	function handleMidiDevicesUpdated(event) {
-		console.log('MIDI devices updated:', event.detail);
-	}
-
-	function handleNetworkMidiConnected(event) {
-		console.log('Network MIDI session connected:', event.detail);
-	}
-
-	function handleNetworkMidiDisconnected(event) {
-		console.log('Network MIDI session disconnected:', event.detail);
-	}
-
-	function handleNetworkMidiSessionsUpdated(event) {
-		console.log('Network MIDI sessions updated:', event.detail);
-	}
-
-	// MIDI connection status event handlers
-	function handleMidiStatusConnected(event) {
-		console.log('MIDI status WebSocket connected');
-	}
-
-	function handleMidiStatusDisconnected(event) {
-		console.log('MIDI status WebSocket disconnected');
-	}
-
-	function handleUsbStatusUpdate(event) {
-		usbMidiStatus = event.detail;
-	}
-
-	function handleNetworkStatusUpdate(event) {
-		networkMidiStatus = event.detail;
-	}
 
 	// Helper functions for system status display
-	function getStatusClass(available) {
+	function getStatusClass(available: boolean | undefined): string {
 		return available ? 'healthy' : 'error';
 	}
 
-	function formatDuration(seconds) {
+	function formatDuration(seconds: number): string {
 		const mins = Math.floor(seconds / 60);
 		const secs = Math.floor(seconds % 60);
 		return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -364,17 +92,35 @@
 		<p>Welcome to the Piano LED Visualizer - Transform your MIDI files into stunning LED light shows!</p>
 	</div>
 	
-	<div class="status-card">
-		<h2>System Status</h2>
-		<div class="status-item">
-			<span class="label">Frontend:</span>
-			<span class="status healthy">Running</span>
-		</div>
-		<div class="status-item">
-			<span class="label">Backend:</span>
-			<span class="status {backendStatus === 'healthy' ? 'healthy' : 'error'}">
-				{backendStatus === 'healthy' ? 'Healthy' : backendStatus}
-			</span>
+	<div class="system-details-card">
+		<h2>System Details</h2>
+		<div class="system-details-grid">
+			<div class="detail-item">
+				<span class="label">Frontend:</span>
+				<span class="value">Running</span>
+			</div>
+			<div class="detail-item">
+				<span class="label">Backend:</span>
+				<span class="value {backendStatus === 'healthy' ? 'healthy' : 'error'}">
+					{backendStatus === 'healthy' ? 'Healthy' : backendStatus}
+				</span>
+			</div>
+			<div class="detail-item">
+				<span class="label">Backend IP/Port:</span>
+				<span class="value">{browser ? `${window.location.hostname}:${window.location.port || '5173'}` : 'localhost:5173'}</span>
+			</div>
+			<div class="detail-item">
+				<span class="label">WebSocket:</span>
+				<span class="value">Connected</span>
+			</div>
+			<div class="detail-item">
+				<span class="label">Uptime:</span>
+				<span class="value">Running</span>
+			</div>
+			<div class="detail-item">
+				<span class="label">Version:</span>
+				<span class="value">1.0.0</span>
+			</div>
 		</div>
 		{#if backendMessage}
 			<p class="status-message">{backendMessage}</p>
@@ -382,130 +128,6 @@
 	</div>
 
 	{#if backendStatus === 'healthy'}
-		<!-- LED Visualization Section -->
-		<section class="visualization-section">
-			<div class="visualization-header">
-				<h2>LED Strip Visualization</h2>
-				<div class="connection-info">
-					<div class="connection-status status-{connectionStatus}">
-						<span class="status-indicator"></span>
-						<span class="status-text">
-							{#if connectionStatus === 'connected'}
-								Connected
-							{:else if connectionStatus === 'reconnecting'}
-								Reconnecting... ({reconnectAttempts}/{maxReconnectAttempts})
-							{:else if connectionStatus === 'disconnected'}
-								Disconnected
-							{:else if connectionStatus === 'error'}
-								Connection Error
-							{:else if connectionStatus === 'failed'}
-								Connection Failed
-							{:else}
-								Unavailable
-							{/if}
-						</span>
-					</div>
-					
-					{#if connectionError}
-						<div class="connection-error">
-							<span class="error-icon">⚠️</span>
-							<span class="error-message">{connectionError}</span>
-						</div>
-					{/if}
-					
-					{#if connectionStatus === 'failed' || connectionStatus === 'error'}
-						<button class="reconnect-btn" on:click={manualReconnect}>
-							🔄 Retry Connection
-						</button>
-					{/if}
-				</div>
-				<label class="toggle-switch">
-					<input type="checkbox" bind:checked={visualizationEnabled}>
-					<span class="toggle-slider"></span>
-					<span class="toggle-label">{visualizationEnabled ? 'Enabled' : 'Disabled'}</span>
-				</label>
-			</div>
-			{#if visualizationEnabled}
-				<LEDVisualization 
-					{ledState} 
-					width={1200} 
-					height={200}
-					responsive={true}
-				/>
-			{/if}
-		</section>
-
-		<!-- Performance Monitor Section -->
-		<section class="performance-section">
-			<h2>Performance Monitor</h2>
-			<PerformanceMonitor {performanceMetrics} />
-		</section>
-
-		<!-- MIDI Configuration Section -->
-		<section class="midi-section">
-			<h2>MIDI Configuration</h2>
-			
-			<!-- MIDI Connection Status -->
-			<div class="midi-status-container">
-				<h3>🎹 MIDI Connection Status</h3>
-				<MidiConnectionStatus 
-					{usbMidiStatus}
-					{networkMidiStatus}
-					on:connected={handleMidiStatusConnected}
-					on:disconnected={handleMidiStatusDisconnected}
-					on:usbStatusUpdate={handleUsbStatusUpdate}
-					on:networkStatusUpdate={handleNetworkStatusUpdate}
-				/>
-			</div>
-
-			<div class="midi-panels">
-				<div class="midi-panel">
-					<button 
-						class="panel-header" 
-						type="button"
-						on:click={() => midiDevicesExpanded = !midiDevicesExpanded}
-						on:keydown={(e) => e.key === 'Enter' && (midiDevicesExpanded = !midiDevicesExpanded)}
-					>
-						<h3>USB MIDI Devices</h3>
-						<span class="expand-icon {midiDevicesExpanded ? 'expanded' : ''}">
-							{midiDevicesExpanded ? '▼' : '▶'}
-						</span>
-					</button>
-					{#if midiDevicesExpanded}
-						<div class="panel-content">
-							<MidiDeviceSelector 
-								on:deviceSelected={handleMidiDeviceSelected}
-								on:devicesUpdated={handleMidiDevicesUpdated}
-							/>
-						</div>
-					{/if}
-				</div>
-
-				<div class="midi-panel">
-					<button 
-						class="panel-header" 
-						type="button"
-						on:click={() => networkMidiExpanded = !networkMidiExpanded}
-						on:keydown={(e) => e.key === 'Enter' && (networkMidiExpanded = !networkMidiExpanded)}
-					>
-						<h3>Network MIDI (RTP-MIDI)</h3>
-						<span class="expand-icon {networkMidiExpanded ? 'expanded' : ''}">
-							{networkMidiExpanded ? '▼' : '▶'}
-						</span>
-					</button>
-					{#if networkMidiExpanded}
-						<div class="panel-content">
-							<NetworkMidiConfig 
-								on:sessionConnected={handleNetworkMidiConnected}
-								on:sessionDisconnected={handleNetworkMidiDisconnected}
-								on:sessionsUpdated={handleNetworkMidiSessionsUpdated}
-							/>
-						</div>
-					{/if}
-				</div>
-			</div>
-		</section>
-
 		<!-- System Status Details -->
 		{#if systemStatusLoading}
 			<div class="loading">Loading system status...</div>
@@ -563,18 +185,11 @@
 		<h2>Navigation</h2>
 		<p>Access all available features of the Piano LED Visualizer:</p>
 		<div class="nav-buttons">
-			<a href="/upload" class="nav-button">
-				<span class="nav-icon">📁</span>
+			<a href="/listen" class="nav-button">
+				<span class="nav-icon">🎵</span>
 				<div class="nav-content">
-					<h3>Upload</h3>
-					<p>Upload MIDI files for LED visualization</p>
-				</div>
-			</a>
-			<a href="/play" class="nav-button">
-				<span class="nav-icon">▶️</span>
-				<div class="nav-content">
-					<h3>Play</h3>
-					<p>Play and control MIDI file playback</p>
+					<h3>Listen</h3>
+					<p>Upload and play MIDI files for LED visualization</p>
 				</div>
 			</a>
 			<a href="/settings" class="nav-button">
@@ -585,17 +200,6 @@
 				</div>
 			</a>
 		</div>
-	</div>
-
-	<div class="info-card">
-		<h2>Getting Started</h2>
-		<p>This is the foundation setup for the Piano LED Visualizer. The system is ready for development!</p>
-		<ul>
-			<li>✅ Monorepo structure initialized</li>
-			<li>✅ Flask backend running on port 5001</li>
-			<li>✅ SvelteKit frontend running on port 5173</li>
-			<li>✅ Health check endpoint working</li>
-		</ul>
 	</div>
 </main>
 
@@ -624,7 +228,7 @@
 		margin-bottom: 0;
 	}
 
-	.status-card, .info-card, .navigation-card {
+	.status-card, .info-card, .navigation-card, .system-details-card {
 		background: #f8f9fa;
 		border: 1px solid #e9ecef;
 		border-radius: 8px;
@@ -632,34 +236,42 @@
 		margin: 1.5rem 0;
 	}
 
-	.status-item {
+	.system-details-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.detail-item {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin: 0.5rem 0;
+		padding: 0.75rem;
+		background: white;
+		border-radius: 6px;
+		border: 1px solid #e9ecef;
 	}
 
-	.label {
+	.detail-item .label {
 		font-weight: 600;
 		color: #495057;
 	}
 
-	.status {
-		padding: 0.25rem 0.75rem;
-		border-radius: 4px;
-		font-weight: 600;
-		text-transform: uppercase;
-		font-size: 0.875rem;
+	.detail-item .value {
+		font-weight: 500;
+		color: #2d3748;
+		font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 	}
 
-	.status.healthy {
-		background-color: #d4edda;
+	.detail-item .value.healthy {
 		color: #155724;
+		font-weight: 600;
 	}
 
-	.status.error {
-		background-color: #f8d7da;
+	.detail-item .value.error {
 		color: #721c24;
+		font-weight: 600;
 	}
 
 	.status-message {
@@ -672,7 +284,7 @@
 	}
 
 	/* Dashboard-specific styles */
-	.visualization-section, .performance-section, .midi-section, .system-details-section {
+	.visualization-section, .performance-section, .system-details-section {
 		background: white;
 		border: 1px solid #e9ecef;
 		border-radius: 12px;
@@ -847,71 +459,6 @@
 		color: #495057;
 	}
 
-	.midi-section h2 {
-		margin-bottom: 1.5rem;
-		color: #333;
-	}
-
-	.midi-status-container {
-		margin-bottom: 2rem;
-	}
-
-	.midi-status-container h3 {
-		margin-bottom: 1rem;
-		color: #495057;
-	}
-
-	.midi-panels {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 1.5rem;
-	}
-
-	.midi-panel {
-		border: 1px solid #e9ecef;
-		border-radius: 8px;
-		overflow: hidden;
-	}
-
-	.panel-header {
-		background-color: #f8f9fa;
-		padding: 1rem;
-		cursor: pointer;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		transition: background-color 0.2s;
-		border: none;
-		width: 100%;
-		text-align: left;
-		font-family: inherit;
-	}
-
-	.panel-header:hover {
-		background-color: #e9ecef;
-	}
-
-	.panel-header h3 {
-		margin: 0;
-		font-size: 1rem;
-		color: #495057;
-	}
-
-	.expand-icon {
-		font-size: 0.875rem;
-		color: #6c757d;
-		transition: transform 0.2s;
-	}
-
-	.expand-icon.expanded {
-		transform: rotate(0deg);
-	}
-
-	.panel-content {
-		padding: 1rem;
-		border-top: 1px solid #e9ecef;
-	}
-
 	.system-status-grid {
 		display: grid;
 		gap: 1.5rem;
@@ -1020,10 +567,6 @@
 	@media (max-width: 768px) {
 		main {
 			padding: 1rem;
-		}
-
-		.midi-panels {
-			grid-template-columns: 1fr;
 		}
 
 		.visualization-header {

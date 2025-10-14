@@ -78,15 +78,28 @@
 	});
 
 	function handleInput(event: Event) {
-		const target = event.target as HTMLInputElement | HTMLTextAreaElement;
-		
+		const target = event.target as EventTarget | null;
+
+		if (!target) return;
+
 		if (type === 'file') {
 			const fileInput = target as HTMLInputElement;
 			value = fileInput.files?.[0] || null;
 		} else if (type === 'number') {
-			value = target.valueAsNumber || 0;
+			// Narrow to HTMLInputElement at runtime before accessing valueAsNumber.
+			if (target instanceof HTMLInputElement) {
+				const num = target.valueAsNumber;
+				// valueAsNumber is NaN when the input is empty or invalid — normalize to 0
+				value = Number.isFinite(num) ? num : 0;
+			} else {
+				// Fallback: try to parse value property if available
+				const sval = (target as any).value;
+				const parsed = sval != null ? Number(sval) : NaN;
+				value = Number.isFinite(parsed) ? parsed : 0;
+			}
 		} else {
-			value = target.value;
+			const t = target as HTMLInputElement | HTMLTextAreaElement;
+			value = t.value;
 		}
 
 		// Trigger error prevention

@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
 	export let text = '';
 	export let position = 'top'; // top, bottom, left, right
 	export let delay = 500; // milliseconds
@@ -10,24 +10,32 @@
 
 	let showTooltip = false;
 	let tooltipElement;
-	let triggerElement;
-	let timeoutId;
+	let triggerElement: HTMLElement | null = null;
+	let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
 
 	function handleMouseEnter() {
 		if (disabled || trigger !== 'hover') return;
-		clearTimeout(timeoutId);
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId);
+			timeoutId = undefined;
+		}
 		timeoutId = setTimeout(() => {
 			showTooltip = true;
+			timeoutId = undefined;
 		}, delay);
 	}
 
 	function handleMouseLeave() {
 		if (disabled || trigger !== 'hover') return;
-		clearTimeout(timeoutId);
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId);
+			timeoutId = undefined;
+		}
 		showTooltip = false;
 	}
 
-	function handleClick() {
+	function handleClick(event?: Event) {
+		// Accept optional event from keyboard handlers but it's unused.
 		if (disabled || trigger !== 'click') return;
 		showTooltip = !showTooltip;
 	}
@@ -42,7 +50,7 @@
 		showTooltip = false;
 	}
 
-	function handleKeydown(event) {
+	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			showTooltip = false;
 		}
@@ -62,10 +70,10 @@
 	role="button"
 	tabindex="0"
 	on:keydown={(e) => {
-		if (e.key === 'Enter' || e.key === ' ') {
-			handleClick(e);
-		}
-	}}
+ 			if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
+ 				handleClick();
+ 			}
+ 		}}
 	aria-describedby={showTooltip ? 'tooltip-content' : undefined}
 >
 	<slot />

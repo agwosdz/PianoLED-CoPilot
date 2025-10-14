@@ -9,7 +9,7 @@ describe('PerformanceMonitor', () => {
 	const defaultProps = {
 		updateFrequency: 30,
 		latency: 15,
-		connectionHealth: 'excellent' as const,
+		connectionHealth: { color: 'green', text: 'Excellent', icon: '\u2705' },
 		lastUpdateTime: Date.now()
 	};
 
@@ -57,50 +57,54 @@ describe('PerformanceMonitor', () => {
 
 	it('displays excellent connection health', () => {
 		const { container: testContainer } = render(PerformanceMonitor, {
-			props: { ...defaultProps, connectionHealth: 'excellent' }
+			props: { ...defaultProps, connectionHealth: { color: 'green', text: 'Excellent', icon: '\u2705' } }
 		});
 		container = testContainer;
 
 		// Should show excellent health status
-		const healthElement = container.querySelector('.health-excellent');
+		const healthElement = container.querySelector('.connection-status');
 		expect(healthElement).toBeTruthy();
-		expect(container.textContent).toContain('Excellent');
+		expect(healthElement?.textContent).toContain('Excellent');
+		expect(healthElement?.className).toContain('status-green');
 	});
 
 	it('displays good connection health', () => {
 		const { container: testContainer } = render(PerformanceMonitor, {
-			props: { ...defaultProps, connectionHealth: 'good' }
+			props: { ...defaultProps, connectionHealth: { color: 'green', text: 'Good', icon: '\u2705' } }
 		});
 		container = testContainer;
 
 		// Should show good health status
-		const healthElement = container.querySelector('.health-good');
+		const healthElement = container.querySelector('.connection-status');
 		expect(healthElement).toBeTruthy();
-		expect(container.textContent).toContain('Good');
+		expect(healthElement?.textContent).toContain('Good');
+		expect(healthElement?.className).toContain('status-green');
 	});
 
 	it('displays warning connection health', () => {
 		const { container: testContainer } = render(PerformanceMonitor, {
-			props: { ...defaultProps, connectionHealth: 'warning' }
+			props: { ...defaultProps, connectionHealth: { color: 'orange', text: 'Warning', icon: '\u26a0\ufe0f' } }
 		});
 		container = testContainer;
 
 		// Should show warning health status
-		const healthElement = container.querySelector('.health-warning');
+		const healthElement = container.querySelector('.connection-status');
 		expect(healthElement).toBeTruthy();
-		expect(container.textContent).toContain('Warning');
+		expect(healthElement?.textContent).toContain('Warning');
+		expect(healthElement?.className).toContain('status-orange');
 	});
 
 	it('displays poor connection health', () => {
 		const { container: testContainer } = render(PerformanceMonitor, {
-			props: { ...defaultProps, connectionHealth: 'poor' }
+			props: { ...defaultProps, connectionHealth: { color: 'red', text: 'Poor', icon: '\u274c' } }
 		});
 		container = testContainer;
 
 		// Should show poor health status
-		const healthElement = container.querySelector('.health-poor');
+		const healthElement = container.querySelector('.connection-status');
 		expect(healthElement).toBeTruthy();
-		expect(container.textContent).toContain('Poor');
+		expect(healthElement?.textContent).toContain('Poor');
+		expect(healthElement?.className).toContain('status-red');
 	});
 
 	it('updates metrics when props change', async () => {
@@ -250,19 +254,19 @@ describe('PerformanceMonitor', () => {
 		component = testComponent;
 
 		// Change connection health
-		await component.$set({ connectionHealth: 'poor' });
+		await component.$set({ connectionHealth: { color: 'red', text: 'Poor', icon: '\u274c' } });
 
 		// Should update the health display
 		await waitFor(() => {
-			expect(container.querySelector('.health-poor')).toBeTruthy();
+			expect(container.querySelector('.connection-status')?.textContent).toContain('Poor');
 		});
 	});
 
 	it('maintains consistent layout across different metrics', () => {
 		const testCases = [
-			{ updateFrequency: 1, latency: 1000, connectionHealth: 'poor' as const },
-			{ updateFrequency: 60, latency: 10, connectionHealth: 'excellent' as const },
-			{ updateFrequency: 120, latency: 5, connectionHealth: 'good' as const }
+			{ updateFrequency: 1, latency: 1000, connectionHealth: { color: 'red', text: 'Poor', icon: '\u274c' } },
+			{ updateFrequency: 60, latency: 10, connectionHealth: { color: 'green', text: 'Excellent', icon: '\u2705' } },
+			{ updateFrequency: 120, latency: 5, connectionHealth: { color: 'green', text: 'Good', icon: '\u2705' } }
 		];
 
 		testCases.forEach((testCase, index) => {

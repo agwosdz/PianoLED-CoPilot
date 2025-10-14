@@ -1,94 +1,114 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { get } from 'svelte/store';
 	import { lastSavedSettings, savingSettings, failedSettings } from '$lib/stores/settings.js';
-	
-	const dispatch = createEventDispatcher();
-	
-	export let type = 'text';
-	export let label = '';
-	export let value = '';
-	export let placeholder = '';
-	export let required = false;
-	export let disabled = false;
-	export let error = '';
-	export let helpText = '';
-	export let min = undefined;
-	export let max = undefined;
-	export let step = undefined;
-	export let options = []; // For select fields
-	export let loading = false;
-	export let validationState = 'none'; // 'none', 'validating', 'valid', 'invalid'
-	export let id = '';
-	export let category = '';
-	export let settingKey = '';
-	
+
+	type FieldValue = string | number | boolean | null | undefined | Record<string, any>;
+	type Option = { value: string | number | boolean | null; label: string };
+
+	const dispatch = createEventDispatcher<{
+		input: { value: FieldValue; id: string };
+		change: { value: FieldValue; id: string };
+	}>();
+
+	export let type: string = 'text';
+	export let label: string = '';
+	export let value: FieldValue = '';
+	export let placeholder: string = '';
+	export let required: boolean = false;
+	export let disabled: boolean = false;
+	export let error: string = '';
+	export let helpText: string = '';
+	export let min: number | string | undefined = undefined;
+	export let max: number | string | undefined = undefined;
+	export let step: number | string | undefined = undefined;
+	export let options: Option[] = []; // For select fields
+	export let loading: boolean = false;
+	export let validationState: 'none' | 'validating' | 'valid' | 'invalid' = 'none';
+	export let id: string = '';
+	export let category: string = '';
+	export let settingKey: string = '';
+
 	// Generate unique ID if not provided
 	if (!id) {
 		id = `field-${Math.random().toString(36).substr(2, 9)}`;
 	}
-	
-	function handleInput(event) {
-		let newValue = event.target.value;
-		
+
+	let hasError = false;
+	let persisted = false;
+	let isSaving = false;
+	let failedMessage: string = '';
+	let isValidating = false;
+	let isValid = false;
+	let rangeMin = 0;
+	let rangeMax = 100;
+	let rangeVal = 0;
+	let rangeProgress = 0;
+
+	function handleInput(event: Event) {
+		const target = event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+		if (!target) return;
+		let newValue: FieldValue = target.value as string;
+
 		// Convert to appropriate type for number inputs
 		if (type === 'number' || type === 'range') {
-			newValue = parseFloat(newValue);
-			// Handle NaN case
-			if (isNaN(newValue)) {
-				newValue = 0;
-			}
+			const parsed = parseFloat(String(newValue));
+			newValue = isNaN(parsed) ? 0 : parsed;
 		}
-		
+
 		value = newValue;
 		dispatch('input', { value: newValue, id });
 	}
-	
-	function handleChange(event) {
-		let newValue;
+
+	function handleChange(event: Event) {
+		const target = event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+		if (!target) return;
+		let newValue: FieldValue;
 		if (type === 'checkbox') {
-			newValue = event.target.checked;
+			// Checkbox uses checked property
+			const input = target as HTMLInputElement;
+			newValue = input.checked;
 		} else {
-			newValue = event.target.value;
+			newValue = target.value as string;
 			if (type === 'number' || type === 'range') {
-				newValue = parseFloat(newValue);
-				if (isNaN(newValue)) newValue = 0;
+				const parsed = parseFloat(String(newValue));
+				newValue = isNaN(parsed) ? 0 : parsed;
 			}
 		}
 		value = newValue;
 		dispatch('change', { value: newValue, id });
 	}
-	
-	$: hasError = error && error.length > 0;
+
 	// Persisted-state support
-	function readNested(obj, path) {
-	  if (!obj || !path) return undefined;
-	  const parts = String(path).split('.');
-	  let curr = obj;
-	  for (const p of parts) {
-	    if (curr && typeof curr === 'object' && p in curr) {
-	      curr = curr[p];
-	    } else {
-	      return undefined;
-	    }
-	  }
-	  return curr;
+	function readNested(obj: any, path: string | number | undefined): any {
+		if (!obj || !path) return undefined;
+		const parts = String(path).split('.');
+		let curr: any = obj;
+		for (const p of parts) {
+			if (curr && typeof curr === 'object' && p in curr) {
+				curr = curr[p];
+			} else {
+				return undefined;
+			}
+		}
+		return curr;
 	}
-	
+
+	$: hasError = !!(error && error.length > 0);
 	$: persisted = (() => {
-	  try {
-	    if (!category || !settingKey) return false;
-	    const savedAll = get(lastSavedSettings) || {};
-	    const savedCategory = savedAll[category] || {};
-	    const savedValue = readNested(savedCategory, settingKey);
-	    if (savedValue === undefined) return false;
-	    const normalize = (v) => (typeof v === 'object' ? JSON.stringify(v) : String(v));
-	    return normalize(savedValue) === normalize(value);
-	  } catch {
-	    return false;
-	  }
+		try {
+			if (!category || !settingKey) return false;
+			const savedAll: any = get(lastSavedSettings) || {};
+			const savedCategory: any = savedAll[category] || {};
+			const savedValue = readNested(savedCategory, settingKey);
+			if (savedValue === undefined) return false;
+			const normalize = (v: any) => (typeof v === 'object' ? JSON.stringify(v) : String(v));
+			return normalize(savedValue) === normalize(value);
+		} catch {
+			return false;
+		}
 	})();
-	
+
 	$: isSaving = !!(get(savingSettings)?.[category]?.[settingKey]);
 	$: failedMessage = (get(failedSettings)?.[category]?.[settingKey]) || '';
 	$: isValidating = isSaving || validationState === 'validating' || !!failedMessage;
@@ -96,7 +116,7 @@
 	// Range slider progress computation
 	$: rangeMin = Number(min ?? 0);
 	$: rangeMax = Number(max ?? 100);
-	$: rangeVal = Number(value ?? rangeMin);
+	$: rangeVal = Number((value as number) ?? rangeMin);
 	$: rangeProgress = Math.min(100, Math.max(0, Math.round(((rangeVal - rangeMin) / Math.max(rangeMax - rangeMin, 1)) * 100)));
 </script>
 
@@ -145,7 +165,7 @@
 				<input
 					{id}
 					type="checkbox"
-					bind:checked={value}
+					checked={Boolean(value)}
 					{disabled}
 					{required}
 					on:change={handleChange}

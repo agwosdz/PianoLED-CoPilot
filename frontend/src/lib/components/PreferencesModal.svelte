@@ -1,8 +1,8 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { settings, settingsAPI } from '$lib/stores/settings.js';
 	import { derived } from 'svelte/store';
-	
+
 	// Create derived stores for preference categories from unified settings
 	const preferences = derived(settings, ($settings) => ({
 		upload: $settings.upload || {},
@@ -12,16 +12,17 @@
 		history: $settings.history || {}
 	}));
 	import { InteractiveButton } from '$lib/components';
-	
+
 	const dispatch = createEventDispatcher();
-	
-	// Local copy of preferences for editing
-	let localPrefs = { ...$preferences };
-	
+
+	// Local copy of preferences for editing; prefer a shallow clone
+	// Use any for now to avoid over-typing the large settings shape in this sweep
+	let localPrefs: any = { ...$preferences };
+
 	// Track if changes have been made
 	$: hasChanges = JSON.stringify(localPrefs) !== JSON.stringify($preferences);
-	
-	async function handleSave() {
+
+	async function handleSave(): Promise<void> {
 		try {
 			// Update each preference category using the unified settings API
 			await settingsAPI.updateSettings({
@@ -37,16 +38,16 @@
 			alert('Failed to save preferences. Please try again.');
 		}
 	}
-	
-	function handleCancel() {
+
+	function handleCancel(): void {
 		if (hasChanges) {
 			const confirmed = confirm('You have unsaved changes. Are you sure you want to cancel?');
 			if (!confirmed) return;
 		}
 		dispatch('close');
 	}
-	
-	async function handleReset() {
+
+	async function handleReset(): Promise<void> {
 		const confirmed = confirm('This will reset all preferences to their default values. Are you sure?');
 		if (confirmed) {
 			try {
@@ -63,8 +64,8 @@
 			}
 		}
 	}
-	
-	async function handleApplySmartDefaults() {
+
+	async function handleApplySmartDefaults(): Promise<void> {
 		try {
 			// Apply smart defaults by updating with optimized settings
 			const smartDefaults = {
@@ -84,7 +85,7 @@
 					reducedMotion: false
 				}
 			};
-			
+
 			await settingsAPI.updateSettings(smartDefaults);
 			localPrefs = { ...$preferences };
 		} catch (error) {
@@ -92,8 +93,8 @@
 			alert('Failed to apply smart defaults. Please try again.');
 		}
 	}
-	
-	async function handleExport() {
+
+	async function handleExport(): Promise<void> {
 		try {
 			const exportedSettings = await settingsAPI.exportSettings();
 			const data = JSON.stringify(exportedSettings, null, 2);
@@ -109,15 +110,18 @@
 			alert('Failed to export settings. Please try again.');
 		}
 	}
-	
-	async function handleImport(event) {
-		const file = event.target.files[0];
+
+	async function handleImport(event: Event): Promise<void> {
+		const input = event.target as HTMLInputElement | null;
+		const file = input?.files?.[0];
 		if (!file) return;
-		
+
 		const reader = new FileReader();
-		reader.onload = async (e) => {
+		reader.onload = async (e: ProgressEvent<FileReader>) => {
 			try {
-				const importedSettings = JSON.parse(e.target.result);
+				const text = e.target?.result;
+				if (typeof text !== 'string') throw new Error('Imported file did not contain text');
+				const importedSettings = JSON.parse(text);
 				await settingsAPI.importSettings(importedSettings);
 				localPrefs = { ...$preferences };
 				alert('Settings imported successfully!');

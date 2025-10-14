@@ -1,14 +1,22 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { socketStatus } from '$lib/socket';
 
 	const dispatch = createEventDispatcher();
 
 	// Props
-	export let connectionStatus = 'disconnected';
+	// Modern API: connectionStatus string (e.g., 'connected'|'disconnected'|'reconnecting')
+	export let connectionStatus: string = 'disconnected';
+	// Backwards-compatible legacy props used by tests and older callers
+	/** legacy boolean connection */
+	export let connected: boolean | undefined = undefined;
+	/** number of LEDs */
+	export let ledCount: number = 246;
 
-	// Derive connection from global store if parent leaves default
-	$: derivedStatus = connectionStatus !== 'disconnected' ? connectionStatus : $socketStatus === 'connected' ? 'connected' : 'disconnected';
+	// Derive connection from global store or legacy `connected` boolean if parent leaves default
+	$: derivedStatus = (typeof connected === 'boolean')
+		? (connected ? 'connected' : 'disconnected')
+		: (connectionStatus !== 'disconnected' ? connectionStatus : $socketStatus === 'connected' ? 'connected' : 'disconnected');
 
 	// Control state
 	let selectedLEDIndex = 0;
@@ -16,7 +24,6 @@
 	let selectedBrightness = 0.8;
 	let testPattern = 'rainbow';
 	let patternDuration = 5000;
-	let ledCount = 246; // Default LED count
 
 	// Available test patterns
 	const patterns = [
@@ -44,8 +51,9 @@
 	$: hexColor = `#${selectedColor.r.toString(16).padStart(2, '0')}${selectedColor.g.toString(16).padStart(2, '0')}${selectedColor.b.toString(16).padStart(2, '0')}`;
 
 	// Handle hex color input change
-	function handleHexColorChange(event) {
-		const hex = event.target.value;
+	function handleHexColorChange(event: Event) {
+		const input = event.target as HTMLInputElement | null;
+		const hex = input?.value ?? '';
 		const r = parseInt(hex.slice(1, 3), 16);
 		const g = parseInt(hex.slice(3, 5), 16);
 		const b = parseInt(hex.slice(5, 7), 16);
@@ -56,23 +64,25 @@
 	}
 
 	// Handle preset color selection
-	function selectPresetColor(color) {
+	function selectPresetColor(color: { r: number; g: number; b: number }) {
 		selectedColor = { ...color };
 	}
 
 	// Handle LED count change
-	function handleLEDCountChange() {
+	function handleLEDCountChange(): void {
 		// Validate LED count (1-300 range)
 		const maxLEDCount = 300;
-		if (ledCount < 1) {
+		const count = typeof ledCount === 'number' ? ledCount : 0;
+		if (count < 1) {
 			ledCount = 1;
-		} else if (ledCount > maxLEDCount) {
+		} else if (count > maxLEDCount) {
 			ledCount = maxLEDCount;
 		}
 		
 		// Ensure selected LED index is within bounds
-		if (selectedLEDIndex >= ledCount) {
-			selectedLEDIndex = Math.max(0, ledCount - 1);
+		const safeLedCount = typeof ledCount === 'number' ? ledCount : 0;
+		if (selectedLEDIndex >= safeLedCount) {
+			selectedLEDIndex = Math.max(0, safeLedCount - 1);
 		}
 		
 		// Dispatch LED count change to parent

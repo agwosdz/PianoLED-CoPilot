@@ -18,6 +18,11 @@ export interface ErrorEvent {
         userAgent: string;
         fileType?: string;
         fileSize?: number;
+        // optional fields used by various UI callers (kept flexible)
+        fileName?: string;
+        validationPreviewEnabled?: boolean;
+        filesInPreview?: number;
+        issueType?: string;
         uploadAttempt?: number;
         sessionId: string;
         userId?: string;
@@ -29,6 +34,8 @@ export interface ErrorEvent {
         retryCount?: number;
     };
     metadata?: Record<string, any>;
+    // Optional action description used for prevention events in UI
+    action?: string;
 }
 
 export interface ErrorPattern {
@@ -38,6 +45,12 @@ export interface ErrorPattern {
     successRate: number;
     commonCauses: string[];
     suggestedImprovements: string[];
+    // Optional/backwards-compatible fields used by UI
+    type?: string;
+    count?: number;
+    firstSeen?: number;
+    lastSeen?: number;
+    commonMessages?: string[];
 }
 
 export interface AnalyticsReport {
@@ -49,6 +62,12 @@ export interface AnalyticsReport {
     errorsByCategory: Record<string, number>;
     errorsBySeverity: Record<string, number>;
     topErrorPatterns: ErrorPattern[];
+    // Backwards-compatible fields expected by UI components
+    errorEvents?: ErrorEvent[];
+    recoveryEvents?: ErrorEvent[];
+    preventionEvents?: ErrorEvent[];
+    // `patterns` is an alias used by some components (same as `topErrorPatterns`)
+    patterns?: ErrorPattern[];
     userJourneyInsights: {
         dropOffPoints: string[];
         recoveryPaths: string[];
@@ -146,21 +165,33 @@ class ErrorAnalytics {
     /**
      * Track error prevention (validation preview, etc.)
      */
+    // Accepts both the canonical prevention shape and the older UI-friendly shape used by some call sites
     trackPrevention(prevention: {
-        category: string;
-        message: string;
-        preventedIssues: string[];
-        userAction: 'fixed' | 'ignored' | 'cancelled';
+        // canonical fields
+        category?: string;
+        message?: string;
+        preventedIssues?: string[];
+        userAction?: 'fixed' | 'ignored' | 'cancelled';
         context?: Partial<ErrorEvent['context']>;
+        // legacy / UI-friendly fields sometimes used by callers
+        type?: string; // e.g. 'validation-review'
+        action?: string; // short action name
+        timestamp?: number | Date;
     }): void {
+        // Normalize fields for backwards compatibility
+        const category = prevention.category || prevention.type || 'prevention';
+        const message = prevention.message || prevention.action || 'User prevention event';
+        const preventedIssues = prevention.preventedIssues || [];
+        const userAction = prevention.userAction || 'ignored';
+
         const preventionEvent: ErrorEvent = {
             id: this.generateEventId(),
-            timestamp: Date.now(),
+            timestamp: prevention.timestamp instanceof Date ? prevention.timestamp.getTime() : (prevention.timestamp || Date.now()),
             type: 'prevention',
-            category: prevention.category,
+            category,
             severity: 'low',
-            message: prevention.message,
-            userAction: prevention.userAction,
+            message,
+            userAction,
             context: {
                 page: window.location.pathname,
                 userAgent: navigator.userAgent,
@@ -168,9 +199,10 @@ class ErrorAnalytics {
                 ...prevention.context
             },
             metadata: {
-                preventedIssues: prevention.preventedIssues,
-                preventionEffective: prevention.userAction === 'fixed'
-            }
+                preventedIssues,
+                preventionEffective: userAction === 'fixed'
+            },
+            action: message
         };
 
         this.addEvent(preventionEvent);
@@ -216,6 +248,11 @@ class ErrorAnalytics {
             errorsByCategory,
             errorsBySeverity,
             topErrorPatterns,
+            // include raw event lists and an alias for patterns to satisfy consumers
+            errorEvents,
+            recoveryEvents,
+            preventionEvents,
+            patterns: topErrorPatterns,
             userJourneyInsights,
             recommendations
         };
@@ -302,7 +339,17 @@ class ErrorAnalytics {
                 };
             }
 
-            patterns[error.category].frequency++;
+            const p = patterns[error.category];
+            p.frequency++;
+
+            // initialize optional tracking buckets
+            if (p.firstSeen === undefined || error.timestamp < p.firstSeen) p.firstSeen = error.timestamp;
+            if (p.lastSeen === undefined || error.timestamp > p.lastSeen) p.lastSeen = error.timestamp;
+            if (!p.commonMessages) p.commonMessages = [];
+            if (error.message && !p.commonMessages.includes(error.message)) {
+                // keep a short list of common messages
+                if (p.commonMessages.length < 8) p.commonMessages.push(error.message);
+            }
 
             // Calculate resolution metrics
             if (error.resolution) {
@@ -319,7 +366,16 @@ class ErrorAnalytics {
                 pattern.avgTimeToResolve = pattern.avgTimeToResolve / pattern.frequency;
                 pattern.successRate = pattern.successRate / pattern.frequency;
             }
-            
+
+            // Backwards-compatible aliases used by some UI templates
+            pattern.count = pattern.frequency;
+            pattern.type = pattern.category;
+
+            // Trim commonMessages to a reasonable size
+            if (pattern.commonMessages && pattern.commonMessages.length > 8) {
+                pattern.commonMessages = pattern.commonMessages.slice(0, 8);
+            }
+
             // Add common causes and suggestions based on category
             this.addPatternInsights(pattern);
         });

@@ -6,6 +6,8 @@
 	import { statusManager } from '$lib/statusCommunication';
 	import { getSocket, socketStatus } from '$lib/socket';
 
+	// (Socket is provided by getSocket from $lib/socket)
+
 	// Playback state
 	let playbackState: 'idle' | 'playing' | 'paused' | 'stopped' = 'idle';
 	let currentTime = 0;
@@ -13,7 +15,8 @@
 	let songInfo = {
 		filename: '',
 		originalFilename: '',
-		size: 0
+		size: 0,
+		metadata: null as any
 	};
 
 	// Enhanced playback controls
@@ -31,7 +34,7 @@
 	let progressPercentage = 0;
 
 	// WebSocket connection for real-time updates
-	let websocket: WebSocket | null = null;
+	let websocket: any = null;
 	let statusInterval: NodeJS.Timeout | null = null;
 	let reconnectAttempts = 0;
 	const maxReconnectAttempts = 5;
@@ -42,6 +45,9 @@
 	let lastMidiEventTime = 0;
 	let midiEventRate = 0;
 	let performanceMonitorInterval: NodeJS.Timeout | null = null;
+
+	// Keyboard event cleanup
+	let keydownCleanup: (() => void) | null = null;
 
 	onMount(() => {
 		if (!browser) return;
@@ -69,9 +75,10 @@
 		startPerformanceMonitoring();
 		
 		// Add keyboard shortcuts
-		const handleKeydown = (event) => {
+		const handleKeydown = (event: KeyboardEvent) => {
 			// Ignore if user is typing in an input field
-			if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+			const target = (event.target as HTMLElement | null);
+			if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
 				return;
 			}
 			
@@ -143,7 +150,7 @@
 		window.addEventListener('keydown', handleKeydown);
 		
 		// Store the cleanup function
-		window.keydownCleanup = () => {
+		keydownCleanup = () => {
 			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
@@ -159,116 +166,60 @@
 			clearInterval(performanceMonitorInterval);
 		}
 		// Clean up keyboard event listeners
-		if (browser && window.keydownCleanup) {
-			window.keydownCleanup();
-		}
+		if (keydownCleanup) keydownCleanup();
 	});
 
 	function initWebSocket() {
 		if (!browser) return;
-		
+
 		try {
-			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const wsUrl = `${protocol}//${window.location.host}/socket.io/?EIO=4&transport=websocket`;
-			
-			// Use Socket.IO client if available, otherwise fallback to WebSocket
-			if (typeof io !== 'undefined') {
-				// Socket.IO connection to backend server (use relative path for proxy)
-				connectionStatus = 'connecting';
-				const isDev = typeof import.meta !== 'undefined' && (import.meta as any)?.env?.DEV;
-				websocket = (!isDev && window.socketIOBackendUrl) ? io(window.socketIOBackendUrl) : io();
-				
-				websocket.on('connect', () => {
-					console.log('WebSocket connected');
-					reconnectAttempts = 0;
-					connectionStatus = 'connected';
-					
-					// Show connection success status
-					statusManager.showMessage(
-						'🔗 Real-time connection established',
-						'success',
-						{ duration: 2000 }
-					);
-					
-					// Stop polling when WebSocket is connected
-					if (statusInterval) {
-						clearInterval(statusInterval);
-						statusInterval = null;
-					}
-					// Request current status
-					websocket.emit('get_status');
-				});
-				
-				websocket.on('playback_status', (data) => {
-					updatePlaybackState(data);
-				});
-				
-				websocket.on('extended_playback_status', (data) => {
-					updateExtendedPlaybackState(data);
-				});
-				
-				websocket.on('disconnect', (reason) => {
-					console.log('WebSocket disconnected:', reason);
-					connectionStatus = 'disconnected';
-					
-					// Show disconnection status
-					statusManager.showMessage(
-						'⚠️ Real-time connection lost - switching to polling',
-						'warning',
-						{ duration: 3000 }
-					);
-					
-					// Resume polling as fallback
-					if (!statusInterval) {
-						startStatusPolling();
-					}
-				});
-				
-				websocket.on('error', (error) => {
-					console.error('WebSocket error:', error);
-					reconnectAttempts++;
-					
-					// Calculate exponential backoff delay (max 30 seconds)
-					const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
-					
-					if (reconnectAttempts <= 5) {
-						statusManager.showMessage(
-							`🔄 Connection failed - retrying in ${Math.ceil(delay / 1000)}s (${reconnectAttempts}/5)`,
-							'error',
-							{ duration: delay }
-						);
-						
-						// Attempt reconnection with exponential backoff
-						setTimeout(() => {
-							if (websocket && !websocket.connected) {
-								websocket.connect();
-							}
-						}, delay);
-					} else {
-						// Max retries reached - fall back to polling
-						statusManager.showMessage(
-							'❌ Real-time connection failed - using polling mode',
-							'error',
-							{ duration: 5000 }
-						);
-						if (!statusInterval) {
-							startStatusPolling();
+			connectionStatus = 'connecting';
+			// use shared socket helper which handles initialization and toasts
+			websocket = getSocket();
+
+			// socketStatus store drives UI to show connecting/connected/disconnected
+			socketStatus.subscribe((s) => {
+				connectionStatus = s;
+			});
+
+			websocket.on('playback_status', (data: any) => updatePlaybackState(data));
+			websocket.on('extended_playback_status', (data: any) => updateExtendedPlaybackState(data));
+			websocket.on('live_midi_event', (data: any) => handleLiveMidiEvent(data));
+			websocket.on('rtpmidi_status_update', (data: any) => handleRtpMidiStatus(data));
+
+			websocket.on('disconnect', (reason: any) => {
+				console.log('WebSocket disconnected:', reason);
+				connectionStatus = 'disconnected';
+				statusManager.showMessage('⚠️ Real-time connection lost - switching to polling', 'warning', { duration: 3000 });
+				if (!statusInterval) startStatusPolling();
+			});
+
+			websocket.on('connect', () => {
+				console.log('WebSocket connected');
+				reconnectAttempts = 0;
+				connectionStatus = 'connected';
+				statusManager.showMessage('🔗 Real-time connection established', 'success', { duration: 2000 });
+				if (statusInterval) { clearInterval(statusInterval); statusInterval = null; }
+				websocket.emit && websocket.emit('get_status');
+			});
+
+			websocket.on('error', (err: any) => {
+				console.error('WebSocket error:', err);
+				reconnectAttempts++;
+				const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+				if (reconnectAttempts <= maxReconnectAttempts) {
+					statusManager.showMessage(`🔄 Connection failed - retrying in ${Math.ceil(delay / 1000)}s (${reconnectAttempts}/${maxReconnectAttempts})`, 'error', { duration: delay });
+					setTimeout(() => {
+						if (websocket && websocket.connected === false && typeof websocket.connect === 'function') {
+							websocket.connect();
 						}
-					}
-				});
-				
-				// Handle real-time MIDI events
-				websocket.on('live_midi_event', (data) => {
-					handleLiveMidiEvent(data);
-				});
-				
-				// Handle rtpMIDI status updates
-				websocket.on('rtpmidi_status_update', (data) => {
-					handleRtpMidiStatus(data);
-				});
-			} else {
-				console.log('Socket.IO not available, using polling');
-			}
+					}, delay);
+				} else {
+					statusManager.showMessage('❌ Real-time connection failed - using polling mode', 'error', { duration: 5000 });
+					if (!statusInterval) startStatusPolling();
+				}
+			});
+
 		} catch (error) {
 			console.error('Failed to initialize WebSocket:', error);
 		}
@@ -298,7 +249,7 @@
 		}, 1000);
 	}
 
-	function updatePlaybackState(data) {
+	function updatePlaybackState(data: any) {
 		// Handle WebSocket status updates
 		playbackState = data.state || 'idle';
 		currentTime = data.current_time || 0;
@@ -317,7 +268,7 @@
 		}
 	}
 	
-	function updateExtendedPlaybackState(data) {
+	function updateExtendedPlaybackState(data: any) {
 		// Handle extended WebSocket status updates
 		playbackState = data.state || 'idle';
 		currentTime = data.current_time || 0;
@@ -560,7 +511,7 @@
 	}
 
 	// Real-time MIDI event handlers
-	function handleLiveMidiEvent(data) {
+	function handleLiveMidiEvent(data: any) {
 		try {
 			// Performance monitoring
 			midiEventCount++;
@@ -578,21 +529,21 @@
 			};
 			
 			// Throttle status messages to prevent UI spam
-			if (midiEventCount % 10 === 0) {
-				if (data.event_type === 'note_on') {
-					statusManager.showMessage(
-						`🎹 Live MIDI: Note ${data.note} ON (vel: ${data.velocity}) - ${data.source} [Rate: ${midiEventRate.toFixed(1)}/s]`,
-						'info',
-						{ duration: 800, priority: 'low' }
-					);
-				} else if (data.event_type === 'note_off') {
-					statusManager.showMessage(
-						`🎹 Live MIDI: Note ${data.note} OFF - ${data.source} [Rate: ${midiEventRate.toFixed(1)}/s]`,
-						'info',
-						{ duration: 600, priority: 'low' }
-					);
+				if (midiEventCount % 10 === 0) {
+					if (data.event_type === 'note_on') {
+						statusManager.showMessage(
+							`🎹 Live MIDI: Note ${data.note} ON (vel: ${data.velocity}) - ${data.source} [Rate: ${midiEventRate.toFixed(1)}/s]`,
+							'info',
+							{ duration: 800 }
+						);
+					} else if (data.event_type === 'note_off') {
+						statusManager.showMessage(
+							`🎹 Live MIDI: Note ${data.note} OFF - ${data.source} [Rate: ${midiEventRate.toFixed(1)}/s]`,
+							'info',
+							{ duration: 600 }
+						);
+					}
 				}
-			}
 			
 			// Log for debugging (throttled)
 			if (midiEventCount % 50 === 0) {
@@ -604,7 +555,7 @@
 		}
 	}
 	
-	function handleRtpMidiStatus(data) {
+	function handleRtpMidiStatus(data: any) {
 		try {
 			// Handle rtpMIDI connection status updates
 			if (data.state === 'listening') {
@@ -733,6 +684,14 @@
 		const sizes = ['Bytes', 'KB', 'MB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+	}
+
+	function togglePlayback() {
+		if (playbackState === 'playing') {
+			handlePause();
+		} else {
+			handlePlay();
+		}
 	}
 </script>
 
