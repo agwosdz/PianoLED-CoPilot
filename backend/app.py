@@ -293,10 +293,18 @@ def delete_uploaded_midi_file():
             current_file = getattr(status, 'filename', None)
             current_state = getattr(status, 'state', None)
             if current_file == resolved_path and current_state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Stop playback before deleting the active file'
-                }), 409
+                try:
+                    if not playback_service.stop_playback():
+                        return jsonify({
+                            'status': 'error',
+                            'message': 'Unable to stop playback before deleting the file'
+                        }), 500
+                except Exception as stop_exc:
+                    logger.error(f"Failed to stop playback before deleting '{resolved_path}': {stop_exc}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Unable to stop playback before deleting the file'
+                    }), 500
 
         os.remove(resolved_path)
 

@@ -39,7 +39,6 @@
   let uploadedFilesError = '';
   let isLoadingUploadedFiles = false;
 
-  const autoPlayAfterUpload = true;
   const statusPollIntervalMs = 3000;
 
   $: playbackDisplayName = playbackOriginalName || deriveOriginalName(playbackFilename);
@@ -70,7 +69,10 @@
 
     if (payload.filename) {
       playbackFilename = payload.filename;
-      playbackOriginalName = payload.original_filename || deriveOriginalName(playbackFilename);
+            playbackState = 'idle';
+            currentTime = 0;
+            totalDuration = 0;
+            playbackNotice = 'Song removed from library.';
     }
 
     if (payload.error_message) {
@@ -173,11 +175,11 @@
     const file = target.files?.[0];
     if (!file) {
       selectedFile = null;
+      target.value = '';
       return;
     }
-    selectedFile = file;
-    uploadedSize = file.size;
-    resetUploadFeedback();
+    target.value = '';
+    void handleIncomingFile(file);
   }
 
   function handleDragOver(event: DragEvent): void {
@@ -187,6 +189,11 @@
 
   function handleDragLeave(event: DragEvent): void {
     event.preventDefault();
+    const currentTarget = event.currentTarget as HTMLElement | null;
+    const related = event.relatedTarget as Node | null;
+    if (currentTarget && related && currentTarget.contains(related)) {
+      return;
+    }
     dragActive = false;
   }
 
@@ -195,14 +202,26 @@
     dragActive = false;
     const file = event.dataTransfer?.files?.[0] ?? null;
     if (file) {
-      selectedFile = file;
-      uploadedSize = file.size;
-      resetUploadFeedback();
+      void handleIncomingFile(file);
     }
   }
 
-  async function beginUpload(): Promise<void> {
-    if (!selectedFile) {
+  async function handleIncomingFile(file: File): Promise<void> {
+    if (uploadState === 'uploading') {
+      uploadError = 'Please wait for the current upload to finish.';
+      return;
+    }
+
+    selectedFile = file;
+    uploadedSize = file.size;
+    resetUploadFeedback();
+    uploadState = 'idle';
+    await beginUpload(file);
+  }
+
+  async function beginUpload(file?: File): Promise<void> {
+    const targetFile = file ?? selectedFile;
+    if (!targetFile) {
       uploadError = 'Select a MIDI file first.';
       return;
     }
@@ -212,7 +231,10 @@
     uploadProgress = 0;
 
     try {
-      const result = await uploadMidiFile(selectedFile, (progress: UploadProgress) => {
+      selectedFile = targetFile;
+      uploadedSize = targetFile.size;
+
+      const result = await uploadMidiFile(targetFile, (progress: UploadProgress) => {
         uploadProgress = progress.percentage;
       });
 
@@ -220,18 +242,15 @@
       uploadMessage = result.message || 'Upload complete.';
       playbackFilename = result.filename || playbackFilename;
       playbackOriginalName = result.original_filename || deriveOriginalName(playbackFilename);
-      uploadedSize = result.size ?? selectedFile.size;
+      uploadedSize = result.size ?? targetFile.size;
 
       if (browser && playbackFilename) {
         window.localStorage.setItem('lastUploadedFile', playbackFilename);
       }
 
       await fetchPlaybackStatus();
-
-      if (autoPlayAfterUpload && playbackFilename) {
-        await handlePlay(true);
-      }
       await loadUploadedFiles();
+      selectedFile = null;
     } catch (error) {
       uploadState = 'idle';
       uploadProgress = 0;
@@ -300,22 +319,33 @@
     }
   }
 
-  async function handleStop(): Promise<void> {
+  async function handleStop(): Promise<boolean> {
     try {
       const response = await fetch('/api/stop', { method: 'POST' });
       const data = await response.json();
       if (response.ok && data?.status === 'success') {
         playbackNotice = data.message || 'Playback stopped.';
         await fetchPlaybackStatus();
+        return true;
       } else {
         playbackNotice = data?.message || 'Unable to stop playback.';
+        return false;
       }
     } catch (error) {
       playbackNotice = 'Network error while stopping playback.';
+      return false;
     }
+    return false;
   }
 
   async function handleListPlay(file: UploadedFileItem): Promise<void> {
+    if (playbackState === 'playing' || playbackState === 'paused') {
+      const stopped = await handleStop();
+      if (!stopped) {
+        return;
+      }
+    }
+
     playbackFilename = file.path;
     playbackOriginalName = deriveOriginalName(file.filename);
     uploadedSize = file.size;
@@ -376,6 +406,9 @@
           playbackFilename = '';
           playbackOriginalName = '';
           uploadedSize = 0;
+          playbackState = 'idle';
+          currentTime = 0;
+          totalDuration = 0;
           if (browser) {
             window.localStorage.removeItem('lastUploadedFile');
           }
@@ -475,51 +508,51 @@
         {/if}
       </section>
 
-      <section
-        class="upload-card"
-        class:drag-active={dragActive}
-        on:dragover={handleDragOver}
-        on:dragleave={handleDragLeave}
-        on:drop={handleDrop}
-      >
-        <div class="upload-inner">
-          <div class="upload-icon" aria-hidden="true">🎵</div>
-          <div class="upload-details">
-            <h3>Upload MIDI</h3>
-            <p>Drop a file or browse to add a new song to your library.</p>
-            {#if selectedFile}
-              <div class="selected-file" title={selectedFile.name}>
-                <span class="selected-name">{selectedFile.name}</span>
-                <span class="selected-size">{formatFileSize(selectedFile.size)}</span>
-              </div>
-            {/if}
+      <section class="upload-card">
+        <header class="upload-header">
+          <h3>Upload MIDI</h3>
+          <p>Drop a file into the box or browse to pick one. Upload starts right after you confirm.</p>
+        </header>
 
-            {#if uploadState === 'uploading'}
-              <div class="upload-progress">
-                <div class="progress-bar">
-                  <div class="progress-fill" style={`width: ${uploadProgress}%`}></div>
-                </div>
-                <span class="progress-text">{uploadProgress}%</span>
-              </div>
-            {/if}
-
-            {#if uploadMessage}
-              <p class="upload-message success">{uploadMessage}</p>
-            {/if}
-            {#if uploadError}
-              <p class="upload-message error">{uploadError}</p>
-            {/if}
-          </div>
-
-          <div class="upload-actions">
-            <label class="browse-label">
+        <div
+          class="drop-zone"
+          class:active={dragActive}
+          on:dragover={handleDragOver}
+          on:dragleave={handleDragLeave}
+          on:drop={handleDrop}
+        >
+          <div class="drop-icon" aria-hidden="true">🎵</div>
+          <p class="drop-text">Drag &amp; drop a MIDI file here</p>
+          <p class="drop-subtext">
+            or
+            <label class="browse-trigger">
               <input type="file" accept=".mid,.midi" on:change={handleFileInput} />
-              <span>Browse</span>
+              browse your computer
             </label>
-            <button class="upload-button" on:click={beginUpload} disabled={uploadState === 'uploading'}>
-              {uploadState === 'uploading' ? 'Uploading…' : 'Upload'}
-            </button>
-          </div>
+          </p>
+          {#if selectedFile}
+            <p class="selected-hint" title={selectedFile.name}>
+              Selected: <span>{selectedFile.name}</span> ({formatFileSize(selectedFile.size)})
+            </p>
+          {/if}
+        </div>
+
+        <div class="upload-feedback">
+          {#if uploadState === 'uploading'}
+            <div class="upload-progress">
+              <div class="progress-bar">
+                <div class="progress-fill" style={`width: ${uploadProgress}%`}></div>
+              </div>
+              <span class="progress-text">{uploadProgress}%</span>
+            </div>
+          {/if}
+
+          {#if uploadMessage}
+            <p class="upload-message success">{uploadMessage}</p>
+          {/if}
+          {#if uploadError}
+            <p class="upload-message error">{uploadError}</p>
+          {/if}
         </div>
       </section>
     </div>
@@ -566,23 +599,22 @@
 
   .hero-section {
     text-align: center;
-    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-    color: #ffffff;
-    padding: 2.5rem 2rem;
-    border-radius: 20px;
-    box-shadow: 0 18px 40px rgba(29, 78, 216, 0.25);
+    background: transparent;
+    color: #1f2937;
+    padding: 0;
   }
 
   .hero-section h1 {
     margin: 0 0 0.75rem;
     font-size: 2.35rem;
     font-weight: 700;
+    color: #1f2937;
   }
 
   .hero-section p {
     margin: 0;
     font-size: 1rem;
-    opacity: 0.9;
+    color: #4b5563;
   }
 
   .upper-row {
@@ -752,77 +784,114 @@
     border: 1px solid #e2e8f0;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
     display: flex;
-    align-items: stretch;
-  }
-
-  .upload-card.drag-active {
-    border-color: #2563eb;
-    background: #f5f9ff;
-    box-shadow: 0 16px 32px rgba(37, 99, 235, 0.15);
-  }
-
-  .upload-inner {
-    display: flex;
-    flex: 1;
+    flex-direction: column;
+    align-items: center;
     gap: 1.5rem;
-    align-items: flex-start;
-    justify-content: space-between;
   }
 
-  .upload-icon {
-    font-size: 2rem;
+  .upload-header {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .upload-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #0f172a;
+  }
+
+  .upload-header p {
+    margin: 0;
+    color: #475569;
+    font-size: 0.95rem;
+  }
+
+  .drop-zone {
+    width: 100%;
+    max-width: 420px;
+    border: 2px dashed #94a3b8;
+    border-radius: 18px;
+    padding: 2.5rem 1.5rem;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: center;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .drop-zone.active {
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, 0.08);
+    box-shadow: 0 16px 32px rgba(37, 99, 235, 0.18);
+  }
+
+  .drop-icon {
+    font-size: 2.5rem;
     background: #eef2ff;
     color: #1d4ed8;
-    width: 3.25rem;
-    height: 3.25rem;
+    width: 3.5rem;
+    height: 3.5rem;
     border-radius: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .upload-details {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-  }
-
-  .upload-details h3 {
+  .drop-text {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.05rem;
+    font-weight: 600;
     color: #0f172a;
   }
 
-  .upload-details p {
+  .drop-subtext {
     margin: 0;
     color: #475569;
     font-size: 0.95rem;
   }
 
-  .selected-file {
+  .browse-trigger {
+    color: #2563eb;
+    font-weight: 600;
+    cursor: pointer;
+    position: relative;
+    text-decoration: underline;
+  }
+
+  .browse-trigger input {
+    display: none;
+  }
+
+  .selected-hint {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #475569;
+    max-width: 100%;
+    word-break: break-word;
+  }
+
+  .selected-hint span {
+    color: #1d4ed8;
+    font-weight: 600;
+  }
+
+  .upload-feedback {
+    width: 100%;
+    max-width: 420px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.65rem 0.85rem;
-    border-radius: 10px;
-    background: #eef2ff;
-    color: #1d4ed8;
-    max-width: 100%;
-  }
-
-  .selected-name {
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .selected-size {
-    font-size: 0.85rem;
+    text-align: center;
   }
 
   .upload-progress {
+    width: 100%;
+    max-width: 360px;
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -857,55 +926,6 @@
 
   .upload-message.error {
     color: #b91c1c;
-  }
-
-  .upload-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: flex-end;
-  }
-
-  .browse-label {
-    border: 1px dashed #94a3b8;
-    border-radius: 999px;
-    padding: 0.5rem 1.25rem;
-    font-weight: 600;
-    color: #475569;
-    cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease;
-  }
-
-  .browse-label:hover {
-    background: #e2e8f0;
-    color: #1f2937;
-  }
-
-  .browse-label input {
-    display: none;
-  }
-
-  .upload-button {
-    border: none;
-    border-radius: 999px;
-    padding: 0.65rem 1.75rem;
-    font-weight: 600;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    color: #ffffff;
-    cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.25);
-  }
-
-  .upload-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 16px 28px rgba(37, 99, 235, 0.3);
-  }
-
-  .upload-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    box-shadow: none;
   }
 
   .song-list-card {
@@ -973,24 +993,10 @@
     .upload-card {
       padding: 1.5rem;
     }
-
-    .upload-inner {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .upload-actions {
-      flex-direction: row;
-      justify-content: flex-start;
-    }
-
-    .browse-label {
-      flex: 1;
-      text-align: center;
-    }
-
-    .upload-button {
-      flex: 1;
+    
+    .drop-zone,
+    .upload-feedback {
+      max-width: 100%;
     }
   }
 
@@ -1007,6 +1013,10 @@
     .upload-card,
     .song-list-card {
       padding: 1.5rem;
+    }
+
+    .drop-zone {
+      padding: 2rem 1.25rem;
     }
 
     .playback-controls {
