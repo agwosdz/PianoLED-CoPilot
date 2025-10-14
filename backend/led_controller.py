@@ -140,6 +140,7 @@ class LEDController:
             except Exception as exc:
                 logger.warning(f"Failed to clear LEDs during orientation update: {exc}")
             self.led_orientation = orientation
+            logger.debug("LED controller orientation updated to %s", self.led_orientation)
 
         brightness = led_config.get('brightness')
         if brightness is not None:
@@ -158,6 +159,7 @@ class LEDController:
                         self.show()
                     except Exception as exc:
                         logger.warning(f"Failed to update LED brightness: {exc}")
+                logger.debug("LED controller brightness updated to %.4f", self.brightness)
 
         return changes
     

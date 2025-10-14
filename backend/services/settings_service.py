@@ -381,6 +381,13 @@ class SettingsService:
         if not self._listeners:
             return
 
+        logger.debug(
+            "Notifying listeners for %s.%s with value %r",
+            category,
+            key,
+            value
+        )
+
         for callback in list(self._listeners):
             try:
                 callback(category, key, value)

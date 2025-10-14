@@ -208,6 +208,12 @@ class USBMIDIInputService:
 
         self._precomputed_mapping = self._generate_key_mapping()
         self._active_notes.clear()
+        logger.debug(
+            "USB MIDI service settings refreshed: num_leds=%s orientation=%s mapping_mode=%s",
+            self.num_leds,
+            self.led_orientation,
+            self.mapping_mode
+        )
         logger.info("USB MIDI input service settings refreshed")
     
     def get_available_devices(self) -> List[MIDIDevice]:

@@ -207,6 +207,12 @@ class PlaybackService:
             self._load_settings_from_config()
 
         self._precomputed_mapping = self._generate_key_mapping()
+        logger.debug(
+            "Playback service settings refreshed: num_leds=%s orientation=%s mapping_mode=%s",
+            self.num_leds,
+            self.led_orientation,
+            self.mapping_mode
+        )
         logger.info("PlaybackService settings refreshed")
 
     def _get_piano_specs(self, piano_size: str) -> Dict[str, Any]:

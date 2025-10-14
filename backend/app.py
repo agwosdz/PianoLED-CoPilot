@@ -125,6 +125,13 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     try:
         led_config = settings_service.get_led_configuration()
         piano_config = settings_service.get_piano_configuration()
+        logger.debug(
+            "Refreshing runtime dependencies for %s.%s with LED config %s and piano config %s",
+            trigger_category,
+            trigger_key,
+            led_config,
+            piano_config
+        )
     except Exception as exc:
         logger.error(f"Failed to read updated settings for runtime refresh: {exc}")
         return
@@ -259,6 +266,7 @@ def _on_setting_change(category: str, key: str, value: Any) -> None:
         category,
         key
     )
+    logger.debug("New value for %s.%s is %r", category, key, value)
     _refresh_runtime_dependencies(category, key)
 
 

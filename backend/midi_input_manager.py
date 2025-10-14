@@ -129,6 +129,7 @@ class MIDIInputManager:
 
     def refresh_runtime_settings(self) -> None:
         """Refresh runtime settings for managed MIDI services."""
+        logger.debug("MIDI input manager refreshing runtime settings")
         if self._usb_service and hasattr(self._usb_service, 'refresh_runtime_settings'):
             self._usb_service.refresh_runtime_settings()
     
