@@ -36,6 +36,7 @@ class MIDIParser:
             settings_service: Settings service instance for retrieving configuration
         """
         # Load configuration values
+        self._settings_service = settings_service
         if settings_service:
             piano_size = settings_service.get_setting('piano', 'size', '88-key')
             piano_specs = self._get_piano_specs(piano_size)
@@ -59,6 +60,33 @@ class MIDIParser:
         self.piano_size = piano_size
         
         logger.info(f"MIDI parser initialized for {piano_size} piano with {self.led_count} LEDs, MIDI range {self.min_midi_note}-{self.max_midi_note}, orientation: {self.led_orientation}")
+
+    def refresh_runtime_settings(self, settings_service=None) -> None:
+        """Refresh MIDI parser runtime configuration from settings service."""
+        try:
+            ss = settings_service or getattr(self, '_settings_service', None)
+            if not ss:
+                return
+
+            piano_size = ss.get_setting('piano', 'size', self.piano_size)
+            piano_specs = self._get_piano_specs(piano_size)
+            led_count_value = ss.get_setting('led', 'led_count', self.led_count)
+            try:
+                led_count = max(1, int(led_count_value))
+            except (TypeError, ValueError):
+                led_count = self.led_count
+
+            orientation = ss.get_setting('led', 'led_orientation', self.led_orientation)
+
+            self.piano_size = piano_size
+            self.led_count = led_count
+            self.led_orientation = orientation
+            self.min_midi_note = piano_specs['midi_start']
+            self.max_midi_note = piano_specs['midi_end']
+
+            logger.info(f"MIDI parser runtime settings refreshed for {piano_size} piano with {self.led_count} LEDs, orientation: {self.led_orientation}")
+        except Exception as e:
+            logger.warning(f"Failed to refresh MIDI parser settings: {e}")
         
     def _get_piano_specs(self, piano_size: str) -> Dict[str, Any]:
         """Get piano specifications based on size."""

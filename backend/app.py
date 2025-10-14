@@ -125,8 +125,9 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     try:
         led_config = settings_service.get_led_configuration()
         piano_config = settings_service.get_piano_configuration()
-        logger.debug(
-            "Refreshing runtime dependencies for %s.%s with LED config %s and piano config %s",
+        logger.info(
+            "Refreshing runtime dependencies (pid=%d) for %s.%s with LED config %s and piano config %s",
+            os.getpid(),
             trigger_category,
             trigger_key,
             led_config,
@@ -161,18 +162,47 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
                 logger.warning(f"Failed to stop LED effects during reinit: {exc}")
 
         old_controller = led_controller
-        try:
-            led_controller = LEDController(settings_service=settings_service)
-            logger.info(f"LED controller reinitialized due to settings change ({trigger_category}.{trigger_key})")
-        except Exception as exc:
-            logger.error(f"Failed to reinitialize LED controller after settings change: {exc}")
-            led_controller = old_controller
-        else:
-            if old_controller and hasattr(old_controller, 'cleanup'):
+        # Snapshot existing controller state so we can restore it if reinit fails
+        old_snapshot = None
+        if old_controller:
+            try:
+                old_snapshot = {
+                    'pin': getattr(old_controller, 'pin', None),
+                    'num_pixels': getattr(old_controller, 'num_pixels', None),
+                    'brightness': getattr(old_controller, 'brightness', None),
+                    'led_channel': getattr(old_controller, 'led_channel', None)
+                }
+            except Exception:
+                old_snapshot = None
+
+            # Clean up old controller first to release hardware resources before creating a new one
+            if hasattr(old_controller, 'cleanup'):
                 try:
                     old_controller.cleanup()
+                    logger.info("Old LED controller cleaned up (pid=%d)", os.getpid())
                 except Exception as cleanup_exc:
                     logger.warning(f"Cleanup of old LED controller failed: {cleanup_exc}")
+
+        # Small pause to allow underlying hardware resources (DMA/memory) to be released
+        try:
+            time.sleep(0.12)
+        except Exception:
+            pass
+
+        try:
+            led_controller = LEDController(settings_service=settings_service)
+            logger.info("LED controller reinitialized (pid=%d) due to settings change (%s.%s)", os.getpid(), trigger_category, trigger_key)
+        except Exception as exc:
+            logger.error(f"Failed to reinitialize LED controller after settings change: {exc}")
+            # Try to restore previous controller if possible
+            if old_snapshot is not None:
+                try:
+                    logger.info("Attempting to restore previous LED controller (pid=%d)", os.getpid())
+                    led_controller = LEDController(pin=old_snapshot.get('pin'), num_pixels=old_snapshot.get('num_pixels'), brightness=old_snapshot.get('brightness'), settings_service=settings_service)
+                    logger.info("Previous LED controller restored (pid=%d)", os.getpid())
+                except Exception as restore_exc:
+                    logger.error(f"Failed to restore previous LED controller: {restore_exc}")
+                    led_controller = None
 
         if led_controller:
             led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
@@ -219,7 +249,14 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         midi_input_manager.update_led_controller(led_controller)
         midi_input_manager.refresh_runtime_settings()
 
-    logger.info("Runtime dependencies refreshed after settings update")
+    # Ensure midi_parser is refreshed too (it caches led count on init)
+    try:
+        if midi_parser and hasattr(midi_parser, 'refresh_runtime_settings'):
+            midi_parser.refresh_runtime_settings(settings_service=settings_service)
+    except Exception as exc:
+        logger.warning(f"Failed to refresh MIDI parser at runtime: {exc}")
+
+    logger.info("Runtime dependencies refreshed after settings update (pid=%d)", os.getpid())
 
 
 def _on_setting_change(category: str, key: str, value: Any) -> None:
@@ -1687,7 +1724,8 @@ def api_debug_led_controller():
             'led_orientation': getattr(ctrl, 'led_orientation', None),
             'brightness': getattr(ctrl, 'brightness', None),
             'led_enabled': getattr(ctrl, 'led_enabled', None),
-            'pixels_initialized': bool(getattr(ctrl, 'pixels', None))
+            'pixels_initialized': bool(getattr(ctrl, 'pixels', None)),
+            'process_id': os.getpid()
         }
         return jsonify(data), 200
     except Exception as e:
