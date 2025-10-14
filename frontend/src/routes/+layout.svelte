@@ -4,6 +4,16 @@
 	import '$lib/styles/global.css';
 	import { page } from '$app/stores';
 
+	if (import.meta.env.DEV && typeof window !== 'undefined') {
+		import('$lib/debug/midiConsoleDebug').then((mod) => {
+			if (mod?.enableMidiConsoleDebug) {
+				mod.enableMidiConsoleDebug();
+			}
+		}).catch((err) => {
+			console.warn('Failed to enable MIDI console debug', err);
+		});
+	}
+
 	let { children } = $props();
 
 	// Force page re-render when route changes to prevent content stacking
