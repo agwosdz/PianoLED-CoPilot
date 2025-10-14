@@ -456,6 +456,10 @@ class MIDIInputManager:
                     'event_type': event_type,
                     'source': f"USB:{event_data.get('device', 'unknown')}"
                 })
+            elif event_type in ['midi_input', 'debug_midi_mapping']:
+                # Forward diagnostic payloads directly to the websocket
+                if self._websocket_callback:
+                    self._websocket_callback(event_type, event_data)
             elif event_type == 'device_status':
                 # Update USB device status
                 self._source_status[MIDIInputSource.USB]['devices'] = event_data.get('devices', [])
