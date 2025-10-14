@@ -605,18 +605,4 @@
 		}
 	}
 
-	.note-badge {
-		position: absolute;
-		top: -18px;
-		transform: translateX(0);
-		background: #111827;
-		color: #fff;
-		font-size: 0.7rem;
-		padding: 2px 6px;
-		border-radius: 9999px;
-		box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-		pointer-events: none;
-	}
-	.note-badge.start { background: #1f2937; }
-	.note-badge.end { background: #374151; }
 </style>

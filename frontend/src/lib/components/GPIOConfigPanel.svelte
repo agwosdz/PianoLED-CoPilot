@@ -939,125 +939,9 @@ async function testHardware(): Promise<void> {
 		padding-left: 1.5rem;
 	}
 
-	.pinout-diagram {
-		padding: 1rem;
-		background: white;
-		border-radius: 6px;
-		border: 1px solid #e0e0e0;
-	}
-
-	.pinout-diagram h4 {
-		margin: 0 0 1rem 0;
-		color: #333;
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
-	.pinout-grid {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 2px;
-		max-width: 400px;
-		margin: 0 auto 1rem auto;
-		border: 2px solid #333;
-		border-radius: 8px;
-		padding: 4px;
-		background: #333;
-	}
-
-	.pin {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		padding: 0.25rem;
-		border-radius: 3px;
-		font-size: 0.7rem;
-		min-height: 30px;
-		justify-content: center;
-		cursor: help;
-		position: relative;
-	}
-
-	.pin.available {
-		background: #e8f5e8;
-		color: #2d5a2d;
-		border: 1px solid #4caf50;
-	}
-
-	.pin.unavailable {
-		background: #f5f5f5;
-		color: #666;
-		border: 1px solid #ccc;
-	}
-
-	.pin.special {
-		background: #fff3e0;
-		color: #e65100;
-		border: 1px solid #ff9800;
-	}
-
-	.pin.assigned {
-		font-weight: 600;
-		border-width: 2px;
-	}
-
-	.pin.assigned-data {
-		background: #e3f2fd;
-		color: #1565c0;
-		border-color: #2196f3;
-	}
-
-	.pin.assigned-power {
-		background: #fff3e0;
-		color: #e65100;
-		border-color: #ff9800;
-	}
-
-	.pin.assigned-ground {
-		background: #fce4ec;
-		color: #ad1457;
-		border-color: #e91e63;
-	}
-
-	.pin-number {
-		font-weight: 600;
-		font-size: 0.6rem;
-	}
-
-	.pin-name {
-		font-size: 0.55rem;
-		text-align: center;
-		line-height: 1;
-	}
-
-	.pin-special {
-		position: absolute;
-		top: 2px;
-		right: 2px;
-		font-size: 0.5rem;
-		color: #ff9800;
-	}
-
-	.pinout-legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1rem;
-		justify-content: center;
-	}
-
-	.legend-item {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.8rem;
-	}
-
-	.legend-color {
-		width: 12px;
-		height: 12px;
-		border-radius: 2px;
-		border: 1px solid #ccc;
-	}
+	/* Pinout diagram styles removed: the diagram is intentionally disabled
+	   in the markup (see .pinout-diagram-placeholder). If the diagram
+	   is re-enabled later, reintroduce these styles then. */
 
 	.validation-summary {
 		padding: 1rem;
@@ -1097,14 +981,7 @@ async function testHardware(): Promise<void> {
 			flex-direction: column;
 		}
 		
-		.pinout-grid {
-			max-width: 300px;
-		}
-		
-		.pin {
-			min-height: 25px;
-			padding: 0.2rem;
-		}
+		/* pinout related responsive tweaks removed (diagram disabled) */
 		
 		.pin-row { grid-template-columns: 1fr; }
 	}

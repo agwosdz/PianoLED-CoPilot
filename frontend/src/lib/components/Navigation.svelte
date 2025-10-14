@@ -172,14 +172,7 @@
 
 	/* Mobile Layout */
 	@media (max-width: 768px) {
-		.app-container {
-			display: block;
-		}
-		
-		.main-content {
-			margin-left: 0;
-			padding: 1rem;
-			min-height: 100vh;
-		}
+		/* Mobile layout adjustments are handled by the consuming layout; these
+		   selectors were unused and removed to quiet svelte-check warnings. */
 	}
 </style>

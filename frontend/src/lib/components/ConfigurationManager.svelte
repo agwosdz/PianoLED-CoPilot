@@ -14,6 +14,10 @@
 
     // Component state
     export let settings: any = {}; // allow parent to bind settings (kept as any to be permissive)
+    $: {
+        // Keep the binding reactive even though this component fetches its own data.
+        settings;
+    }
     let showValidation = false;
     let showHistory = false;
     let exportPath = '';

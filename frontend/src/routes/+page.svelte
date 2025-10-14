@@ -284,179 +284,13 @@
 	}
 
 	/* Dashboard-specific styles */
-	.visualization-section, .performance-section, .system-details-section {
+	.system-details-section {
 		background: white;
 		border: 1px solid #e9ecef;
 		border-radius: 12px;
 		padding: 2rem;
 		margin: 2rem 0;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-	}
-
-	.visualization-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1.5rem;
-		flex-wrap: wrap;
-		gap: 1rem;
-	}
-
-	.visualization-header h2 {
-		margin: 0;
-		color: #333;
-	}
-
-	.connection-info {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		flex-wrap: wrap;
-	}
-
-	.connection-status {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 1rem;
-		border-radius: 6px;
-		font-size: 0.875rem;
-		font-weight: 600;
-	}
-
-	.status-indicator {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		display: inline-block;
-	}
-
-	.status-connected .status-indicator {
-		background-color: #28a745;
-		animation: pulse 2s infinite;
-	}
-
-	.status-disconnected .status-indicator {
-		background-color: #dc3545;
-	}
-
-	.status-reconnecting .status-indicator {
-		background-color: #ffc107;
-		animation: pulse 1s infinite;
-	}
-
-	.status-error .status-indicator,
-	.status-failed .status-indicator {
-		background-color: #dc3545;
-	}
-
-	.status-unavailable .status-indicator {
-		background-color: #6c757d;
-	}
-
-	.status-connected {
-		background-color: #d4edda;
-		color: #155724;
-	}
-
-	.status-disconnected {
-		background-color: #f8d7da;
-		color: #721c24;
-	}
-
-	.status-reconnecting {
-		background-color: #fff3cd;
-		color: #856404;
-	}
-
-	.status-error,
-	.status-failed {
-		background-color: #f8d7da;
-		color: #721c24;
-	}
-
-	.status-unavailable {
-		background-color: #e2e3e5;
-		color: #495057;
-	}
-
-	@keyframes pulse {
-		0% { opacity: 1; }
-		50% { opacity: 0.5; }
-		100% { opacity: 1; }
-	}
-
-	.connection-error {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 1rem;
-		background-color: #f8d7da;
-		color: #721c24;
-		border-radius: 6px;
-		font-size: 0.875rem;
-	}
-
-	.reconnect-btn {
-		padding: 0.5rem 1rem;
-		background-color: #007bff;
-		color: white;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 0.875rem;
-		font-weight: 600;
-		transition: background-color 0.2s;
-	}
-
-	.reconnect-btn:hover {
-		background-color: #0056b3;
-	}
-
-	.toggle-switch {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-	}
-
-	.toggle-switch input[type="checkbox"] {
-		display: none;
-	}
-
-	.toggle-slider {
-		width: 50px;
-		height: 24px;
-		background-color: #ccc;
-		border-radius: 12px;
-		position: relative;
-		transition: background-color 0.3s;
-	}
-
-	.toggle-slider::before {
-		content: '';
-		position: absolute;
-		width: 20px;
-		height: 20px;
-		border-radius: 50%;
-		background-color: white;
-		top: 2px;
-		left: 2px;
-		transition: transform 0.3s;
-	}
-
-	.toggle-switch input[type="checkbox"]:checked + .toggle-slider {
-		background-color: #007bff;
-	}
-
-	.toggle-switch input[type="checkbox"]:checked + .toggle-slider::before {
-		transform: translateX(26px);
-	}
-
-	.toggle-label {
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: #495057;
 	}
 
 	.system-status-grid {
@@ -509,15 +343,6 @@
 		margin: 1rem 0;
 	}
 
-	ul {
-		list-style-type: none;
-		padding: 0;
-	}
-
-	li {
-		padding: 0.5rem 0;
-		font-size: 1.1rem;
-	}
 
 	.nav-buttons {
 		display: grid;

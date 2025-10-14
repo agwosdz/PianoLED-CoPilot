@@ -245,6 +245,7 @@
 		-webkit-appearance: auto;
 	}
 	input[type='number'] {
+		appearance: auto;
 		-moz-appearance: number-input;
 	}
 	/* Keep select arrows hidden */
@@ -263,6 +264,7 @@
 	/* Style range slider (brightness) */
 	input[type='range'], .range-input {
 		--track-height: 8px;
+		appearance: none;
 		-webkit-appearance: none;
 		width: 100%;
 		height: var(--track-height);

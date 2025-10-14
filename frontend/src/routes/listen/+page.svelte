@@ -2916,34 +2916,6 @@ $: {
 		text-decoration: underline;
 	}
 
-	.error-message {
-		background: #fee2e2;
-		color: #991b1b;
-		border: 1px solid #fca5a5;
-		border-radius: 8px;
-		padding: 1rem;
-		margin-bottom: 1.5rem;
-		text-align: left;
-	}
-
-	.error-message p {
-		margin: 0 0 0.5rem 0;
-		font-weight: 500;
-	}
-
-	.dismiss-btn {
-		background: #dc2626;
-		color: white;
-		border: none;
-		border-radius: 4px;
-		padding: 0.25rem 0.75rem;
-		font-size: 0.875rem;
-		cursor: pointer;
-	}
-
-	.dismiss-btn:hover {
-		background: #b91c1c;
-	}
 
 	/* Screen Reader Only */
 	.sr-only {
@@ -3004,7 +2976,6 @@ $: {
 			padding: 2.5rem 1rem;
 			min-height: 200px;
 			/* Larger touch target for mobile */
-			tap-highlight-color: transparent;
 			-webkit-tap-highlight-color: transparent;
 		}
 
@@ -3051,7 +3022,6 @@ $: {
 			min-height: 48px; /* iOS recommended touch target */
 			width: 100%;
 			/* Enhanced touch feedback */
-			tap-highlight-color: transparent;
 			-webkit-tap-highlight-color: transparent;
 			transform: scale(1);
 			transition: transform 0.1s ease, background-color 0.2s ease;

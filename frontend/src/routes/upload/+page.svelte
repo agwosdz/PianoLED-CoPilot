@@ -1589,7 +1589,6 @@ import { onMount } from 'svelte';
 			padding: 2.5rem 1rem;
 			min-height: 200px;
 			/* Larger touch target for mobile */
-			tap-highlight-color: transparent;
 			-webkit-tap-highlight-color: transparent;
 		}
 
@@ -1636,7 +1635,6 @@ import { onMount } from 'svelte';
 			min-height: 48px; /* iOS recommended touch target */
 			width: 100%;
 			/* Enhanced touch feedback */
-			tap-highlight-color: transparent;
 			-webkit-tap-highlight-color: transparent;
 			transform: scale(1);
 			transition: transform 0.1s ease, background-color 0.2s ease;

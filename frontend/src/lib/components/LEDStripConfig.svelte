@@ -860,6 +860,7 @@
 		background: var(--surface-secondary);
 		border-radius: 3px;
 		outline: none;
+		appearance: none;
 		-webkit-appearance: none;
 	}
 
@@ -881,12 +882,8 @@
 		border: none;
 	}
 
-	.brightness-value {
-		font-weight: 500;
-		color: var(--text-primary);
-		min-width: 40px;
-		text-align: right;
-	}
+	/* Removed duplicate .brightness-value selector; the brightness readout
+	   is styled via .brightness-readout and global variables. */
 
 	/* Power Analysis */
 	.power-analysis {
@@ -1013,10 +1010,6 @@
 			flex-direction: column;
 			align-items: stretch;
 			gap: 0.5rem;
-		}
-
-		.brightness-value {
-			text-align: center;
 		}
 
 		.status-indicators {
