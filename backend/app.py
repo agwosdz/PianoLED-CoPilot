@@ -188,10 +188,48 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
 
 def _on_setting_change(category: str, key: str, value: Any) -> None:
     """Settings service listener to react to runtime configuration changes."""
-    if category not in {'led', 'piano'}:
+    watched_categories = {'led', 'piano', 'calibration'}
+
+    if category not in watched_categories:
         return
 
-    logger.info(f"Detected settings change for {category}.{key}; refreshing runtime configuration")
+    # Calibrate and downstream MIDI handling rely on LED / piano mapping.
+    # We refresh dependencies only when settings tied to layout/mapping change.
+    watched_keys = {
+        'led': {
+            'led_count',
+            'led_orientation',
+            'leds_per_key',
+            'mapping_mode',
+            'mapping_base_offset',
+            'key_mapping'
+        },
+        'piano': {
+            'size',
+            'midi_start',
+            'midi_end',
+            'key_mapping_mode',
+            'key_mapping'
+        },
+        'calibration': {
+            'led_count_adjustment',
+            'orientation_override',
+            'key_offsets',
+            'led_offsets'
+        }
+    }
+
+    if key not in watched_keys.get(category, set()):
+        logger.debug(
+            "Settings change %s.%s ignored for runtime refresh", category, key
+        )
+        return
+
+    logger.info(
+        "Detected settings change for %s.%s; refreshing runtime configuration",
+        category,
+        key
+    )
     _refresh_runtime_dependencies(category, key)
 
 
