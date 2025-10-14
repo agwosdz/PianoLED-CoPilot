@@ -1673,6 +1673,27 @@ def health_check():
             'error': str(e)
         }), 500
 
+
+@app.route('/api/debug/led-controller', methods=['GET'])
+def api_debug_led_controller():
+    """Debug endpoint: return runtime LED controller state for troubleshooting."""
+    try:
+        if not led_controller:
+            return jsonify({'controller_present': False}), 200
+        ctrl = led_controller
+        data = {
+            'controller_present': True,
+            'num_pixels': getattr(ctrl, 'num_pixels', None),
+            'led_orientation': getattr(ctrl, 'led_orientation', None),
+            'brightness': getattr(ctrl, 'brightness', None),
+            'led_enabled': getattr(ctrl, 'led_enabled', None),
+            'pixels_initialized': bool(getattr(ctrl, 'pixels', None))
+        }
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error(f"Error in api_debug_led_controller: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors"""
