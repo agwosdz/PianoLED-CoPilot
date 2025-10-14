@@ -7,6 +7,7 @@ import math
 import os
 import time
 import uuid
+from typing import Any
 
 import logging
 # Setup centralized logging before other imports
@@ -108,13 +109,93 @@ except Exception as e:
 # Initialize services that depend on LED controller
 usb_midi_service = USBMIDIInputService(led_controller=led_controller, websocket_callback=socketio.emit, settings_service=settings_service) if USBMIDIInputService else None
 playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
-midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller) if MIDIInputManager else None
+midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
 
 # Initialize MIDI input manager services
 if midi_input_manager:
     midi_input_manager.initialize_services()
 
 ALLOWED_MIDI_EXTENSIONS = {'.mid', '.midi'}
+
+
+def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> None:
+    """Apply runtime configuration changes after settings update."""
+    global led_controller, led_effects_manager, usb_midi_service, playback_service, midi_input_manager
+
+    try:
+        led_config = settings_service.get_led_configuration()
+        piano_config = settings_service.get_piano_configuration()
+    except Exception as exc:
+        logger.error(f"Failed to read updated settings for runtime refresh: {exc}")
+        return
+
+    desired_led_count = led_config.get('led_count')
+    orientation = led_config.get('orientation', 'normal')
+
+    current_led_count = getattr(led_controller, 'num_pixels', None)
+    reinitialize_controller = led_controller is None or desired_led_count != current_led_count
+
+    if reinitialize_controller:
+        if led_effects_manager:
+            try:
+                led_effects_manager.stop_current()
+            except Exception as exc:
+                logger.warning(f"Failed to stop LED effects during reinit: {exc}")
+
+        old_controller = led_controller
+        try:
+            led_controller = LEDController(settings_service=settings_service)
+            logger.info(f"LED controller reinitialized due to settings change ({trigger_category}.{trigger_key})")
+        except Exception as exc:
+            logger.error(f"Failed to reinitialize LED controller after settings change: {exc}")
+            led_controller = old_controller
+        else:
+            if old_controller and hasattr(old_controller, 'cleanup'):
+                try:
+                    old_controller.cleanup()
+                except Exception as cleanup_exc:
+                    logger.warning(f"Cleanup of old LED controller failed: {cleanup_exc}")
+
+        if led_controller:
+            led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
+    else:
+        # Update orientation if the controller remains the same
+        if led_controller:
+            led_controller.led_orientation = orientation
+        if led_effects_manager and led_controller:
+            led_effects_manager.update_led_count(led_controller.num_pixels)
+
+    # Ensure effects manager exists if LEDs are available
+    if not led_effects_manager and led_controller:
+        led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
+
+    # Refresh dependent services with new configuration
+    if usb_midi_service:
+        if led_controller:
+            usb_midi_service.update_led_controller(led_controller)
+        usb_midi_service.refresh_runtime_settings()
+
+    if playback_service:
+        playback_service.led_controller = led_controller
+        playback_service.refresh_runtime_settings()
+
+    if midi_input_manager:
+        midi_input_manager.update_led_controller(led_controller)
+        midi_input_manager.refresh_runtime_settings()
+
+    logger.info("Runtime dependencies refreshed after settings update")
+
+
+def _on_setting_change(category: str, key: str, value: Any) -> None:
+    """Settings service listener to react to runtime configuration changes."""
+    if category not in {'led', 'piano'}:
+        return
+
+    logger.info(f"Detected settings change for {category}.{key}; refreshing runtime configuration")
+    _refresh_runtime_dependencies(category, key)
+
+
+settings_service.add_listener(_on_setting_change)
 
 
 def _is_allowed_midi_file(filename: str) -> bool:

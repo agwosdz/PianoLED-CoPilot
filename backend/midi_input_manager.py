@@ -57,16 +57,18 @@ class UnifiedMIDIEvent:
 class MIDIInputManager:
     """Unified manager for coordinating USB and rtpMIDI inputs"""
     
-    def __init__(self, websocket_callback: Optional[Callable] = None, led_controller: Optional['LEDController'] = None):
+    def __init__(self, websocket_callback: Optional[Callable] = None, led_controller=None, settings_service: Optional[Any] = None):
         """
         Initialize unified MIDI input manager.
         
         Args:
             websocket_callback: Callback function for WebSocket event broadcasting
             led_controller: LED controller instance for real-time visualization
+            settings_service: Settings service for runtime configuration access
         """
         self._websocket_callback = websocket_callback
         self._led_controller = led_controller
+        self.settings_service = settings_service
         
         # Load configuration
         self.enable_usb = get_config('midi_enable_usb', True)
@@ -75,8 +77,8 @@ class MIDIInputManager:
         self.duplicate_filter_window = get_config('midi_duplicate_filter_ms', 50)
         
         # Initialize MIDI services
-        self._usb_service: Optional[USBMIDIInputService] = None
-        self._rtpmidi_service: Optional[RtpMIDIService] = None
+        self._usb_service = None
+        self._rtpmidi_service = None
         
         # Event processing
         self._event_buffer: List[UnifiedMIDIEvent] = []
@@ -119,6 +121,17 @@ class MIDIInputManager:
         """Check if manager is actively listening for MIDI input"""
         return self._running
     
+    def update_led_controller(self, led_controller) -> None:
+        """Update the LED controller reference and propagate to services."""
+        self._led_controller = led_controller
+        if self._usb_service:
+            self._usb_service.update_led_controller(led_controller)
+
+    def refresh_runtime_settings(self) -> None:
+        """Refresh runtime settings for managed MIDI services."""
+        if self._usb_service and hasattr(self._usb_service, 'refresh_runtime_settings'):
+            self._usb_service.refresh_runtime_settings()
+    
 
     
     def initialize_services(self) -> bool:
@@ -135,7 +148,8 @@ class MIDIInputManager:
             try:
                 self._usb_service = USBMIDIInputService(
                     led_controller=self._led_controller,
-                    websocket_callback=self._handle_usb_event
+                    websocket_callback=self._handle_usb_event,
+                    settings_service=self.settings_service
                 )
                 self._source_status[MIDIInputSource.USB]['available'] = True
                 success_count += 1

@@ -24,7 +24,8 @@
 			children: [
 				{ hash: 'piano-settings', icon: '🎹', text: 'Piano Setup' },
 				{ hash: 'led-settings', icon: '💡', text: 'LED Strip' },
-				{ hash: 'midi-settings', icon: '🎛️', text: 'MIDI Connections' }
+				{ hash: 'midi-settings', icon: '🎛️', text: 'MIDI Connections' },
+				{ hash: 'calibration-settings', icon: '🛠️', text: 'Calibration' }
 			]
 		}
 	];

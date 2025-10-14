@@ -53,6 +53,11 @@
     { value: 'piano_keys', label: 'Piano Sweep' }
   ];
 
+  const calibrationItems = [
+    { title: 'Section 1', description: 'Placeholder for calibration controls.' },
+    { title: 'Section 2', description: 'Placeholder for calibration status.' }
+  ];
+
 
   const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
   const coerceNumber = (value: any, fallback: number) => {
@@ -769,6 +774,27 @@
           </details>
         </div>
       </section>
+
+      <section class="settings-panel calibration-panel" id="calibration-settings">
+        <header class="card-header">
+          <h2>Calibration</h2>
+          <p>Coordinate LEDs with piano keys and fine-tune system alignment.</p>
+        </header>
+
+        <div class="calibration-grid">
+          {#each calibrationItems as item}
+            <div class="calibration-card">
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </div>
+          {/each}
+        </div>
+
+        <div class="calibration-wide">
+          <h3>Section 3</h3>
+          <p>Wide placeholder panel for future calibration workflows.</p>
+        </div>
+      </section>
     </div>
 
     <div class="action-bar">
@@ -951,6 +977,46 @@
     font-size: 0.9rem;
   }
 
+  .calibration-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+
+  .calibration-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .calibration-card h3,
+  .calibration-wide h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #0f172a;
+  }
+
+  .calibration-card p,
+  .calibration-wide p {
+    margin: 0;
+    color: #475569;
+    font-size: 0.95rem;
+  }
+
+  .calibration-wide {
+    margin-top: 1.5rem;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+  }
+
   .pattern-controls {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1120,6 +1186,10 @@
 
     .settings-panel {
       padding: 1.5rem;
+    }
+
+    .calibration-grid {
+      grid-template-columns: 1fr;
     }
 
     .field-grid,

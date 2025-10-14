@@ -70,7 +70,7 @@ class PlaybackStatus:
 class PlaybackService:
     """Service for coordinating MIDI playback with LED visualization"""
     
-    def __init__(self, led_controller: Optional[LEDController] = None, num_leds: Optional[int] = None, midi_parser: Optional[MIDIParser] = None, settings_service: Optional[Any] = None):
+    def __init__(self, led_controller=None, num_leds: Optional[int] = None, midi_parser=None, settings_service: Optional[Any] = None):
         """
         Initialize playback service with configurable piano specifications.
         
@@ -81,44 +81,13 @@ class PlaybackService:
             settings_service: Settings service instance for retrieving configuration
         """
         self._led_controller = led_controller
+        self._settings_service = settings_service
+        self.piano_size = '88-key'
         
-        # Load configuration
-        if settings_service:
-            piano_size = settings_service.get_setting('piano', 'size', '88-key')
-            piano_specs = self._get_piano_specs(piano_size)
-            self.num_leds = num_leds or settings_service.get_setting('led', 'led_count', 246)
-            self.led_orientation = settings_service.get_setting('led', 'led_orientation', 'normal')
-            
-            # Multi-LED mapping configuration
-            self.mapping_mode = settings_service.get_setting('led', 'mapping_mode', 'auto')
-            self.leds_per_key = settings_service.get_setting('led', 'leds_per_key', 3)
-            self.mapping_base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
-            self.key_mapping = settings_service.get_setting('led', 'key_mapping', {})
+        if self._settings_service:
+            self._load_settings_from_service(num_leds_override=num_leds)
         else:
-            # Fallback to config.py
-            try:
-                from config import get_config, get_piano_specs
-                piano_size = get_config('piano_size', '88-key')
-                piano_specs = get_piano_specs(piano_size)
-                self.num_leds = num_leds or piano_specs['keys']
-                self.led_orientation = get_config('led_orientation', 'normal')
-                
-                # Multi-LED mapping configuration
-                self.mapping_mode = get_config('mapping_mode', 'auto')
-                self.leds_per_key = get_config('leds_per_key', 3)
-                self.mapping_base_offset = get_config('mapping_base_offset', 0)
-                self.key_mapping = get_config('key_mapping', {})
-            except ImportError:
-                piano_specs = {'keys': 88, 'midi_start': 21, 'midi_end': 108}
-                self.num_leds = num_leds or 88
-                self.led_orientation = 'normal'
-                self.mapping_mode = 'auto'
-                self.leds_per_key = 3
-                self.mapping_base_offset = 0
-                self.key_mapping = {}
-        
-        self.min_midi_note = piano_specs['midi_start']
-        self.max_midi_note = piano_specs['midi_end']
+            self._load_settings_from_config(num_leds_override=num_leds)
         
         # Precompute key-to-LED mapping for performance
         self._precomputed_mapping = self._generate_key_mapping()
@@ -156,6 +125,53 @@ class PlaybackService:
         
         logger.info(f"PlaybackService initialized with {self.num_leds} LEDs")
     
+    def _load_settings_from_service(self, num_leds_override: Optional[int] = None) -> None:
+        """Load runtime configuration from the settings service."""
+        piano_config = self._settings_service.get_piano_configuration()
+        led_config = self._settings_service.get_led_configuration()
+
+        self.piano_size = piano_config['size']
+        self.num_leds = num_leds_override if num_leds_override is not None else led_config['led_count']
+        self.led_orientation = led_config['orientation']
+
+        self.mapping_mode = self._settings_service.get_setting('led', 'mapping_mode', 'auto')
+        self.leds_per_key = self._settings_service.get_setting('led', 'leds_per_key', 3)
+        self.mapping_base_offset = self._settings_service.get_setting('led', 'mapping_base_offset', 0)
+        self.key_mapping = self._settings_service.get_setting('led', 'key_mapping', {})
+
+        piano_specs = self._get_piano_specs(self.piano_size)
+        self.min_midi_note = piano_config.get('midi_start', piano_specs['midi_start'])
+        self.max_midi_note = piano_config.get('midi_end', piano_specs['midi_end'])
+
+    def _load_settings_from_config(self, num_leds_override: Optional[int] = None) -> None:
+        """Fallback configuration loading from static config values."""
+        piano_size = get_config('piano_size', '88-key')
+        piano_specs = get_piano_specs(piano_size)
+
+        self.piano_size = piano_size
+        fallback_leds = piano_specs.get('keys', 88) or 88
+        chosen_leds = num_leds_override if num_leds_override is not None else fallback_leds
+        self.num_leds = chosen_leds
+        self.led_orientation = get_config('led_orientation', 'normal')
+
+        self.mapping_mode = get_config('mapping_mode', 'auto')
+        self.leds_per_key = get_config('leds_per_key', 3)
+        self.mapping_base_offset = get_config('mapping_base_offset', 0)
+        self.key_mapping = get_config('key_mapping', {})
+
+        self.min_midi_note = piano_specs['midi_start']
+        self.max_midi_note = piano_specs['midi_end']
+
+    def refresh_runtime_settings(self) -> None:
+        """Reload runtime configuration and regenerate note mappings."""
+        if self._settings_service:
+            self._load_settings_from_service()
+        else:
+            self._load_settings_from_config()
+
+        self._precomputed_mapping = self._generate_key_mapping()
+        logger.info("PlaybackService settings refreshed")
+
     def _get_piano_specs(self, piano_size: str) -> Dict[str, Any]:
         """Get piano specifications based on size."""
         specs = {
@@ -775,9 +791,8 @@ class PlaybackService:
             
             elif self.mapping_mode in ['auto', 'proportional']:
                 # Use auto-generated mapping
-                piano_size = get_config('piano_size', '88-key')
                 auto_mapping = generate_auto_key_mapping(
-                    piano_size=piano_size,
+                    piano_size=self.piano_size,
                     led_count=self.num_leds,
                     led_orientation=self.led_orientation,
                     leds_per_key=self.leds_per_key,

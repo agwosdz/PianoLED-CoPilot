@@ -9,11 +9,25 @@ import json
 import sqlite3
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Callable
 from datetime import datetime
 from contextlib import contextmanager
 from services.settings_validator import SettingsValidator
 from logging_config import get_logger
+
+try:
+    from config import get_piano_specs
+except ImportError:
+    def get_piano_specs(piano_size: str) -> Dict[str, Any]:
+        """Fallback piano specs helper when config module is unavailable."""
+        default_specs = {
+            '88-key': {'keys': 88, 'midi_start': 21, 'midi_end': 108},
+            '76-key': {'keys': 76, 'midi_start': 28, 'midi_end': 103},
+            '61-key': {'keys': 61, 'midi_start': 36, 'midi_end': 96},
+            '49-key': {'keys': 49, 'midi_start': 36, 'midi_end': 84},
+            '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72},
+        }
+        return default_specs.get(piano_size, default_specs['88-key'])
 
 logger = get_logger(__name__)
 
@@ -33,6 +47,8 @@ class SettingsService:
         """
         self.db_path = db_path or self._get_default_db_path()
         self.websocket_callback = websocket_callback
+        self._defaults_schema = self._get_default_settings_schema()
+        self._listeners = []
         self._init_database()
         self._load_default_settings()
         
@@ -87,12 +103,19 @@ class SettingsService:
     
     def _load_default_settings(self):
         """Load default settings into the database if they don't exist."""
-        default_settings = self._get_default_settings_schema()
-        
+        default_settings = self._defaults_schema
+
         for category, settings in default_settings.items():
             for key, config in settings.items():
                 if not self._setting_exists(category, key):
                     self._create_setting(category, key, config['default'], config['type'])
+
+    def _get_default_value(self, category: str, key: str, fallback: Any = None) -> Any:
+        """Helper to fetch default values from the schema."""
+        try:
+            return self._defaults_schema[category][key]['default']
+        except KeyError:
+            return fallback
     
     def _get_default_settings_schema(self) -> Dict[str, Dict[str, Dict[str, Any]]]:
         """Get the default settings schema with types and constraints."""
@@ -243,6 +266,27 @@ class SettingsService:
         except Exception as e:
             logger.error(f"Error creating setting {category}.{key}: {e}")
             raise
+
+    def add_listener(self, callback: Callable[[str, str, Any], None]) -> None:
+        """Register a callback to be notified when a setting changes."""
+        if callback and callback not in self._listeners:
+            self._listeners.append(callback)
+
+    def remove_listener(self, callback: Callable[[str, str, Any], None]) -> None:
+        """Remove a previously registered setting change callback."""
+        if callback in self._listeners:
+            self._listeners.remove(callback)
+
+    def _notify_listeners(self, category: str, key: str, value: Any) -> None:
+        """Notify registered listeners about a setting change."""
+        if not self._listeners:
+            return
+
+        for callback in list(self._listeners):
+            try:
+                callback(category, key, value)
+            except Exception as exc:
+                logger.error(f"Settings listener error for {category}.{key}: {exc}")
     
     def get_setting(self, category: str, key: str, default: Any = None) -> Any:
         """
@@ -303,6 +347,9 @@ class SettingsService:
                 )
                 conn.commit()
             
+            # Notify internal listeners before broadcasting
+            self._notify_listeners(category, key, normalized_value)
+
             # Broadcast the change via WebSocket
             self._broadcast_setting_change(category, key, normalized_value)
             
@@ -333,7 +380,7 @@ class SettingsService:
                 for row in cursor.fetchall():
                     settings[row['key']] = json.loads(row['value'])
             # Merge with defaults so new keys are visible
-            defaults = self._get_default_settings_schema().get(category, {})
+            defaults = self._defaults_schema.get(category, {})
             merged: Dict[str, Any] = {k: cfg['default'] for k, cfg in defaults.items()}
             merged.update(settings)
             return merged
@@ -358,7 +405,7 @@ class SettingsService:
                         settings[category] = {}
                     settings[category][row['key']] = json.loads(row['value'])
             # Ensure defaults are present in all categories
-            defaults_schema = self._get_default_settings_schema()
+            defaults_schema = self._defaults_schema
             for category, defaults in defaults_schema.items():
                 existing = settings.get(category, {})
                 merged = {k: cfg['default'] for k, cfg in defaults.items()}
@@ -415,7 +462,7 @@ class SettingsService:
             True if successful, False otherwise
         """
         try:
-            default_settings = self._get_default_settings_schema()
+            default_settings = self._defaults_schema
             if category not in default_settings:
                 logger.error(f"Unknown category: {category}")
                 return False
@@ -442,7 +489,7 @@ class SettingsService:
             True if successful, False otherwise
         """
         try:
-            default_settings = self._get_default_settings_schema()
+            default_settings = self._defaults_schema
             
             for category in default_settings.keys():
                 if not self.reset_category(category):
@@ -628,3 +675,39 @@ class SettingsService:
                 })
             except Exception as e:
                 logger.error(f"Error in background broadcast of settings reset: {e}")
+
+    def get_led_configuration(self) -> Dict[str, Any]:
+        """Return key LED runtime configuration values with fallbacks."""
+        led_count_value = self.get_setting('led', 'led_count', self._get_default_value('led', 'led_count', 0))
+        try:
+            led_count = int(led_count_value)
+        except (TypeError, ValueError):
+            led_count = int(self._get_default_value('led', 'led_count', 0))
+
+        return {
+            'enabled': self.get_setting('led', 'enabled', self._get_default_value('led', 'enabled', False)),
+            'led_count': led_count,
+            'orientation': self.get_setting('led', 'led_orientation', self._get_default_value('led', 'led_orientation', 'normal')),
+            'brightness': self.get_setting('led', 'brightness', self._get_default_value('led', 'brightness', 0.5)),
+            'gpio_pin': self.get_setting('led', 'gpio_pin', self._get_default_value('led', 'gpio_pin', 19))
+        }
+
+    def get_piano_configuration(self) -> Dict[str, Any]:
+        """Return key piano runtime configuration values with derived specs."""
+        size = self.get_setting('piano', 'size', self._get_default_value('piano', 'size', '88-key'))
+        keys_value = self.get_setting('piano', 'keys', self._get_default_value('piano', 'keys', 88))
+        try:
+            keys = int(keys_value)
+        except (TypeError, ValueError):
+            keys = int(self._get_default_value('piano', 'keys', 88))
+        specs = get_piano_specs(size)
+
+        if keys <= 0:
+            keys = specs.get('keys', keys)
+
+        return {
+            'size': size,
+            'keys': keys,
+            'midi_start': specs.get('midi_start', 21),
+            'midi_end': specs.get('midi_end', 108)
+        }

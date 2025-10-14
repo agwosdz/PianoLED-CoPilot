@@ -61,7 +61,7 @@ class MIDIInputEvent:
 class USBMIDIInputService:
     """Service for real-time USB MIDI input processing and LED visualization"""
     
-    def __init__(self, led_controller: Optional[LEDController] = None, 
+    def __init__(self, led_controller=None, 
                  websocket_callback: Optional[Callable] = None,
                  settings_service=None):
         """
@@ -75,34 +75,11 @@ class USBMIDIInputService:
         self._led_controller = led_controller
         self._websocket_callback = websocket_callback
         self.settings_service = settings_service
-        
-        # Load configuration from settings service or fallback to config.py
-        if settings_service:
-            self.piano_size = settings_service.get_setting('piano', 'piano_size', '88-key')
-            self.num_leds = settings_service.get_setting('led', 'led_count', 246)
-            self.led_orientation = settings_service.get_setting('led', 'led_orientation', 'normal')
-            
-            # Multi-LED mapping configuration from settings
-            self.mapping_mode = settings_service.get_setting('led', 'mapping_mode', 'auto')
-            self.leds_per_key = settings_service.get_setting('led', 'leds_per_key', 3)
-            self.mapping_base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
-            self.key_mapping = settings_service.get_setting('led', 'key_mapping', {})
+
+        if self.settings_service:
+            self._load_settings_from_service()
         else:
-            # Fallback to config.py
-            self.piano_size = get_config('piano_size', '88-key')
-            self.num_leds = get_config('led_count', 246)
-            self.led_orientation = get_config('led_orientation', 'normal')
-            
-            # Multi-LED mapping configuration
-            self.mapping_mode = get_config('mapping_mode', 'auto')
-            self.leds_per_key = get_config('leds_per_key', 3)
-            self.mapping_base_offset = get_config('mapping_base_offset', 0)
-            self.key_mapping = get_config('key_mapping', {})
-        
-        # Get piano specifications
-        piano_specs = get_piano_specs(self.piano_size)
-        self.min_midi_note = piano_specs['midi_start']
-        self.max_midi_note = piano_specs['midi_end']
+            self._load_settings_from_config()
         
         # Generate precomputed mapping for performance
         self._precomputed_mapping = self._generate_key_mapping()
@@ -110,7 +87,7 @@ class USBMIDIInputService:
         # Service state
         self._state = MIDIInputState.IDLE
         self._current_device: Optional[str] = None
-        self._input_port: Optional[mido.ports.BaseInput] = None
+        self._input_port = None
         
         # Active notes tracking for sustain and LED management
         self._active_notes: Dict[int, Dict[str, Any]] = {}  # note -> {velocity, timestamp, led_index}
@@ -128,6 +105,41 @@ class USBMIDIInputService:
         if not MIDO_AVAILABLE:
             logger.warning("mido library not available - MIDI input disabled")
             self._state = MIDIInputState.ERROR
+
+    def _load_settings_from_service(self):
+        """Load runtime configuration from the settings service."""
+        piano_config = self.settings_service.get_piano_configuration()
+        led_config = self.settings_service.get_led_configuration()
+
+        self.piano_size = piano_config['size']
+        self.num_leds = led_config['led_count']
+        self.led_orientation = led_config['orientation']
+
+        # Multi-LED mapping configuration from settings
+        self.mapping_mode = self.settings_service.get_setting('led', 'mapping_mode', 'auto')
+        self.leds_per_key = self.settings_service.get_setting('led', 'leds_per_key', 3)
+        self.mapping_base_offset = self.settings_service.get_setting('led', 'mapping_base_offset', 0)
+        self.key_mapping = self.settings_service.get_setting('led', 'key_mapping', {})
+
+        piano_specs = get_piano_specs(self.piano_size)
+        self.min_midi_note = piano_config.get('midi_start', piano_specs['midi_start'])
+        self.max_midi_note = piano_config.get('midi_end', piano_specs['midi_end'])
+
+    def _load_settings_from_config(self):
+        """Fallback configuration loading from static config."""
+        self.piano_size = get_config('piano_size', '88-key')
+        self.num_leds = get_config('led_count', 246)
+        self.led_orientation = get_config('led_orientation', 'normal')
+
+        # Multi-LED mapping configuration
+        self.mapping_mode = get_config('mapping_mode', 'auto')
+        self.leds_per_key = get_config('leds_per_key', 3)
+        self.mapping_base_offset = get_config('mapping_base_offset', 0)
+        self.key_mapping = get_config('key_mapping', {})
+
+        piano_specs = get_piano_specs(self.piano_size)
+        self.min_midi_note = piano_specs['midi_start']
+        self.max_midi_note = piano_specs['midi_end']
     
     @property
     def state(self) -> MIDIInputState:
@@ -148,6 +160,21 @@ class USBMIDIInputService:
     def is_listening(self) -> bool:
         """Check if service is actively listening for MIDI input"""
         return self._state == MIDIInputState.LISTENING and self._running
+
+    def update_led_controller(self, led_controller) -> None:
+        """Update the LED controller reference used for real-time output."""
+        self._led_controller = led_controller
+
+    def refresh_runtime_settings(self) -> None:
+        """Reload runtime configuration from the active settings source."""
+        if self.settings_service:
+            self._load_settings_from_service()
+        else:
+            self._load_settings_from_config()
+
+        self._precomputed_mapping = self._generate_key_mapping()
+        self._active_notes.clear()
+        logger.info("USB MIDI input service settings refreshed")
     
     def get_available_devices(self) -> List[MIDIDevice]:
         """

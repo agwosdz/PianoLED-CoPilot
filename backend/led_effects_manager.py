@@ -21,6 +21,11 @@ class LEDEffectsManager:
         self.current_effect_thread: Optional[threading.Thread] = None
         self.stop_current_effect = threading.Event()
         self.lock = threading.Lock()
+
+    def update_led_count(self, led_count: int) -> None:
+        """Update the cached LED count used by effects."""
+        with self.lock:
+            self.led_count = led_count
         
     def stop_current(self):
         """Stop the currently running effect"""
