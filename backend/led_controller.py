@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -101,7 +101,7 @@ class LEDController:
             LED_DMA = self.led_dma
             LED_INVERT = self.led_invert
             LED_CHANNEL = self.led_channel
-            
+
             # Initialize rpi_ws281x strip
             self.pixels = PixelStrip(
                 self.num_pixels,
@@ -112,15 +112,54 @@ class LEDController:
                 int(self.brightness * 255),  # Convert brightness to 0-255 range
                 LED_CHANNEL
             )
-            
+
             # Initialize the library (must be called once before other functions)
             self.pixels.begin()
-            
+
             logger.info(f"LED controller initialized with {self.num_pixels} pixels on pin {self.pin} using rpi_ws281x")
             logger.info(f"LED settings: type={self.led_type}, freq={LED_FREQ_HZ}, dma={LED_DMA}, channel={LED_CHANNEL}")
         except Exception as e:
             logger.error(f"Failed to initialize LED controller: {e}")
             raise
+
+    def apply_runtime_settings(self, led_config: Dict[str, Any]) -> Dict[str, bool]:
+        """Apply runtime LED settings that do not require full reinitialization."""
+        changes = {
+            'orientation_changed': False,
+            'brightness_changed': False,
+        }
+
+        if not isinstance(led_config, dict):
+            return changes
+
+        orientation = led_config.get('orientation')
+        if orientation and orientation != self.led_orientation:
+            changes['orientation_changed'] = True
+            try:
+                self.turn_off_all()
+            except Exception as exc:
+                logger.warning(f"Failed to clear LEDs during orientation update: {exc}")
+            self.led_orientation = orientation
+
+        brightness = led_config.get('brightness')
+        if brightness is not None:
+            try:
+                normalized = max(0.0, min(1.0, float(brightness)))
+            except (TypeError, ValueError):
+                normalized = self.brightness
+
+            if abs(normalized - float(self.brightness)) > 1e-6:
+                self.brightness = normalized
+                changes['brightness_changed'] = True
+
+                if HARDWARE_AVAILABLE and self.pixels:
+                    try:
+                        self.pixels.setBrightness(int(normalized * 255))
+                        self.show()
+                    except Exception as exc:
+                        logger.warning(f"Failed to update LED brightness: {exc}")
+
+        return changes
     
     def _map_led_index(self, index: int) -> int:
         """

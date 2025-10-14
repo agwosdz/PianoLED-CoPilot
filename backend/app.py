@@ -7,7 +7,7 @@ import math
 import os
 import time
 import uuid
-from typing import Any
+from typing import Any, Dict
 
 import logging
 # Setup centralized logging before other imports
@@ -173,13 +173,19 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
             except Exception as exc:
                 logger.warning(f"Failed to stop LED effects for orientation change: {exc}")
 
+        runtime_changes: Dict[str, bool] = {}
         if led_controller:
-            if orientation_changed:
-                try:
-                    led_controller.turn_off_all()
-                except Exception as exc:
-                    logger.warning(f"Failed to clear LEDs during orientation change: {exc}")
-            led_controller.led_orientation = orientation
+            try:
+                runtime_changes = led_controller.apply_runtime_settings(led_config)
+            except Exception as exc:
+                logger.warning(f"LED controller runtime update failed: {exc}")
+
+        if not orientation_changed and runtime_changes.get('orientation_changed') and led_effects_manager:
+            try:
+                led_effects_manager.stop_current()
+            except Exception as exc:
+                logger.warning(f"Failed to stop LED effects for orientation change: {exc}")
+            orientation_changed = True
 
         if led_effects_manager and led_controller:
             led_effects_manager.update_led_count(led_controller.num_pixels)
