@@ -11,11 +11,22 @@
 	});
 
 	$: currentPath = $page.url.pathname;
+	$: currentHash = ($page.url.hash ?? '').replace('#', '');
 
 	const navigationItems = [
 		{ href: '/', icon: '🏠', text: 'Home', description: 'System overview and status' },
 		{ href: '/listen', icon: '🎧', text: 'Listen', description: 'Upload and play MIDI files' },
-		{ href: '/settings', icon: '⚙️', text: 'Settings', description: 'Configuration and preferences' }
+		{
+			href: '/settings',
+			icon: '⚙️',
+			text: 'Settings',
+			description: 'Configuration and preferences',
+			children: [
+				{ hash: 'piano-settings', icon: '🎹', text: 'Piano Setup' },
+				{ hash: 'led-settings', icon: '💡', text: 'LED Strip' },
+				{ hash: 'midi-settings', icon: '🎛️', text: 'MIDI Connections' }
+			]
+		}
 	];
 </script>
 
@@ -30,16 +41,45 @@
 	
 	<ul class="nav-list">
 		{#each navigationItems as item}
-			<li>
-				<a 
-					href={item.href}
-					class:active={currentPath === item.href}
-					title={item.description}
-				>
-					<span class="nav-icon">{item.icon}</span>
-					<span class="nav-text">{item.text}</span>
-				</a>
-			</li>
+			{#if item.children && item.children.length > 0}
+				<li class:has-children={currentPath.startsWith(item.href)}>
+					<a
+						href={item.href}
+						class:active={currentPath.startsWith(item.href)}
+						title={item.description}
+					>
+						<span class="nav-icon">{item.icon}</span>
+						<span class="nav-text">{item.text}</span>
+					</a>
+
+					{#if currentPath.startsWith(item.href)}
+						<ul class="sub-nav" aria-label={`${item.text} subsections`}>
+							{#each item.children as child, index}
+								<li>
+									<a
+										href={`${item.href}#${child.hash}`}
+										class:active={currentHash === child.hash || (!currentHash && index === 0)}
+									>
+										<span class="nav-icon" aria-hidden="true">{child.icon}</span>
+										<span class="nav-text">{child.text}</span>
+									</a>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</li>
+			{:else}
+				<li>
+					<a
+						href={item.href}
+						class:active={currentPath === item.href}
+						title={item.description}
+					>
+						<span class="nav-icon">{item.icon}</span>
+						<span class="nav-text">{item.text}</span>
+					</a>
+				</li>
+			{/if}
 		{/each}
 	</ul>
 	
@@ -110,6 +150,50 @@
 
 	.nav-list li {
 		margin: 0.25rem 0;
+	}
+
+	.nav-list li.has-children > a {
+		margin-bottom: 0.25rem;
+	}
+
+	.sub-nav {
+		list-style: none;
+		margin: 0;
+		padding: 0 0 0 2.25rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.sub-nav a {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.55rem 0.75rem;
+		color: #e2e8f0;
+		text-decoration: none;
+		border-radius: 8px;
+		background: rgba(148, 163, 184, 0.08);
+		font-size: 0.85rem;
+		font-weight: 600;
+		transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+	}
+
+	.sub-nav a:hover,
+	.sub-nav a:focus {
+		background: rgba(148, 163, 184, 0.18);
+		color: #ffffff;
+		transform: translateX(2px);
+		outline: none;
+	}
+
+	.sub-nav a.active {
+		background: rgba(96, 165, 250, 0.3);
+		color: #ffffff;
+	}
+
+	.sub-nav .nav-icon {
+		font-size: 1rem;
 	}
 
 	.nav-list a {

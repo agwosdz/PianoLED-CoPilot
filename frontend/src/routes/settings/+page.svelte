@@ -27,8 +27,8 @@
 
   let saving = false;
 
-  let midiDevicesExpanded = true;
-  let networkMidiExpanded = true;
+  let midiDevicesExpanded = false;
+  let networkMidiExpanded = false;
 
   let usbMidiStatus: UsbMidiStatus = { connected: false, deviceName: null, lastActivity: null, messageCount: 0 };
   let networkMidiStatus: NetworkMidiStatus = { connected: false, activeSessions: [], lastActivity: null, messageCount: 0 };
@@ -52,6 +52,7 @@
     { value: 'fade', label: 'Smooth Fade' },
     { value: 'piano_keys', label: 'Piano Sweep' }
   ];
+
 
   const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
   const coerceNumber = (value: any, fallback: number) => {
@@ -536,12 +537,6 @@
       <p>Choose a category below to configure your piano, LED strip, or MIDI connectivity.</p>
     </section>
 
-    <nav class="settings-subnav" aria-label="Settings subsections">
-      <a href="#piano-settings">Piano</a>
-      <a href="#led-settings">LED</a>
-      <a href="#midi-settings">MIDI</a>
-    </nav>
-
     {#if error}
       <SettingsValidationMessage type="error" message={error} />
     {/if}
@@ -555,8 +550,8 @@
       />
     {/if}
 
-    <div class="card-grid">
-      <section class="settings-card" id="piano-settings">
+    <div class="card-stack">
+      <section class="settings-panel" id="piano-settings">
         <header class="card-header">
           <h2>Piano Setup</h2>
           <p>Select your keyboard layout.</p>
@@ -595,7 +590,7 @@
         </div>
       </section>
 
-  <section class="settings-card" id="led-settings">
+      <section class="settings-panel" id="led-settings">
         <header class="card-header">
           <h2>LED Strip Configuration</h2>
           <p>Set the GPIO pin, LED count, and brightness for your strip.</p>
@@ -724,7 +719,7 @@
         </div>
       </section>
 
-  <section class="settings-card midi-card" id="midi-settings">
+      <section class="settings-panel midi-panel" id="midi-settings">
         <header class="card-header">
           <h2>MIDI Connections</h2>
           <p>Manage USB devices and RTP-MIDI sessions.</p>
@@ -834,42 +829,17 @@
     color: #4b5563;
   }
 
-  .settings-subnav {
+  .card-stack {
     display: flex;
-    justify-content: center;
-    gap: 1.5rem;
-    margin-top: -0.5rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .settings-subnav a {
-    color: #1d4ed8;
-    font-weight: 600;
-    text-decoration: none;
-    padding: 0.35rem 0.75rem;
-    border-radius: 999px;
-    transition: background 0.2s ease, color 0.2s ease;
-  }
-
-  .settings-subnav a:hover,
-  .settings-subnav a:focus {
-    background: #e0f2fe;
-    color: #0f172a;
-    outline: none;
-  }
-
-  .card-grid {
-    display: grid;
+    flex-direction: column;
     gap: 1.75rem;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   }
 
-  .settings-card {
+  .settings-panel {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
-    padding: 1.75rem;
+    padding: 1.75rem 2rem;
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
     display: flex;
     flex-direction: column;
@@ -1000,7 +970,7 @@
     font-weight: 600;
   }
 
-  .midi-card .midi-body {
+  .midi-panel .midi-body {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
@@ -1128,10 +1098,6 @@
   }
 
   @media (max-width: 960px) {
-    .card-grid {
-      grid-template-columns: 1fr;
-    }
-
     .action-bar {
       flex-direction: column;
       align-items: stretch;
@@ -1152,12 +1118,7 @@
       padding: 1.75rem 0.75rem 2.25rem;
     }
 
-    .settings-subnav {
-      gap: 0.75rem;
-      margin-top: 0;
-    }
-
-    .settings-card {
+    .settings-panel {
       padding: 1.5rem;
     }
 
