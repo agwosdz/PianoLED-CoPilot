@@ -604,7 +604,7 @@ class USBMIDIInputService:
             auto_mapping = generate_auto_key_mapping(
                 piano_size=self.piano_size,
                 led_count=self.num_leds,
-                led_orientation='normal',
+                led_orientation=self.led_orientation,
                 leds_per_key=self.leds_per_key,
                 mapping_base_offset=self.mapping_base_offset
             )
