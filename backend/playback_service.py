@@ -127,21 +127,58 @@ class PlaybackService:
     
     def _load_settings_from_service(self, num_leds_override: Optional[int] = None) -> None:
         """Load runtime configuration from the settings service."""
-        piano_config = self._settings_service.get_piano_configuration()
-        led_config = self._settings_service.get_led_configuration()
+        piano_config_getter = getattr(self._settings_service, 'get_piano_configuration', None)
+        led_config_getter = getattr(self._settings_service, 'get_led_configuration', None)
+        get_setting = getattr(self._settings_service, 'get_setting', None)
 
-        self.piano_size = piano_config['size']
-        self.num_leds = num_leds_override if num_leds_override is not None else led_config['led_count']
-        self.led_orientation = led_config['orientation']
+        piano_config = piano_config_getter() if callable(piano_config_getter) else {}
+        if not isinstance(piano_config, dict):
+            piano_config = {}
 
-        self.mapping_mode = self._settings_service.get_setting('led', 'mapping_mode', 'auto')
-        self.leds_per_key = self._settings_service.get_setting('led', 'leds_per_key', 3)
-        self.mapping_base_offset = self._settings_service.get_setting('led', 'mapping_base_offset', 0)
-        self.key_mapping = self._settings_service.get_setting('led', 'key_mapping', {})
+        led_config = led_config_getter() if callable(led_config_getter) else {}
+        if not isinstance(led_config, dict):
+            led_config = {}
 
-        piano_specs = self._get_piano_specs(self.piano_size)
-        self.min_midi_note = piano_config.get('midi_start', piano_specs['midi_start'])
-        self.max_midi_note = piano_config.get('midi_end', piano_specs['midi_end'])
+        default_piano_size = '88-key'
+        if callable(get_setting):
+            piano_size = piano_config.get('size') or get_setting('piano', 'size', default_piano_size)
+        else:
+            piano_size = piano_config.get('size', default_piano_size)
+
+        piano_specs = self._get_piano_specs(piano_size)
+        led_count_default = piano_specs.get('keys', 88)
+        if callable(get_setting):
+            led_count_value = led_config.get('led_count', get_setting('led', 'led_count', led_count_default))
+            orientation = led_config.get('orientation', get_setting('led', 'led_orientation', 'normal'))
+        else:
+            led_count_value = led_config.get('led_count', led_count_default)
+            orientation = led_config.get('orientation', 'normal')
+
+        if num_leds_override is not None:
+            led_count_value = num_leds_override
+
+        try:
+            self.num_leds = max(1, int(led_count_value))
+        except (TypeError, ValueError):
+            self.num_leds = led_count_default
+
+        self.piano_size = piano_size
+        self.led_orientation = orientation
+
+        self.mapping_mode = get_setting('led', 'mapping_mode', 'auto') if callable(get_setting) else 'auto'
+        self.leds_per_key = get_setting('led', 'leds_per_key', 3) if callable(get_setting) else 3
+        self.mapping_base_offset = get_setting('led', 'mapping_base_offset', 0) if callable(get_setting) else 0
+        self.key_mapping = get_setting('led', 'key_mapping', {}) if callable(get_setting) else {}
+
+        midi_start_default = piano_specs['midi_start']
+        midi_end_default = piano_specs['midi_end']
+
+        if callable(get_setting):
+            self.min_midi_note = piano_config.get('midi_start', get_setting('piano', 'midi_start', midi_start_default))
+            self.max_midi_note = piano_config.get('midi_end', get_setting('piano', 'midi_end', midi_end_default))
+        else:
+            self.min_midi_note = piano_config.get('midi_start', midi_start_default)
+            self.max_midi_note = piano_config.get('midi_end', midi_end_default)
 
     def _load_settings_from_config(self, num_leds_override: Optional[int] = None) -> None:
         """Fallback configuration loading from static config values."""
