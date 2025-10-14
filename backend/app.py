@@ -137,103 +137,54 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         logger.error(f"Failed to read updated settings for runtime refresh: {exc}")
         return
 
-    desired_led_count = led_config.get('led_count')
-    orientation = led_config.get('orientation', 'normal')
+    controller_changes: Dict[str, bool] = {}
 
-    current_led_count = getattr(led_controller, 'num_pixels', None)
-    current_orientation = getattr(led_controller, 'led_orientation', None)
-    orientation_changed = (
-        led_controller is not None
-        and orientation is not None
-        and current_orientation is not None
-        and orientation != current_orientation
-    )
-    reinitialize_controller = (
-        led_controller is None
-        or desired_led_count != current_led_count
-        or orientation_changed
-    )
+    if led_controller is None:
+        try:
+            led_controller = LEDController(settings_service=settings_service)
+            controller_changes = {
+                'led_count_changed': True,
+                'orientation_changed': True,
+            }
+            logger.info("LED controller initialized (pid=%d) during runtime refresh", os.getpid())
+        except Exception as exc:
+            logger.error(f"Failed to initialize LED controller during runtime refresh: {exc}")
+            led_controller = None
+    else:
+        try:
+            controller_changes = led_controller.apply_runtime_settings(led_config)
+        except Exception as exc:
+            logger.warning(f"LED controller runtime update failed: {exc}")
+            controller_changes = {}
 
-    if reinitialize_controller:
+    led_enabled = bool(led_config.get('enabled', True))
+
+    if not led_enabled or not led_controller or not getattr(led_controller, 'led_enabled', True):
         if led_effects_manager:
             try:
                 led_effects_manager.stop_current()
             except Exception as exc:
-                logger.warning(f"Failed to stop LED effects during reinit: {exc}")
-
-        old_controller = led_controller
-        # Snapshot existing controller state so we can restore it if reinit fails
-        old_snapshot = None
-        if old_controller:
-            try:
-                old_snapshot = {
-                    'pin': getattr(old_controller, 'pin', None),
-                    'num_pixels': getattr(old_controller, 'num_pixels', None),
-                    'brightness': getattr(old_controller, 'brightness', None),
-                    'led_channel': getattr(old_controller, 'led_channel', None)
-                }
-            except Exception:
-                old_snapshot = None
-
-            # Clean up old controller first to release hardware resources before creating a new one
-            if hasattr(old_controller, 'cleanup'):
-                try:
-                    old_controller.cleanup()
-                    logger.info("Old LED controller cleaned up (pid=%d)", os.getpid())
-                except Exception as cleanup_exc:
-                    logger.warning(f"Cleanup of old LED controller failed: {cleanup_exc}")
-
-        # Small pause to allow underlying hardware resources (DMA/memory) to be released
-        try:
-            time.sleep(0.12)
-        except Exception:
-            pass
-
-        try:
-            led_controller = LEDController(settings_service=settings_service)
-            logger.info("LED controller reinitialized (pid=%d) due to settings change (%s.%s)", os.getpid(), trigger_category, trigger_key)
-        except Exception as exc:
-            logger.error(f"Failed to reinitialize LED controller after settings change: {exc}")
-            # Try to restore previous controller if possible
-            if old_snapshot is not None:
-                try:
-                    logger.info("Attempting to restore previous LED controller (pid=%d)", os.getpid())
-                    led_controller = LEDController(pin=old_snapshot.get('pin'), num_pixels=old_snapshot.get('num_pixels'), brightness=old_snapshot.get('brightness'), settings_service=settings_service)
-                    logger.info("Previous LED controller restored (pid=%d)", os.getpid())
-                except Exception as restore_exc:
-                    logger.error(f"Failed to restore previous LED controller: {restore_exc}")
-                    led_controller = None
-
-        if led_controller:
-            led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
+                logger.debug(f"Failed to stop LED effects while disabling: {exc}")
+        led_effects_manager = None
     else:
-        # Update orientation if the controller remains the same
-        if orientation_changed and led_effects_manager:
+        if controller_changes.get('led_count_changed') or not led_effects_manager:
+            if led_effects_manager:
+                try:
+                    led_effects_manager.stop_current()
+                except Exception as exc:
+                    logger.debug(f"Failed to stop LED effects during reconfiguration: {exc}")
+            led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
+        elif controller_changes.get('orientation_changed') and led_effects_manager:
             try:
                 led_effects_manager.stop_current()
             except Exception as exc:
-                logger.warning(f"Failed to stop LED effects for orientation change: {exc}")
-
-        runtime_changes: Dict[str, bool] = {}
-        if led_controller:
-            try:
-                runtime_changes = led_controller.apply_runtime_settings(led_config)
-            except Exception as exc:
-                logger.warning(f"LED controller runtime update failed: {exc}")
-
-        if not orientation_changed and runtime_changes.get('orientation_changed') and led_effects_manager:
-            try:
-                led_effects_manager.stop_current()
-            except Exception as exc:
-                logger.warning(f"Failed to stop LED effects for orientation change: {exc}")
-            orientation_changed = True
-
-        if led_effects_manager and led_controller:
+                logger.debug(f"Failed to stop LED effects for orientation update: {exc}")
+            led_effects_manager.update_led_count(led_controller.num_pixels)
+        elif (controller_changes.get('brightness_changed') or controller_changes.get('gamma_changed')) and led_effects_manager:
             led_effects_manager.update_led_count(led_controller.num_pixels)
 
-    # Ensure effects manager exists if LEDs are available
-    if not led_effects_manager and led_controller:
-        led_effects_manager = LEDEffectsManager(led_controller, led_controller.num_pixels)
+    if led_effects_manager and led_controller and not controller_changes.get('led_count_changed'):
+        led_effects_manager.update_led_count(led_controller.num_pixels)
 
     # Refresh dependent services with new configuration
     if usb_midi_service:
