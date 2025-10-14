@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { settingsLoading, settingsError, loadSettings, updateSettings } from '$lib/stores/settings';
   import SettingsValidationMessage from '$lib/components/SettingsValidationMessage.svelte';
@@ -44,6 +44,7 @@
   let isPatternRunning = false;
   let activeTestId: string | null = null;
   let patternLoading = false;
+  let patternResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   const patternOptions = [
     { value: 'rainbow', label: 'Rainbow Cycle' },
@@ -109,6 +110,12 @@
       dataPin
     );
 
+    const gpioPinsSource = Array.isArray(gpio.pins)
+      ? gpio.pins
+      : Array.isArray(state.gpio?.pins)
+      ? state.gpio.pins
+      : [];
+
     const clockPinSource =
       gpio.clock_pin ??
       state.led?.clock_pin ??
@@ -140,15 +147,14 @@
     };
 
     payload.gpio = {
-      data_pin: gpioDataPin
+      data_pin: gpioDataPin,
+      pins: gpioPinsSource
     };
 
     if (typeof gpioEnabledSource === 'boolean') {
       payload.gpio.enabled = gpioEnabledSource;
-    }
-
-    if (Array.isArray(gpio.pins) && gpio.pins.length > 0) {
-      payload.gpio.pins = gpio.pins;
+    } else {
+      payload.gpio.enabled = true;
     }
 
     if (clockPinSource !== undefined) {
@@ -164,6 +170,11 @@
 
   onMount(async () => {
     await loadSettingsData();
+    await refreshMidiStatuses();
+  });
+
+  onDestroy(() => {
+    clearPatternResetTimer();
   });
 
   async function loadSettingsData() {
@@ -249,25 +260,33 @@
     });
   }
 
-  function getLedCount(): number {
-    const raw = currentSettings?.led?.led_count ?? currentSettings?.led_count ?? 246;
+  function resolveLedCount(state: Record<string, any>): number {
+    const raw = state?.led?.led_count ?? state?.led_count ?? 246;
     const value = Number(raw);
     return Number.isFinite(value) ? value : 246;
   }
 
-  function getDataPin(): number {
-    const raw = currentSettings?.led?.data_pin
-      ?? currentSettings?.gpio?.data_pin
-      ?? currentSettings?.led?.gpio_pin
-      ?? currentSettings?.gpio_pin
+  function resolveDataPin(state: Record<string, any>): number {
+    const raw = state?.led?.data_pin
+      ?? state?.gpio?.data_pin
+      ?? state?.led?.gpio_pin
+      ?? state?.gpio_pin
       ?? 18;
     const value = Number(raw);
     return Number.isFinite(value) ? value : 18;
   }
 
+  function clearPatternResetTimer() {
+    if (patternResetTimer) {
+      clearTimeout(patternResetTimer);
+      patternResetTimer = null;
+    }
+  }
+
   async function startPatternTest() {
     const duration = Math.max(1, Math.round(Number(patternDuration) || 1));
     patternLoading = true;
+    clearPatternResetTimer();
 
     try {
       const response = await fetch('/api/hardware-test/led/sequence', {
@@ -276,8 +295,8 @@
         body: JSON.stringify({
           sequence_type: selectedPattern,
           duration,
-          led_count: getLedCount(),
-          gpio_pin: getDataPin()
+          led_count: Number(ledCountValue),
+          gpio_pin: Number(dataPinSelection)
         })
       });
 
@@ -290,6 +309,13 @@
       isPatternRunning = true;
       const label = patternOptions.find((p) => p.value === selectedPattern)?.label ?? 'Pattern';
       showMessage(`Started ${label.toLowerCase()} test`, 'success');
+
+      patternResetTimer = setTimeout(() => {
+        isPatternRunning = false;
+        activeTestId = null;
+        patternResetTimer = null;
+        showMessage('Pattern test finished', 'info');
+      }, duration * 1000);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       showMessage(message || 'Failed to start pattern test', 'error');
@@ -303,6 +329,7 @@
   async function stopPatternTest() {
     if (patternLoading) return;
     patternLoading = true;
+    clearPatternResetTimer();
 
     try {
       if (activeTestId) {
@@ -323,6 +350,50 @@
       isPatternRunning = false;
       activeTestId = null;
       patternLoading = false;
+    }
+  }
+
+  async function refreshMidiStatuses() {
+    try {
+      const response = await fetch('/api/midi-input/status');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const payload = await response.json();
+      const status = payload?.midi_input ?? {};
+      const usb = status?.usb_service ?? {};
+      const rtpmidi = status?.rtpmidi_service ?? {};
+
+      const usbDevice = usb?.device;
+      const usbDeviceName = typeof usbDevice === 'object' && usbDevice !== null
+        ? usbDevice.name ?? usbDevice.device_name ?? usbDevice.id ?? null
+        : typeof usbDevice === 'string'
+        ? usbDevice
+        : null;
+
+      usbMidiStatus = {
+        connected: Boolean(usb?.is_listening || usb?.state === 'listening'),
+        deviceName: usbDeviceName,
+        lastActivity: usb?.last_event_time ?? null,
+        messageCount: Number(usb?.event_count ?? 0)
+      };
+
+      const sessionsSource = rtpmidi?.active_sessions;
+      const sessions = Array.isArray(sessionsSource)
+        ? sessionsSource
+        : sessionsSource && typeof sessionsSource === 'object'
+        ? Object.values(sessionsSource)
+        : [];
+
+      networkMidiStatus = {
+        connected: Boolean(rtpmidi?.running || rtpmidi?.state === 'listening'),
+        activeSessions: Array.isArray(sessions) ? sessions : [],
+        lastActivity: rtpmidi?.performance?.last_event_time ?? null,
+        messageCount: Number(rtpmidi?.performance?.event_count ?? 0)
+      };
+    } catch (err) {
+      console.error('Failed to refresh MIDI status:', err);
     }
   }
 
@@ -367,45 +438,47 @@
     }
   }
 
-  function handleMidiDeviceSelected(event: CustomEvent<{ id: string; name: string }>) {
-    (async () => {
-      try {
-        const response = await fetch('/api/midi-input/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            device_name: event.detail.name,
-            enable_usb: true,
-            enable_rtpmidi: false
-          })
-        });
+  async function handleMidiDeviceSelected(event: CustomEvent<{ id: string; name: string }>) {
+    try {
+      const response = await fetch('/api/midi-input/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_name: event.detail.name,
+          enable_usb: true,
+          enable_rtpmidi: false
+        })
+      });
 
-        if (response.ok) {
-          showMessage('MIDI device connected successfully', 'success');
-        } else {
-          const payload = await response.json().catch(() => null);
-          const errorMessage = payload?.message || 'Failed to connect to MIDI device';
-          showMessage(errorMessage, 'error');
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        showMessage(message || 'Error connecting to MIDI device', 'error');
+      if (response.ok) {
+        showMessage('MIDI device connected successfully', 'success');
+      } else {
+        const payload = await response.json().catch(() => null);
+        const errorMessage = payload?.message || 'Failed to connect to MIDI device';
+        showMessage(errorMessage, 'error');
       }
-    })().catch(() => {});
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showMessage(message || 'Error connecting to MIDI device', 'error');
+    } finally {
+      await refreshMidiStatuses();
+    }
   }
 
   function handleMidiDevicesUpdated(event: CustomEvent<any>) {
     console.log('MIDI devices updated:', event.detail);
   }
 
-  function handleNetworkMidiConnected(event: CustomEvent<any>) {
+  async function handleNetworkMidiConnected(event: CustomEvent<any>) {
     console.log('Network MIDI session connected:', event.detail);
     showMessage('Network MIDI session connected', 'success');
+    await refreshMidiStatuses();
   }
 
-  function handleNetworkMidiDisconnected(event: CustomEvent<any>) {
+  async function handleNetworkMidiDisconnected(event: CustomEvent<any>) {
     console.log('Network MIDI session disconnected:', event.detail);
     showMessage('Network MIDI session disconnected', 'info');
+    await refreshMidiStatuses();
   }
 
   function handleNetworkMidiSessionsUpdated(event: CustomEvent<any>) {
@@ -414,6 +487,7 @@
 
   function handleMidiStatusConnected() {
     console.log('MIDI status WebSocket connected');
+    refreshMidiStatuses().catch(() => {});
   }
 
   function handleMidiStatusDisconnected() {
@@ -432,8 +506,8 @@
     goto('/');
   }
 
-  $: dataPinSelection = getDataPin();
-  $: ledCountValue = getLedCount();
+  $: dataPinSelection = resolveDataPin(currentSettings);
+  $: ledCountValue = resolveLedCount(currentSettings);
   $: orientationSelection = typeof (currentSettings?.led?.led_orientation ?? currentSettings?.led_orientation) === 'string'
     ? (currentSettings?.led?.led_orientation ?? currentSettings?.led_orientation)
     : 'normal';

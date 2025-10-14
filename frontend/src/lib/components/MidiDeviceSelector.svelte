@@ -29,6 +29,8 @@
 	let loading = false;
 	let error: string | null = null;
 	let refreshTimer: NodeJS.Timeout | null = null;
+	let fetchInProgress = false;
+	let lastDispatchPayload: string | null = null;
 
 	onMount(() => {
 		fetchDevices();
@@ -44,6 +46,11 @@
 	});
 
 	async function fetchDevices() {
+		if (fetchInProgress) {
+			return;
+		}
+
+		fetchInProgress = true;
 		loading = true;
 		error = null;
 
@@ -64,12 +71,18 @@
 				total_count: (devices_data.usb_devices?.length || 0) + (devices_data.rtpmidi_sessions?.length || 0)
 			};
 			devices.set(safeData);
-			dispatch('devicesUpdated', safeData);
+
+			const serialized = JSON.stringify(safeData);
+			if (serialized !== lastDispatchPayload) {
+				lastDispatchPayload = serialized;
+				dispatch('devicesUpdated', safeData);
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to fetch devices';
 			console.error('Error fetching MIDI devices:', err);
 		} finally {
 			loading = false;
+			fetchInProgress = false;
 		}
 	}
 

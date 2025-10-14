@@ -202,8 +202,33 @@
     }
   }
 
+  function ensureFileInputRef(): HTMLInputElement | null {
+    if (fileInput) {
+      return fileInput;
+    }
+
+    if (typeof document !== 'undefined') {
+      const fallback = document.getElementById('midi-file-input');
+      if (fallback instanceof HTMLInputElement) {
+        fileInput = fallback;
+        return fileInput;
+      }
+    }
+    return null;
+  }
+
   function triggerFilePicker(): void {
-    fileInput?.click();
+    const inputEl = ensureFileInputRef();
+    if (!inputEl) {
+      console.warn('File input element not ready yet');
+      return;
+    }
+
+    try {
+      inputEl.click();
+    } catch (error) {
+      console.error('Unable to open file browser:', error);
+    }
   }
 
   function handleDropZoneKey(event: KeyboardEvent): void {
@@ -537,8 +562,19 @@
           <p class="drop-text">Drag &amp; drop a MIDI file here</p>
           <p class="drop-subtext">
             or
-            <label class="browse-trigger" on:click|preventDefault={triggerFilePicker}>
-              <input bind:this={fileInput} type="file" accept=".mid,.midi" on:change={handleFileInput} />
+            <label
+              class="browse-trigger"
+              for="midi-file-input"
+              on:click={triggerFilePicker}
+            >
+              <input
+                id="midi-file-input"
+                bind:this={fileInput}
+                type="file"
+                accept=".mid,.midi"
+                class="file-input-hidden"
+                on:change={handleFileInput}
+              />
               browse your computer
             </label>
           </p>
@@ -874,8 +910,16 @@
     text-decoration: underline;
   }
 
-  .browse-trigger input {
-    display: none;
+  .file-input-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .selected-hint {

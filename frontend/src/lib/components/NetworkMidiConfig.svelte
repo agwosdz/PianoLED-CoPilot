@@ -29,6 +29,8 @@
 	let error: string | null = null;
 	let discoveryTimer: NodeJS.Timeout | null = null;
 	let connectingSession: string | null = null;
+	let fetchInProgress = false;
+	let lastDispatchPayload: string | null = null;
 
 	// Manual connection form
 	let showManualForm = false;
@@ -57,6 +59,11 @@
 	});
 
 	async function fetchSessions() {
+		if (fetchInProgress) {
+			return;
+		}
+
+		fetchInProgress = true;
 		loading = true;
 		error = null;
 
@@ -68,12 +75,17 @@
 
 			const data: SessionsResponse = await response.json();
 			sessions.set(data);
-			dispatch('sessionsUpdated', data);
+			const serialized = JSON.stringify(data);
+			if (serialized !== lastDispatchPayload) {
+				lastDispatchPayload = serialized;
+				dispatch('sessionsUpdated', data);
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to fetch sessions';
 			console.error('Error fetching rtpMIDI sessions:', err);
 		} finally {
 			loading = false;
+			fetchInProgress = false;
 		}
 	}
 
