@@ -459,7 +459,8 @@ class USBMIDIInputService:
             )
             
             # Broadcast event
-            self._broadcast_midi_event(event)
+            self._broadcast_midi_event(event, led_indices=led_indices)
+            self._broadcast_debug_mapping('note_on', note, velocity, led_indices)
             
             logger.debug(f"Note ON: {note} (LEDs {led_indices}) velocity {velocity}")
             
@@ -511,7 +512,8 @@ class USBMIDIInputService:
             )
             
             # Broadcast event
-            self._broadcast_midi_event(event)
+            self._broadcast_midi_event(event, led_indices=led_indices)
+            self._broadcast_debug_mapping('note_off', note, 0, led_indices)
             
             logger.debug(f"Note OFF: {note} (LEDs {led_indices})")
             
@@ -675,7 +677,7 @@ class USBMIDIInputService:
         except Exception as e:
             logger.error(f"Error closing MIDI input port: {e}")
     
-    def _broadcast_midi_event(self, event: MIDIInputEvent):
+    def _broadcast_midi_event(self, event: MIDIInputEvent, led_indices: Optional[List[int]] = None):
         """Broadcast MIDI event via WebSocket."""
         if self._websocket_callback:
             try:
@@ -691,6 +693,8 @@ class USBMIDIInputService:
                 self._websocket_callback(event.event_type, event_data)
                 
                 # Also broadcast direct midi_input event for backward compatibility
+                if led_indices is None:
+                    led_indices = self._active_notes.get(event.note, {}).get('led_indices', [])
                 legacy_event_data = {
                     'type': 'midi_input_event',
                     'timestamp': event.timestamp,
@@ -698,11 +702,46 @@ class USBMIDIInputService:
                     'velocity': event.velocity,
                     'channel': event.channel,
                     'event_type': event.event_type,
-                    'active_notes': len(self._active_notes)
+                    'active_notes': len(self._active_notes),
+                    'led_indices': led_indices,
+                    'mapping': {
+                        'mode': self.mapping_mode,
+                        'leds_per_key': self.leds_per_key,
+                        'base_offset': self.mapping_base_offset,
+                        'orientation': self.led_orientation,
+                        'key_mapping_entry': self.key_mapping.get(str(event.note)) or self.key_mapping.get(event.note)
+                    }
                 }
                 self._websocket_callback('midi_input', legacy_event_data)
             except Exception as e:
                 logger.error(f"Error broadcasting MIDI event: {e}")
+
+    def _broadcast_debug_mapping(self, event_type: str, note: int, velocity: int, led_indices: List[int]):
+        """Emit detailed mapping info for temporary debugging in the web console."""
+        if not self._websocket_callback:
+            return
+
+        try:
+            # Report the parameters that drive note-to-LED decisions so the UI can log them.
+            debug_payload = {
+                'event_type': event_type,
+                'note': note,
+                'velocity': velocity,
+                'led_indices': led_indices,
+                'mapping': {
+                    'mode': self.mapping_mode,
+                    'leds_per_key': self.leds_per_key,
+                    'base_offset': self.mapping_base_offset,
+                    'orientation': self.led_orientation,
+                    'manual_mapping_used': event_type == 'note_on' and (
+                        str(note) in self.key_mapping or note in self.key_mapping
+                    ),
+                    'manual_entry': self.key_mapping.get(str(note)) or self.key_mapping.get(note)
+                }
+            }
+            self._websocket_callback('debug_midi_mapping', debug_payload)
+        except Exception as exc:
+            logger.error(f"Error broadcasting debug mapping payload: {exc}")
     
     def _broadcast_status_update(self):
         """Broadcast service status update via WebSocket."""
