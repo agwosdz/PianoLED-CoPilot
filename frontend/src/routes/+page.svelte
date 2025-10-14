@@ -5,7 +5,6 @@
 	type DashboardResponse = {
 		status?: string;
 		message?: string;
-		version?: string;
 		uploaded_files_count?: number;
 		system_status?: {
 			backend_status?: string;
@@ -15,31 +14,35 @@
 			midi_input_active?: boolean;
 			midi_device_name?: string | null;
 		};
-		playback_status?: {
-			state?: string;
-			progress_percentage?: number;
-			filename?: string | null;
-		};
 	};
 
 	let backendStatus = 'Checking...';
-	let backendMessage = '';
 	let dashboardLoading = true;
 	let dashboardError: string | null = null;
 	let dashboardData: DashboardResponse | null = null;
 
 	let hostWithPort = 'localhost:5000';
-	let backendOrigin = 'http://localhost:5000';
-	let apiBaseUrl = `${backendOrigin}/api`;
-	let websocketUrl = 'ws://localhost:5000/socket.io';
 
 	onMount(async () => {
 		if (browser) {
-			hostWithPort = window.location.host || hostWithPort;
-			backendOrigin = window.location.origin || backendOrigin;
-			const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-			websocketUrl = `${wsProtocol}://${hostWithPort}/socket.io`;
-			apiBaseUrl = `${backendOrigin}/api`;
+			const envHost = (import.meta.env.VITE_BACKEND_HOST ?? '').trim();
+			const envPort = (import.meta.env.VITE_BACKEND_PORT ?? '').trim();
+
+			if (envHost.length > 0) {
+				hostWithPort = envPort.length > 0 ? `${envHost}:${envPort}` : envHost;
+			} else if (window.location.host) {
+				hostWithPort = window.location.host;
+			}
+
+			const proxiedBackend = (window as any)?.socketIOBackendUrl;
+			if (proxiedBackend && typeof proxiedBackend === 'string' && proxiedBackend.trim().length > 0) {
+				try {
+					const proxyUrl = new URL(proxiedBackend);
+					hostWithPort = proxyUrl.host;
+				} catch (error) {
+					console.warn('Unable to parse proxy backend URL:', error);
+				}
+			}
 		}
 
 		await checkBackendHealth();
@@ -57,14 +60,11 @@
 			if (response.ok) {
 				const data = await response.json();
 				backendStatus = data.status;
-				backendMessage = data.message;
 			} else {
 				backendStatus = 'Error';
-				backendMessage = `HTTP ${response.status}: ${response.statusText}`;
 			}
 		} catch (error) {
 			backendStatus = 'Offline';
-			backendMessage = 'Cannot connect to backend server';
 		}
 	}
 
@@ -91,20 +91,6 @@
 	function getStatusClass(available: boolean | undefined): string {
 		return available ? 'healthy' : 'error';
 	}
-
-	function formatPlaybackState(state?: string | null): string {
-		if (!state) {
-			return 'Idle';
-		}
-		return state.charAt(0).toUpperCase() + state.slice(1);
-	}
-
-	function formatPlaybackProgress(progress?: number | null): string {
-		if (progress === undefined || progress === null) {
-			return 'N/A';
-		}
-		return `${Math.round(progress)}%`;
-	}
 </script>
 
 <svelte:head>
@@ -128,49 +114,20 @@
 			<div class="detail-item">
 				<span class="label">Backend</span>
 				<span class="value {backendStatus === 'healthy' ? 'healthy' : 'error'}">
-					{backendStatus === 'healthy' ? 'Healthy' : backendStatus}
+					{backendStatus === 'healthy' ? 'Running' : backendStatus}
 				</span>
 			</div>
 			<div class="detail-item">
 				<span class="label">Backend Host</span>
 				<span class="value">{hostWithPort}</span>
 			</div>
-			<div class="detail-item">
-				<span class="label">API Base</span>
-				<span class="value">{apiBaseUrl}</span>
-			</div>
-			<div class="detail-item">
-				<span class="label">WebSocket Endpoint</span>
-				<span class="value">{websocketUrl}</span>
-			</div>
 			{#if dashboardData?.uploaded_files_count !== undefined}
 				<div class="detail-item">
-					<span class="label">Uploaded MIDI Files</span>
+					<span class="label">Total Songs on Device</span>
 					<span class="value">{dashboardData.uploaded_files_count}</span>
 				</div>
 			{/if}
-			{#if dashboardData?.version}
-				<div class="detail-item">
-					<span class="label">Backend Version</span>
-					<span class="value">{dashboardData.version}</span>
-				</div>
-			{/if}
-			{#if dashboardData?.playback_status?.state}
-				<div class="detail-item">
-					<span class="label">Playback State</span>
-					<span class="value">{formatPlaybackState(dashboardData.playback_status.state)}</span>
-				</div>
-			{/if}
-			{#if dashboardData?.playback_status?.progress_percentage !== undefined}
-				<div class="detail-item">
-					<span class="label">Playback Progress</span>
-					<span class="value">{formatPlaybackProgress(dashboardData.playback_status.progress_percentage)}</span>
-				</div>
-			{/if}
 		</div>
-		{#if backendMessage}
-			<p class="status-message">{backendMessage}</p>
-		{/if}
 	</section>
 
 	{#if backendStatus === 'healthy'}
@@ -294,20 +251,6 @@
 	}
 
 	.value.error {
-		color: #b91c1c;
-	}
-
-	.status-message {
-		margin-top: 1rem;
-		padding: 0.75rem 1rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		background: #e2e8f0;
-		color: #1f2937;
-	}
-
-	.status-message.error {
-		background: #fee2e2;
 		color: #b91c1c;
 	}
 

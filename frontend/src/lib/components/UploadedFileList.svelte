@@ -1,4 +1,4 @@
-<script lang="ts"></script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { formatFileSize } from '$lib/upload';
 

@@ -235,13 +235,13 @@
     playbackNotice = triggeredByUpload ? 'Starting playback...' : 'Starting playback...';
 
     try {
-      const response = await fetch('/api/play', {
+      const response = await fetch('/api/playback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename })
       });
-      const data = await response.json();
-      if (response.ok && data?.status === 'success') {
+  const data = await response.json();
+  if (response.ok && data?.status === 'success') {
         playbackNotice = data.message || 'Playback started.';
         await fetchPlaybackStatus();
       } else {

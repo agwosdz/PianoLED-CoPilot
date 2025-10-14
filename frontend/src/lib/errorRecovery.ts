@@ -1,5 +1,4 @@
 import type { ValidationResult } from './upload';
-import { toastStore } from './stores/toastStore';
 import { errorAnalytics } from './analytics/errorAnalytics';
 
 export interface RecoveryAction {
@@ -136,19 +135,15 @@ export class ErrorRecoveryManager {
 	 * Display error with recovery options
 	 */
 	displayError(errorContext: ErrorContext): void {
-		// Show toast with primary recovery action
-		const primaryAction = errorContext.recoveryActions.find(a => a.variant === 'primary');
-		
-		toastStore.error(errorContext.userMessage, {
-			title: this.getErrorTitle(errorContext),
-			persistent: errorContext.severity === 'high' || errorContext.severity === 'critical',
-			duration: this.getErrorDuration(errorContext.severity)
-		});
+		if (typeof window !== 'undefined') {
+			window.dispatchEvent(new CustomEvent('app-error', { detail: errorContext }));
+		}
 
 		// Log technical details for debugging
 		if (errorContext.technicalMessage) {
 			console.error(`[${errorContext.type.toUpperCase()}] ${errorContext.technicalMessage}`, errorContext.originalError);
 		}
+		console.error(`[${errorContext.type.toUpperCase()}] ${errorContext.userMessage}`);
 	}
 
 	/**

@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { readable } from 'svelte/store';
 
 export interface ToastData {
 	id: string;
@@ -11,113 +11,82 @@ export interface ToastData {
 	position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'top-center' | 'bottom-center';
 }
 
-function createToastStore() {
-	const { subscribe, update } = writable<ToastData[]>([]);
+const emptyStore = readable<ToastData[]>([]);
 
-	function generateId(): string {
-		return Math.random().toString(36).substr(2, 9);
-	}
-
-	function addToast(toast: Omit<ToastData, 'id'>): string {
-		const id = generateId();
-		const newToast: ToastData = {
-			id,
-			duration: 5000,
-			dismissible: true,
-			persistent: false,
-			position: 'top-right',
-			...toast
-		};
-
-		update(toasts => [...toasts, newToast]);
-		return id;
-	}
-
-	function removeToast(id: string) {
-		update(toasts => toasts.filter(toast => toast.id !== id));
-	}
-
-	function clearAll() {
-		update(() => []);
-	}
-
-	// Convenience methods for different toast types
-	function success(message: string, options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>) {
-		return addToast({ type: 'success', message, ...options });
-	}
-
-	function error(message: string, options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>) {
-		return addToast({ type: 'error', message, persistent: true, ...options });
-	}
-
-	function warning(message: string, options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>) {
-		return addToast({ type: 'warning', message, ...options });
-	}
-
-	function info(message: string, options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>) {
-		return addToast({ type: 'info', message, ...options });
-	}
-
-	// Loading toast with progress
-	function loading(message: string, options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>) {
-		return addToast({ 
-			type: 'info', 
-			message, 
-			persistent: true, 
-			dismissible: false,
-			...options 
-		});
-	}
-
-	// Update existing toast (useful for loading states)
-	function updateToast(id: string, updates: Partial<Omit<ToastData, 'id'>>) {
-		update(toasts => 
-			toasts.map(toast => 
-				toast.id === id ? { ...toast, ...updates } : toast
-			)
-		);
-	}
-
-	return {
-		subscribe,
-		addToast,
-		removeToast,
-		clearAll,
-		success,
-		error,
-		warning,
-		info,
-		loading,
-		updateToast
-	};
+function generateId(): string {
+	return Math.random().toString(36).substr(2, 9);
 }
 
-export const toastStore = createToastStore();
+function addToast(_toast: Omit<ToastData, 'id'>): string {
+	return generateId();
+}
+
+function removeToast(_id: string): void {
+	// No-op: toast notifications are disabled
+}
+
+function clearAll(): void {
+	// No-op: toast notifications are disabled
+}
+
+function success(message: string, _options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>): string {
+	console.info('[status] success:', message);
+	return addToast({ type: 'success', message });
+}
+
+function error(message: string, _options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>): string {
+	console.error('[status] error:', message);
+	return addToast({ type: 'error', message });
+}
+
+function warning(message: string, _options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>): string {
+	console.warn('[status] warning:', message);
+	return addToast({ type: 'warning', message });
+}
+
+function info(message: string, _options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>): string {
+	console.info('[status] info:', message);
+	return addToast({ type: 'info', message });
+}
+
+function loading(message: string, _options?: Partial<Omit<ToastData, 'id' | 'type' | 'message'>>): string {
+	console.info('[status] loading:', message);
+	return addToast({ type: 'info', message, persistent: true, dismissible: false });
+}
+
+function updateToast(_id: string, _updates: Partial<Omit<ToastData, 'id'>>): void {
+	// No-op: toast notifications are disabled
+}
+
+export const toastStore = {
+	subscribe: emptyStore.subscribe,
+	addToast,
+	removeToast,
+	clearAll,
+	success,
+	error,
+	warning,
+	info,
+	loading,
+	updateToast
+};
 
 // Helper function for async operations with loading states
 export async function withLoadingToast<T>(
 	promise: Promise<T>,
-	loadingMessage: string,
+	_loadingMessage: string,
 	successMessage?: string,
 	errorMessage?: string
 ): Promise<T> {
-	const loadingId = toastStore.loading(loadingMessage);
-	
 	try {
 		const result = await promise;
-		toastStore.removeToast(loadingId);
-		
 		if (successMessage) {
-			toastStore.success(successMessage);
+			console.info('[status] success:', successMessage);
 		}
-		
 		return result;
 	} catch (error) {
-		toastStore.removeToast(loadingId);
-		
 		const message = errorMessage || (error instanceof Error ? error.message : 'An error occurred');
-		toastStore.error(message);
-		
+		console.error('[status] error:', message, error);
 		throw error;
 	}
 }

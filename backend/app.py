@@ -311,19 +311,35 @@ def start_playback():
                 'message': 'Playback service not initialized'
             }), 503
         
-        filename = data.get('filename')
-        if not filename:
-            return jsonify({
-                'error': 'Bad Request',
-                'message': 'Filename parameter is required'
-            }), 400
+        payload = request.get_json(silent=True) or {}
+        filename = payload.get('filename')
+
+        if filename:
+            if not playback_service.load_midi_file(filename):
+                return jsonify({
+                    'error': 'Not Found',
+                    'message': f'Failed to load MIDI file: {filename}'
+                }), 404
+        else:
+            status = playback_service.get_status()
+            if not getattr(status, 'filename', None):
+                return jsonify({
+                    'error': 'Bad Request',
+                    'message': 'No MIDI file is loaded for playback'
+                }), 400
         
-        if not playback_service.start_playback(filename):
+        if not playback_service.start_playback():
             return jsonify({
                 'error': 'Playback Error',
-                'message': 'Playback started successfully',
-                'filename': filename
-            }), 200
+                'message': 'Failed to start playback'
+            }), 500
+        
+        current_status = playback_service.get_status()
+        return jsonify({
+            'status': 'success',
+            'message': 'Playback started successfully',
+            'filename': getattr(current_status, 'filename', filename)
+        }), 200
     
     except Exception as e:
         logger.error(f"Error in start_playback endpoint: {e}")

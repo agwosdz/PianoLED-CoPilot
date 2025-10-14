@@ -1,7 +1,6 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
 	import Navigation from '$lib/components/Navigation.svelte';
-	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import '$lib/styles/global.css';
 	import { page } from '$app/stores';
 
@@ -25,9 +24,6 @@
 		</main>
 	{/key}
 </div>
-
-<!-- Global Toast Container -->
-<ToastContainer />
 
 <style>
 	.app-container {
