@@ -140,7 +140,11 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         and current_orientation is not None
         and orientation != current_orientation
     )
-    reinitialize_controller = led_controller is None or desired_led_count != current_led_count
+    reinitialize_controller = (
+        led_controller is None
+        or desired_led_count != current_led_count
+        or orientation_changed
+    )
 
     if reinitialize_controller:
         if led_effects_manager:
