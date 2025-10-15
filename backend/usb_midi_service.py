@@ -454,19 +454,24 @@ class USBMIDIInputService:
             status_data = {
                 'type': 'midi_input_status',
                 'state': self._state.value,
+                'active': self.is_listening,
+                'is_listening': self.is_listening,
                 'device': self._current_device,
+                'device_name': self._current_device,
+                'current_device': self._current_device,
                 'active_notes': len(self.active_notes),
                 'event_count': self._event_count,
+                'notes_received': self._event_count,
                 'last_event_time': self._last_event_time,
-                'is_listening': self.is_listening,
             }
             self._websocket_callback('midi_input_status', status_data)
 
-            devices = [MIDIDevice(name=name, id=idx) for idx, name in enumerate(self._port_manager.list_devices())]
+            devices = self._collect_device_snapshots()
             self._websocket_callback(
                 'device_status',
                 {
                     'device': self._current_device,
+                    'device_name': self._current_device,
                     'state': self._state.value,
                     'is_listening': self.is_listening,
                     'devices': [device.__dict__ for device in devices],
@@ -476,16 +481,18 @@ class USBMIDIInputService:
             logger.error("Error broadcasting USB MIDI status: %s", exc)
 
     def get_available_devices(self) -> List[MIDIDevice]:
-        names = self._port_manager.list_devices()
-        return [MIDIDevice(name=name, id=index) for index, name in enumerate(names)]
+        return self._collect_device_snapshots()
 
     def get_status(self) -> Dict[str, Any]:
         return {
             'state': self._state.value,
             'device': self._current_device,
+            'device_name': self._current_device,
             'is_listening': self.is_listening,
+            'active': self.is_listening,
             'active_notes': len(self.active_notes),
             'event_count': self._event_count,
+            'notes_received': self._event_count,
             'last_event_time': self._last_event_time,
             'num_leds': self.num_leds,
             'orientation': self.led_orientation,
@@ -495,6 +502,19 @@ class USBMIDIInputService:
         logger.info("Cleaning up USB MIDI service")
         self.stop_listening()
         self._port_manager.cleanup()
+
+    def _collect_device_snapshots(self) -> List[MIDIDevice]:
+        devices: List[MIDIDevice] = []
+        try:
+            names = self._port_manager.list_devices()
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.debug("Failed to enumerate MIDI devices for snapshot: %s", exc)
+            names = []
+
+        for index, name in enumerate(names):
+            status = 'connected' if self.is_listening and name == self._current_device else 'available'
+            devices.append(MIDIDevice(name=name, id=index, status=status))
+        return devices
 
     def _map_note_to_led(self, midi_note: int) -> Optional[int]:
         return self._event_processor.map_note_to_led(midi_note)
