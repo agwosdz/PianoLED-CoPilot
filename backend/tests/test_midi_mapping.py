@@ -204,6 +204,61 @@ class TestMIDIMappingConfiguration:
         for midi_note, expected_result in test_cases:
             led_index = service._map_note_to_led(midi_note)
             assert led_index == expected_result, f"MIDI note {midi_note} outside range should return None, got {led_index}"
+
+    @patch('usb_midi_service.get_config')
+    @patch('usb_midi_service.get_piano_specs')
+    def test_usb_midi_mapping_respects_mapping_led_subset(self, mock_get_specs, mock_get_config):
+        """Ensure mapping count can shrink without altering controller capacity."""
+        mock_get_specs.return_value = {
+            'keys': 88,
+            'midi_start': 21,
+            'midi_end': 108
+        }
+
+        settings_values = {
+            ('piano', 'piano_size'): '88-key',
+            ('led', 'led_count'): 246,
+            ('led', 'led_orientation'): 'normal',
+            ('led', 'mapping_mode'): 'auto',
+            ('led', 'leds_per_key'): 3,
+            ('led', 'mapping_base_offset'): 0,
+            ('led', 'key_mapping'): {}
+        }
+
+        def get_setting(category, key, default=None):
+            return settings_values.get((category, key), default)
+
+        # Maintain controller capacity larger than mapping
+        self.mock_led_controller.num_pixels = 300
+        self.mock_led_controller.led_orientation = 'normal'
+
+        mock_get_config.side_effect = lambda key, default=None: {
+            'piano_size': '88-key',
+            'led_orientation': 'normal'
+        }.get(key, default)
+
+        self.mock_settings_service.get_setting.side_effect = get_setting
+
+        service = USBMIDIInputService(self.mock_led_controller, self.mock_websocket_callback, self.mock_settings_service)
+
+        assert service.num_leds == 246
+        assert service._controller_led_capacity == 300
+
+        # Shrink mapping count and ensure it updates without changing controller capacity
+        settings_values[('led', 'led_count')] = 120
+        service.refresh_runtime_settings()
+        assert service.num_leds == 120
+        assert service._controller_led_capacity == 300
+        top_leds = service._map_note_to_leds(service.max_midi_note)
+        assert top_leds and max(top_leds) < 120
+
+        # Request more LEDs than hardware supports -> expect clamp to controller capacity
+        settings_values[('led', 'led_count')] = 512
+        service.refresh_runtime_settings()
+        assert service.num_leds == 300
+        assert service._controller_led_capacity == 300
+        top_leds = service._map_note_to_leds(service.max_midi_note)
+        assert top_leds and max(top_leds) == 299
     
     @patch('midi_parser.get_piano_specs')
     def test_midi_parser_configuration(self, mock_get_specs):

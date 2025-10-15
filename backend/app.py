@@ -152,7 +152,16 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
             led_controller = None
     else:
         try:
-            controller_changes = led_controller.apply_runtime_settings(led_config)
+            controller_config = dict(led_config)
+            if 'led_count' in controller_config:
+                requested_leds = controller_config.pop('led_count')
+                if requested_leds != getattr(led_controller, 'num_pixels', None):
+                    logger.debug(
+                        "Preserving controller LED capacity at %s while mapping requests %s",
+                        getattr(led_controller, 'num_pixels', None),
+                        requested_leds
+                    )
+            controller_changes = led_controller.apply_runtime_settings(controller_config)
         except Exception as exc:
             logger.warning(f"LED controller runtime update failed: {exc}")
             controller_changes = {}

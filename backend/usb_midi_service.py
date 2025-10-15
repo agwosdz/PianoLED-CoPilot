@@ -75,6 +75,7 @@ class USBMIDIInputService:
         self._led_controller = led_controller
         self._websocket_callback = websocket_callback
         self.settings_service = settings_service
+        self._controller_led_capacity: Optional[int] = None
 
         if self.settings_service:
             self._load_settings_from_service()
@@ -204,13 +205,21 @@ class USBMIDIInputService:
 
         controller_leds = getattr(self._led_controller, 'num_pixels', None)
         if isinstance(controller_leds, int) and controller_leds > 0:
-            if controller_leds != self.num_leds:
+            previous_capacity = self._controller_led_capacity
+            if previous_capacity != controller_leds:
                 logger.debug(
-                    "USB MIDI service harmonizing LED count with controller (service=%s controller=%s)",
+                    "USB MIDI service detected controller capacity change (was=%s now=%s)",
+                    previous_capacity,
+                    controller_leds
+                )
+            self._controller_led_capacity = controller_leds
+            if self.num_leds > controller_leds:
+                logger.debug(
+                    "Clamping mapping LED count %s to controller capacity %s",
                     self.num_leds,
                     controller_leds
                 )
-            self.num_leds = controller_leds
+                self.num_leds = controller_leds
 
         controller_orientation = getattr(self._led_controller, 'led_orientation', None)
         if isinstance(controller_orientation, str) and controller_orientation:
@@ -243,8 +252,9 @@ class USBMIDIInputService:
         self._precomputed_mapping = self._generate_key_mapping()
         self._active_notes.clear()
         logger.debug(
-            "USB MIDI service settings refreshed: num_leds=%s orientation=%s mapping_mode=%s",
+            "USB MIDI service settings refreshed: mapping_leds=%s controller_capacity=%s orientation=%s mapping_mode=%s",
             self.num_leds,
+            self._controller_led_capacity,
             self.led_orientation,
             self.mapping_mode
         )
@@ -641,18 +651,21 @@ class USBMIDIInputService:
         Returns:
             List of physical LED indices or empty list if note is outside range
         """
+        capacity_limit = self._controller_led_capacity if self._controller_led_capacity else self.num_leds
+        usable_limit = min(self.num_leds, capacity_limit)
+
         if midi_note in self._precomputed_mapping:
             raw_indices = self._precomputed_mapping[midi_note]
             if isinstance(raw_indices, list):
-                filtered = [idx for idx in raw_indices if 0 <= idx < self.num_leds]
+                filtered = [idx for idx in raw_indices if 0 <= idx < usable_limit]
                 if filtered:
                     return filtered
-            elif isinstance(raw_indices, int) and 0 <= raw_indices < self.num_leds:
+            elif isinstance(raw_indices, int) and 0 <= raw_indices < usable_limit:
                 return [raw_indices]
         
         # Fallback to single LED mapping for backward compatibility
         single_led = self._map_note_to_led(midi_note)
-        return [single_led] if single_led is not None else []
+        return [single_led] if single_led is not None and 0 <= single_led < usable_limit else []
     
     def _map_note_to_led(self, midi_note: int) -> Optional[int]:
         """
