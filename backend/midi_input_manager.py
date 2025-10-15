@@ -132,6 +132,33 @@ class MIDIInputManager:
         logger.debug("MIDI input manager refreshing runtime settings")
         if self._usb_service and hasattr(self._usb_service, 'refresh_runtime_settings'):
             self._usb_service.refresh_runtime_settings()
+
+    def restart_usb_service(self, reason: str) -> bool:
+        """Restart the USB MIDI service while preserving the current device selection."""
+        if not self._usb_service or not hasattr(self._usb_service, 'restart_with_saved_device'):
+            logger.debug("USB MIDI restart skipped (%s) - service unavailable", reason)
+            return False
+
+        try:
+            restarted = self._usb_service.restart_with_saved_device(reason)
+        except Exception as exc:
+            logger.error("USB MIDI restart failed for %s: %s", reason, exc)
+            return False
+
+        listening_state = bool(getattr(self._usb_service, 'is_listening', False))
+        self._source_status[MIDIInputSource.USB]['listening'] = listening_state
+
+        if restarted and listening_state:
+            logger.info("USB MIDI service restarted (%s)", reason)
+        else:
+            logger.debug("USB MIDI service restart request (%s) did not change state", reason)
+
+        try:
+            self._broadcast_status_update()
+        except Exception as exc:
+            logger.debug("USB MIDI restart broadcast failed: %s", exc)
+
+        return restarted
     
 
     

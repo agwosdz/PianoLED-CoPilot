@@ -3,6 +3,7 @@ import types
 import pytest
 
 from backend import usb_midi_service as usb_service
+from backend import midi_input_manager as midi_manager
 
 
 class FakePortManager:
@@ -102,3 +103,48 @@ def test_restart_falls_back_to_auto_selection_when_saved_device_fails(service, m
     # After failure the fallback should use auto-selection (None candidate)
     assert fake_port.started_with[-1] is None
     assert midi_service.current_device == 'AutoDevice'
+
+
+def test_restart_when_not_listening_starts_saved_device(service, monkeypatch):
+    midi_service, fake_port = service
+    clock = MonotonicClock()
+    monkeypatch.setattr(usb_service.time, 'monotonic', clock)
+
+    assert midi_service.start_listening('Digital Piano')
+    midi_service.stop_listening()
+    assert not midi_service.is_listening
+
+    # Ensure we have a remembered device
+    midi_service._last_connected_device = 'Digital Piano'
+    fake_port.started_with.clear()
+
+    assert midi_service.restart_with_saved_device('led.led_count')
+    assert midi_service.is_listening
+    assert fake_port.started_with[-1] == 'Digital Piano'
+
+
+def test_midi_input_manager_restart_delegates_to_usb_service(monkeypatch):
+    class StubUSBService:
+        def __init__(self):
+            self.calls = []
+            self._listening = True
+
+        @property
+        def is_listening(self):
+            return self._listening
+
+        def restart_with_saved_device(self, reason):
+            self.calls.append(reason)
+            return True
+
+    manager = midi_manager.MIDIInputManager.__new__(midi_manager.MIDIInputManager)
+    manager._usb_service = StubUSBService()
+    manager._source_status = {
+        midi_manager.MIDIInputSource.USB: {'listening': True},
+        midi_manager.MIDIInputSource.RTPMIDI: {'listening': False},
+    }
+    manager._broadcast_status_update = lambda: None
+
+    assert manager.restart_usb_service('led.led_count') is True
+    assert manager._usb_service.calls == ['led.led_count']
+    assert manager._source_status[midi_manager.MIDIInputSource.USB]['listening'] is True

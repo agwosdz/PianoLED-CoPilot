@@ -202,22 +202,20 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     if led_effects_manager and led_controller and not controller_changes.get('led_count_changed'):
         led_effects_manager.update_led_count(led_controller.num_pixels)
 
+    restart_flags = (
+        controller_changes.get('led_count_changed'),
+        controller_changes.get('orientation_changed'),
+        controller_changes.get('brightness_changed'),
+        controller_changes.get('gamma_changed'),
+    )
+    restart_required = trigger_category == 'led' and any(flag for flag in restart_flags)
+
     # Refresh dependent services with new configuration
     if usb_midi_service:
         if led_controller:
             usb_midi_service.update_led_controller(led_controller)
         usb_midi_service.refresh_runtime_settings()
-        restart_flags = (
-            controller_changes.get('led_count_changed'),
-            controller_changes.get('orientation_changed'),
-            controller_changes.get('brightness_changed'),
-            controller_changes.get('gamma_changed'),
-        )
-        if (
-            trigger_category == 'led'
-            and usb_midi_service.is_listening
-            and any(flag for flag in restart_flags)
-        ):
+        if restart_required:
             usb_midi_service.restart_with_saved_device(reason=f"{trigger_category}.{trigger_key}")
 
     if playback_service:
@@ -227,6 +225,8 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     if midi_input_manager:
         midi_input_manager.update_led_controller(led_controller)
         midi_input_manager.refresh_runtime_settings()
+        if restart_required and hasattr(midi_input_manager, 'restart_usb_service'):
+            midi_input_manager.restart_usb_service(reason=f"{trigger_category}.{trigger_key}")
 
     # Ensure midi_parser is refreshed too (it caches led count on init)
     try:

@@ -256,12 +256,10 @@ class USBMIDIInputService:
         return True
 
     def restart_with_saved_device(self, reason: str = "") -> bool:
-        if not self.is_listening:
-            logger.debug("USB MIDI restart skipped (%s) - not currently listening", reason or "no reason")
-            return False
-
+        saved_device = self._current_device or self._last_connected_device or self._last_requested_device
         now = time.monotonic()
-        if now - self._last_restart_at < self.RESTART_COOLDOWN_SECONDS:
+
+        if self.is_listening and (now - self._last_restart_at) < self.RESTART_COOLDOWN_SECONDS:
             logger.debug(
                 "USB MIDI restart skipped (%s) - cooldown %.3fs remaining",
                 reason or "no reason",
@@ -269,34 +267,36 @@ class USBMIDIInputService:
             )
             return False
 
-        saved_device = self._current_device or self._last_connected_device or self._last_requested_device
+        action = "restarting" if self.is_listening else "starting"
         logger.info(
-            "USB MIDI restarting due to %s (device=%s)",
+            "USB MIDI %s due to %s (device=%s)",
+            action,
             reason or "configuration change",
             saved_device or "auto",
         )
 
         self._last_restart_at = now
-        self.stop_listening()
 
-        # Attempt restart with saved device first, then fall back to auto-selection
+        if self.is_listening:
+            self.stop_listening()
+
         if saved_device and self.start_listening(saved_device):
             return True
 
         if saved_device:
             logger.warning(
-                "USB MIDI restart failed for device '%s' after %s; attempting auto-selection",
+                "USB MIDI %s failed for device '%s'; attempting auto-selection",
+                action,
                 saved_device,
-                reason or "configuration change",
             )
 
-        if not self.start_listening():
-            logger.error(
-                "USB MIDI restart failed after %s", reason or "configuration change"
-            )
-            return False
+        if self.start_listening():
+            return True
 
-        return True
+        logger.error(
+            "USB MIDI %s failed after %s", action, reason or "configuration change"
+        )
+        return False
 
     def _processing_loop(self) -> None:
         logger.debug("USB MIDI processing loop started")
