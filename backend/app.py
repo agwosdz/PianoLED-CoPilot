@@ -226,7 +226,10 @@ def _on_setting_change(category: str, key: str, value: Any) -> None:
             'leds_per_key',
             'mapping_mode',
             'mapping_base_offset',
-            'key_mapping'
+            'key_mapping',
+            'enabled',
+            'brightness',
+            'gamma_correction'
         },
         'piano': {
             'size',
