@@ -253,6 +253,7 @@ class LEDController:
             'orientation_changed': False,
             'brightness_changed': False,
             'gamma_changed': False,
+            'hardware_changed': False,
         }
 
         if not isinstance(led_config, dict):
@@ -286,6 +287,27 @@ class LEDController:
         gamma = led_config.get('gamma_correction')
         if gamma is not None and self.change_gamma(gamma):
             changes['gamma_changed'] = True
+
+        # Check for hardware settings that require reinitialization
+        hardware_settings = {
+            'gpio_pin': 'pin',
+            'led_channel': 'led_channel',
+            'led_strip_type': 'led_strip_type',
+            'led_frequency': 'led_frequency',
+            'led_dma': 'led_dma',
+            'led_invert': 'led_invert',
+        }
+        for config_key, attr_name in hardware_settings.items():
+            if config_key in led_config:
+                new_value = led_config[config_key]
+                current_value = getattr(self, attr_name)
+                if new_value != current_value:
+                    setattr(self, attr_name, new_value)
+                    changes['hardware_changed'] = True
+
+        # Reinitialize if hardware settings changed and LEDs are enabled
+        if changes['hardware_changed'] and self.led_enabled:
+            self._initialize_strip()
 
         return changes
     

@@ -207,6 +207,7 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         controller_changes.get('orientation_changed'),
         controller_changes.get('brightness_changed'),
         controller_changes.get('gamma_changed'),
+        controller_changes.get('hardware_changed'),
     )
     restart_required = trigger_category == 'led' and any(flag for flag in restart_flags)
 
@@ -257,7 +258,13 @@ def _on_setting_change(category: str, key: str, value: Any) -> None:
             'key_mapping',
             'enabled',
             'brightness',
-            'gamma_correction'
+            'gamma_correction',
+            'gpio_pin',
+            'led_channel',
+            'led_strip_type',
+            'led_frequency',
+            'led_dma',
+            'led_invert',
         },
         'piano': {
             'size',
