@@ -8,7 +8,7 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from logging_config import get_logger
 
@@ -58,6 +58,8 @@ class MIDIInputEvent:
 class USBMIDIInputService:
     """Coordinate USB MIDI input, LED mapping, and event broadcasting."""
 
+    RESTART_COOLDOWN_SECONDS = 0.5
+
     def __init__(
         self,
         led_controller=None,
@@ -85,6 +87,9 @@ class USBMIDIInputService:
 
         self._event_count = 0
         self._last_event_time = 0.0
+        self._last_requested_device: Optional[str] = None
+        self._last_connected_device: Optional[str] = None
+        self._last_restart_at: float = 0.0
 
         if not MIDO_AVAILABLE:
             logger.warning("mido library not available - USB MIDI listening disabled")
@@ -167,12 +172,53 @@ class USBMIDIInputService:
             logger.debug("USB MIDI service already listening")
             return True
 
-        if not self._port_manager.start(device_name):
+        candidates: List[Optional[str]] = []
+        attempted: Set[Optional[str]] = set()
+
+        if device_name:
+            candidates.append(device_name)
+        if self._last_connected_device and self._last_connected_device not in candidates:
+            candidates.append(self._last_connected_device)
+        if self._last_requested_device and self._last_requested_device not in candidates:
+            candidates.append(self._last_requested_device)
+        candidates.append(None)
+
+        started = False
+        for candidate in candidates:
+            if candidate in attempted:
+                continue
+            attempted.add(candidate)
+
+            if not self._port_manager.start(candidate):
+                if candidate is not None:
+                    logger.warning(
+                        "Failed to open USB MIDI device '%s'; will attempt fallback",
+                        candidate,
+                    )
+                    continue
+
+                logger.error("Unable to auto-select a USB MIDI input device")
+                self._state = MIDIInputState.ERROR
+                self._broadcast_status_update()
+                return False
+
+            started = True
+            break
+
+        if not started:
+            logger.error("Unable to start USB MIDI listening - no devices available")
             self._state = MIDIInputState.ERROR
             self._broadcast_status_update()
             return False
 
         self._current_device = self._port_manager.device_name
+        if device_name:
+            self._last_requested_device = device_name
+        if self._current_device:
+            self._last_connected_device = self._current_device
+            if not self._last_requested_device:
+                self._last_requested_device = self._current_device
+
         self._stop_event.clear()
         self._running = True
         self._processing_thread = threading.Thread(
@@ -191,6 +237,9 @@ class USBMIDIInputService:
         if not self._running:
             return True
 
+        if self._current_device:
+            self._last_connected_device = self._current_device
+
         self._running = False
         self._stop_event.set()
 
@@ -204,6 +253,49 @@ class USBMIDIInputService:
         self._state = MIDIInputState.IDLE
         self._broadcast_status_update()
         logger.info("USB MIDI listening stopped")
+        return True
+
+    def restart_with_saved_device(self, reason: str = "") -> bool:
+        if not self.is_listening:
+            logger.debug("USB MIDI restart skipped (%s) - not currently listening", reason or "no reason")
+            return False
+
+        now = time.monotonic()
+        if now - self._last_restart_at < self.RESTART_COOLDOWN_SECONDS:
+            logger.debug(
+                "USB MIDI restart skipped (%s) - cooldown %.3fs remaining",
+                reason or "no reason",
+                self.RESTART_COOLDOWN_SECONDS - (now - self._last_restart_at),
+            )
+            return False
+
+        saved_device = self._current_device or self._last_connected_device or self._last_requested_device
+        logger.info(
+            "USB MIDI restarting due to %s (device=%s)",
+            reason or "configuration change",
+            saved_device or "auto",
+        )
+
+        self._last_restart_at = now
+        self.stop_listening()
+
+        # Attempt restart with saved device first, then fall back to auto-selection
+        if saved_device and self.start_listening(saved_device):
+            return True
+
+        if saved_device:
+            logger.warning(
+                "USB MIDI restart failed for device '%s' after %s; attempting auto-selection",
+                saved_device,
+                reason or "configuration change",
+            )
+
+        if not self.start_listening():
+            logger.error(
+                "USB MIDI restart failed after %s", reason or "configuration change"
+            )
+            return False
+
         return True
 
     def _processing_loop(self) -> None:

@@ -207,6 +207,18 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         if led_controller:
             usb_midi_service.update_led_controller(led_controller)
         usb_midi_service.refresh_runtime_settings()
+        restart_flags = (
+            controller_changes.get('led_count_changed'),
+            controller_changes.get('orientation_changed'),
+            controller_changes.get('brightness_changed'),
+            controller_changes.get('gamma_changed'),
+        )
+        if (
+            trigger_category == 'led'
+            and usb_midi_service.is_listening
+            and any(flag for flag in restart_flags)
+        ):
+            usb_midi_service.restart_with_saved_device(reason=f"{trigger_category}.{trigger_key}")
 
     if playback_service:
         playback_service.led_controller = led_controller
