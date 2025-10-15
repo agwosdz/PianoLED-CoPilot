@@ -615,10 +615,19 @@ class USBMIDIInputService:
             for note in range(self.min_midi_note, self.max_midi_note + 1):
                 if note in auto_mapping:
                     led_indices = auto_mapping[note]
+                    normalized: List[int] = []
                     if isinstance(led_indices, int):
-                        mapping[note] = [led_indices]
+                        normalized = [led_indices]
                     elif isinstance(led_indices, list):
-                        mapping[note] = led_indices
+                        for raw_idx in led_indices:
+                            try:
+                                normalized.append(int(raw_idx))
+                            except (TypeError, ValueError):
+                                continue
+
+                    normalized = [idx for idx in normalized if 0 <= idx < self.num_leds]
+                    if normalized:
+                        mapping[note] = normalized
         
         return mapping
     
@@ -633,7 +642,13 @@ class USBMIDIInputService:
             List of physical LED indices or empty list if note is outside range
         """
         if midi_note in self._precomputed_mapping:
-            return self._precomputed_mapping[midi_note]
+            raw_indices = self._precomputed_mapping[midi_note]
+            if isinstance(raw_indices, list):
+                filtered = [idx for idx in raw_indices if 0 <= idx < self.num_leds]
+                if filtered:
+                    return filtered
+            elif isinstance(raw_indices, int) and 0 <= raw_indices < self.num_leds:
+                return [raw_indices]
         
         # Fallback to single LED mapping for backward compatibility
         single_led = self._map_note_to_led(midi_note)
