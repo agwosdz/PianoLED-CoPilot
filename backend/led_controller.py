@@ -402,6 +402,20 @@ class LEDController:
     
 
     
+    def describe_runtime_state(self) -> Dict[str, Any]:
+        """Return lightweight snapshot used for diagnostics."""
+        return {
+            'led_enabled': bool(self.led_enabled),
+            'num_pixels': int(self.num_pixels),
+            'orientation': self.led_orientation,
+            'brightness': float(self.brightness),
+            'hardware_available': HARDWARE_AVAILABLE,
+            'pixels_initialized': bool(self.pixels),
+            'pin': int(self.pin),
+            'channel': int(self.led_channel),
+            'simulation_mode': (not HARDWARE_AVAILABLE) or not self.pixels,
+        }
+
     def turn_off_all(self) -> Tuple[bool, Optional[str]]:
         """
         Turn off all LEDs.

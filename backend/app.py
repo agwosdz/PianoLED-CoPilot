@@ -157,6 +157,22 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
             logger.warning(f"LED controller runtime update failed: {exc}")
             controller_changes = {}
 
+    controller_state: Dict[str, Any] = {'controller_present': False}
+    if led_controller:
+        controller_state = {'controller_present': True}
+        try:
+            controller_state.update(led_controller.describe_runtime_state())
+        except Exception as exc:
+            logger.debug("Failed to gather LED controller diagnostics: %s", exc)
+            controller_state.update({
+                'led_enabled': getattr(led_controller, 'led_enabled', None),
+                'num_pixels': getattr(led_controller, 'num_pixels', None),
+                'orientation': getattr(led_controller, 'led_orientation', None),
+                'pixels_initialized': bool(getattr(led_controller, 'pixels', None)),
+            })
+
+    logger.info("LED controller diagnostics after refresh: %s", controller_state)
+
     led_enabled = bool(led_config.get('enabled', True))
 
     if not led_enabled or not led_controller or not getattr(led_controller, 'led_enabled', True):
