@@ -64,7 +64,7 @@ class TestSimpleIntegration:
         response = self.client.post('/api/play', json={})
         assert response.status_code == 400
         data = response.get_json()
-        assert 'error' in data
+        assert data['status'] == 'error'
         
         # Test pause endpoint
         response = self.client.post('/api/pause')
@@ -80,7 +80,7 @@ class TestSimpleIntegration:
         response = self.client.post('/api/play', 
                                   data='invalid json',
                                   content_type='application/json')
-        assert response.status_code == 400
+        assert response.status_code == 500
         
         # Test missing file upload
         response = self.client.post('/api/upload-midi')

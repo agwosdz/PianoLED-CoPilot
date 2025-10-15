@@ -216,14 +216,14 @@ class TestPianoSpecs:
     def test_get_piano_specs_all_sizes(self):
         """Test getting specs for all supported piano sizes"""
         expected_sizes = {
-            "25-key": {"num_keys": 25, "min_midi_note": 60, "max_midi_note": 84},
-            "37-key": {"num_keys": 37, "min_midi_note": 48, "max_midi_note": 84},
-            "49-key": {"num_keys": 49, "min_midi_note": 36, "max_midi_note": 84},
-            "61-key": {"num_keys": 61, "min_midi_note": 36, "max_midi_note": 96},
-            "76-key": {"num_keys": 76, "min_midi_note": 28, "max_midi_note": 103},
-            "88-key": {"num_keys": 88, "min_midi_note": 21, "max_midi_note": 108}
+            "25-key": {"keys": 25, "octaves": 2, "start_note": "C3", "end_note": "C5", "midi_start": 48, "midi_end": 72},
+            "37-key": {"keys": 37, "octaves": 3, "start_note": "C2", "end_note": "C5", "midi_start": 36, "midi_end": 72},
+            "49-key": {"keys": 49, "octaves": 4, "start_note": "C2", "end_note": "C6", "midi_start": 36, "midi_end": 84},
+            "61-key": {"keys": 61, "octaves": 5, "start_note": "C2", "end_note": "C7", "midi_start": 36, "midi_end": 96},
+            "76-key": {"keys": 76, "octaves": 6.25, "start_note": "E1", "end_note": "G7", "midi_start": 28, "midi_end": 103},
+            "88-key": {"keys": 88, "octaves": 7.25, "start_note": "A0", "end_note": "C8", "midi_start": 21, "midi_end": 108}
         }
-        
+
         for size, expected_specs in expected_sizes.items():
             specs = get_piano_specs(size)
             assert specs == expected_specs, f"Specs mismatch for {size}"
@@ -232,7 +232,7 @@ class TestPianoSpecs:
         """Test getting specs for invalid piano size"""
         specs = get_piano_specs("invalid-size")
         # Should default to 88-key
-        expected = {"num_keys": 88, "min_midi_note": 21, "max_midi_note": 108}
+        expected = {"keys": 88, "octaves": 7.25, "start_note": "A0", "end_note": "C8", "midi_start": 21, "midi_end": 108}
         assert specs == expected
     
     def test_piano_specs_consistency(self):
@@ -240,9 +240,9 @@ class TestPianoSpecs:
         for size in ["25-key", "37-key", "49-key", "61-key", "76-key", "88-key"]:
             specs = get_piano_specs(size)
             
-            # Check that max_midi_note > min_midi_note
-            assert specs["max_midi_note"] > specs["min_midi_note"]
-            
+            # Check that midi_end > midi_start
+            assert specs["midi_end"] > specs["midi_start"]
+
             # Check that the range matches the number of keys
-            note_range = specs["max_midi_note"] - specs["min_midi_note"] + 1
-            assert note_range == specs["num_keys"]
+            note_range = specs["midi_end"] - specs["midi_start"] + 1
+            assert note_range == specs["keys"]

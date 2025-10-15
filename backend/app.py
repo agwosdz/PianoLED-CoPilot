@@ -7,7 +7,7 @@ import math
 import os
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import logging
 # Setup centralized logging before other imports
@@ -152,16 +152,7 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
             led_controller = None
     else:
         try:
-            controller_config = dict(led_config)
-            if 'led_count' in controller_config:
-                requested_leds = controller_config.pop('led_count')
-                if requested_leds != getattr(led_controller, 'num_pixels', None):
-                    logger.debug(
-                        "Preserving controller LED capacity at %s while mapping requests %s",
-                        getattr(led_controller, 'num_pixels', None),
-                        requested_leds
-                    )
-            controller_changes = led_controller.apply_runtime_settings(controller_config)
+            controller_changes = led_controller.apply_runtime_settings(led_config)
         except Exception as exc:
             logger.warning(f"LED controller runtime update failed: {exc}")
             controller_changes = {}
@@ -275,6 +266,37 @@ def _is_allowed_midi_file(filename: str) -> bool:
         return False
     _, ext = os.path.splitext(filename)
     return ext.lower() in ALLOWED_MIDI_EXTENSIONS
+
+
+def _resolve_midi_file_path(filename: str) -> Optional[str]:
+    """Resolve a MIDI filename to an absolute path within the upload directory."""
+    if not filename:
+        return None
+
+    try:
+        upload_folder = app.config.get('UPLOAD_FOLDER')
+    except Exception:
+        upload_folder = None
+
+    if os.path.isabs(filename):
+        return os.path.abspath(filename)
+
+    if not upload_folder:
+        logger.error('UPLOAD_FOLDER is not configured')
+        return None
+
+    sanitized_name = secure_filename(filename)
+    if not sanitized_name:
+        return None
+
+    upload_root = os.path.abspath(upload_folder)
+    resolved_path = os.path.abspath(os.path.join(upload_root, sanitized_name))
+
+    if not resolved_path.startswith(upload_root):
+        logger.warning('Rejected MIDI filename outside upload directory: %s', filename)
+        return None
+
+    return resolved_path
 
 
 @app.route('/api/upload-midi', methods=['POST'])
@@ -489,21 +511,34 @@ def play():
             }), 503
         
         data = request.get_json()
-        if not data:
+        if data is None:
             return jsonify({
                 'status': 'error',
                 'message': 'Request body is required'
             }), 400
             
+        if not isinstance(data, dict):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid request payload'
+            }), 400
+
         filename = data.get('filename')
         if not filename:
             return jsonify({
                 'status': 'error',
                 'message': 'Filename parameter is required'
             }), 400
+
+        resolved_path = _resolve_midi_file_path(filename)
+        if not resolved_path:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid or inaccessible MIDI filename'
+            }), 400
         
         # First load the MIDI file
-        if not playback_service.load_midi_file(filename):
+        if not playback_service.load_midi_file(resolved_path):
             return jsonify({
                 'status': 'error',
                 'message': f'Failed to load MIDI file: {filename}'

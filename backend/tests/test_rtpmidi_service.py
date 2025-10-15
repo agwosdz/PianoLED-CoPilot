@@ -6,7 +6,13 @@ import os
 # Add the backend directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from rtpmidi_service import RtpMIDIService, RtpMIDIState, RtpMIDISession, NetworkMIDIEvent
+from rtpmidi_service import (
+    RtpMIDIService,
+    RtpMIDIState,
+    RtpMIDISession,
+    NetworkMIDIEvent,
+    PYMIDI_AVAILABLE,
+)
 
 class TestRtpMIDIService(unittest.TestCase):
     def setUp(self):
@@ -16,8 +22,8 @@ class TestRtpMIDIService(unittest.TestCase):
     
     def test_initialization(self):
         """Test service initialization"""
-        # When pymidi is not available, state should be ERROR
-        self.assertEqual(self.service.state, RtpMIDIState.ERROR)
+        expected_state = RtpMIDIState.IDLE if PYMIDI_AVAILABLE else RtpMIDIState.ERROR
+        self.assertEqual(self.service.state, expected_state)
         self.assertEqual(len(self.service.active_sessions), 0)
         self.assertEqual(len(self.service.discovered_sessions), 0)
         self.assertIsNotNone(self.service._websocket_callback)
@@ -44,9 +50,13 @@ class TestRtpMIDIService(unittest.TestCase):
     def test_start_discovery_no_pymidi(self):
         """Test discovery start without pymidi"""
         result = self.service.start_discovery()
-        
-        self.assertFalse(result)
-        self.assertEqual(self.service.state, RtpMIDIState.ERROR)
+
+        if PYMIDI_AVAILABLE:
+            self.assertTrue(result)
+            self.assertEqual(self.service.state, RtpMIDIState.DISCOVERING)
+        else:
+            self.assertFalse(result)
+            self.assertEqual(self.service.state, RtpMIDIState.ERROR)
     
     def test_stop_listening(self):
         """Test stopping listening"""
@@ -144,8 +154,9 @@ class TestRtpMIDIService(unittest.TestCase):
         self.assertIn('active_sessions', status)
         self.assertIn('discovered_sessions', status)
         self.assertIn('pymidi_available', status)
-        self.assertEqual(status['state'], 'error')  # Because pymidi is not available
-        self.assertFalse(status['pymidi_available'])
+        expected_state = 'idle' if PYMIDI_AVAILABLE else 'error'
+        self.assertEqual(status['state'], expected_state)
+        self.assertEqual(status['pymidi_available'], PYMIDI_AVAILABLE)
     
     def test_get_discovered_sessions(self):
         """Test discovered sessions retrieval"""

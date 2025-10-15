@@ -3,24 +3,38 @@
 Optimized Performance Tests - Validates performance improvements
 """
 
-import pytest
-import time
-import threading
-import tempfile
 import os
+import sys
+import tempfile
+import threading
+import time
 from unittest.mock import Mock, patch
 
-# Import modules
+import pytest
+
 try:
     from backend.playback_service import PlaybackService, PlaybackState
     from backend.led_controller import LEDController
-    from backend.performance_monitor import PerformanceMonitor, PerformanceMetrics
-except ImportError:
-    import sys
+except ImportError:  # pragma: no cover - fallback for direct invocation
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-    from playback_service import PlaybackService, PlaybackState
-    from led_controller import LEDController
-    from performance_monitor import PerformanceMonitor, PerformanceMetrics
+    from playback_service import PlaybackService, PlaybackState  # type: ignore
+    from led_controller import LEDController  # type: ignore
+
+PERFORMANCE_MONITOR_AVAILABLE = True
+try:
+    from backend.performance_monitor import PerformanceMonitor, PerformanceMetrics
+except ImportError:  # pragma: no cover - optional component removed
+    try:
+        from performance_monitor import PerformanceMonitor, PerformanceMetrics  # type: ignore
+    except ImportError:
+        PERFORMANCE_MONITOR_AVAILABLE = False
+        PerformanceMonitor = None  # type: ignore
+        PerformanceMetrics = None  # type: ignore
+
+pytestmark = pytest.mark.skipif(
+    not PERFORMANCE_MONITOR_AVAILABLE,
+    reason="Performance monitor module unavailable",
+)
 
 class TestPerformanceOptimizations:
     """Test performance optimizations"""
