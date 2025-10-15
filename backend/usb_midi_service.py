@@ -590,6 +590,12 @@ class USBMIDIInputService:
                             continue
 
                     indices = [idx for idx in indices if 0 <= idx < self.num_leds]
+                    if not indices:
+                        logger.debug(
+                            "Skipping manual mapping for note %s due to empty/invalid indices after clamping",
+                            note
+                        )
+                        continue
 
                     mapping[note] = indices
                 except (ValueError, TypeError):
