@@ -214,7 +214,17 @@ class USBMIDIInputService:
                 time.sleep(0.002)
                 continue
 
+            logger.debug("USB MIDI drained %s message(s)", len(drained))
             for msg, msg_timestamp in drained:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "USB MIDI raw message | type=%s note=%s velocity=%s channel=%s time=%s",
+                        getattr(msg, 'type', None),
+                        getattr(msg, 'note', None),
+                        getattr(msg, 'velocity', None),
+                        getattr(msg, 'channel', None),
+                        msg_timestamp,
+                    )
                 processed_events = self._event_processor.handle_message(msg, msg_timestamp)
                 for event in processed_events:
                     self._event_count += 1
