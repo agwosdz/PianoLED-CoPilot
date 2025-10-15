@@ -3,6 +3,7 @@
 USB MIDI Input Service - real-time input coordination
 """
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -229,6 +230,7 @@ class USBMIDIInputService:
             event.velocity,
             event.led_indices,
         )
+        self._log_event_diagnostics(event)
 
     def _broadcast_midi_event(self, event: ProcessedMIDIEvent) -> None:
         if not self._websocket_callback:
@@ -301,6 +303,37 @@ class USBMIDIInputService:
             self._websocket_callback('debug_midi_mapping', payload)
         except Exception as exc:
             logger.error("Error broadcasting debug mapping payload: %s", exc)
+
+    def _log_event_diagnostics(self, event: ProcessedMIDIEvent) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        controller = self._led_controller
+        controller_id = hex(id(controller)) if controller else 'None'
+        led_count = getattr(controller, 'num_pixels', None)
+        enabled = getattr(controller, 'led_enabled', None)
+
+        logger.debug(
+            "USB MIDI event processed | type=%s note=%s velocity=%s leds=%s mapped=%s controller_id=%s controller_leds=%s enabled=%s",
+            event.event_type,
+            event.note,
+            event.velocity,
+            self.num_leds,
+            list(event.led_indices),
+            controller_id,
+            led_count,
+            enabled,
+        )
+
+        if not event.led_indices:
+            logger.warning(
+                "USB MIDI note %s produced no LED indices (mapping_mode=%s, min_note=%s, max_note=%s, num_leds=%s)",
+                event.note,
+                self._event_processor.mapping_mode,
+                self._event_processor.min_midi_note,
+                self._event_processor.max_midi_note,
+                self.num_leds,
+            )
 
     def _broadcast_status_update(self) -> None:
         if not self._websocket_callback:
