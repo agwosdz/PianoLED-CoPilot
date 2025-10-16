@@ -694,12 +694,20 @@ def get_mapping_info():
         base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
         leds_per_key = settings_service.get_setting('led', 'leds_per_key', None)
         
-        logger.info(f"Generating mapping info for {piano_size} with {led_count} LEDs")
+        # Get calibration settings (LED range) - MUST use actual available range
+        start_led = settings_service.get_setting('calibration', 'start_led', 0)
+        end_led = settings_service.get_setting('calibration', 'end_led', led_count - 1)
         
-        # Generate mapping
+        # Calculate available LED count based on the configured range
+        available_led_range = end_led - start_led + 1
+        
+        logger.info(f"Generating mapping info for {piano_size} with calibration range [{start_led}, {end_led}] "
+                   f"(total_leds={led_count}, available={available_led_range})")
+        
+        # Generate mapping using ONLY the available LED range
         mapping = generate_auto_key_mapping(
             piano_size=piano_size,
-            led_count=led_count,
+            led_count=available_led_range,  # Use only available range, not total LEDs
             leds_per_key=leds_per_key,
             mapping_base_offset=base_offset
         )
@@ -731,8 +739,11 @@ def get_mapping_info():
             },
             'led_configuration': {
                 'total_leds': led_count,
+                'calibration_start_led': start_led,
+                'calibration_end_led': end_led,
+                'calibration_range': f"[{start_led}, {end_led}]",
+                'available_leds': available_led_range,
                 'mapping_base_offset': base_offset,
-                'available_leds': led_count - base_offset,
                 'leds_per_key_setting': leds_per_key
             },
             'mapping_statistics': {
@@ -740,7 +751,7 @@ def get_mapping_info():
                 'mapped_keys': len(mapping),
                 'unmapped_keys': specs['keys'] - len(mapping),
                 'leds_used': total_leds_used,
-                'leds_unused': led_count - total_leds_used,
+                'leds_unused': available_led_range - total_leds_used,
                 'min_leds_per_key': min(led_counts.keys()) if led_counts else 0,
                 'max_leds_per_key': max(led_counts.keys()) if led_counts else 0,
                 'avg_leds_per_key': round(avg_leds_per_key, 2)
