@@ -154,7 +154,7 @@ class SettingsService:
             },
             'led': {
                 'enabled': {'type': 'boolean', 'default': True},
-                'led_count': {'type': 'number', 'default': 246, 'min': 1, 'max': 1000},
+                'led_count': {'type': 'number', 'default': 255, 'min': 1, 'max': 1000},
                 'max_led_count': {'type': 'number', 'default': 1000, 'min': 1, 'max': 1000},
                 'leds_per_meter': {'type': 'number', 'default': 60, 'enum': [60, 72, 100, 120, 144, 160, 180, 200], 'description': 'LED strip density in LEDs per meter'},
                 'led_channel': {'type': 'number', 'default': 0, 'min': 0, 'max': 1},
