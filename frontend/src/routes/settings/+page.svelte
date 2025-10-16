@@ -2,11 +2,15 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { settingsLoading, settingsError, loadSettings, updateSettings } from '$lib/stores/settings';
+  import { loadCalibration } from '$lib/stores/calibration';
   import SettingsValidationMessage from '$lib/components/SettingsValidationMessage.svelte';
   import PianoKeyboardSelector from '$lib/components/PianoKeyboardSelector.svelte';
   import MidiDeviceSelector from '$lib/components/MidiDeviceSelector.svelte';
   import NetworkMidiConfig from '$lib/components/NetworkMidiConfig.svelte';
   import MidiConnectionStatus from '$lib/components/MidiConnectionStatus.svelte';
+  import CalibrationSection1 from '$lib/components/CalibrationSection1.svelte';
+  import CalibrationSection2 from '$lib/components/CalibrationSection2.svelte';
+  import CalibrationSection3 from '$lib/components/CalibrationSection3.svelte';
   import type { UsbMidiStatus, NetworkMidiStatus } from '$lib/types/midi';
 
   type MessageType = 'error' | 'success' | 'warning' | 'info' | 'validating';
@@ -51,11 +55,6 @@
     { value: 'chase', label: 'Color Chase' },
     { value: 'fade', label: 'Smooth Fade' },
     { value: 'piano_keys', label: 'Piano Sweep' }
-  ];
-
-  const calibrationItems = [
-    { title: 'Section 1', description: 'Placeholder for calibration controls.' },
-    { title: 'Section 2', description: 'Placeholder for calibration status.' }
   ];
 
 
@@ -177,6 +176,7 @@
   onMount(async () => {
     await loadSettingsData();
     await refreshMidiStatuses();
+    await loadCalibrationData();
   });
 
   onDestroy(() => {
@@ -193,6 +193,14 @@
     } catch (err) {
       console.error('Error loading settings:', err);
       showMessage('Error loading settings', 'error');
+    }
+  }
+
+  async function loadCalibrationData() {
+    try {
+      await loadCalibration();
+    } catch (err) {
+      console.error('Error loading calibration:', err);
     }
   }
 
@@ -781,18 +789,12 @@
           <p>Coordinate LEDs with piano keys and fine-tune system alignment.</p>
         </header>
 
-        <div class="calibration-grid">
-          {#each calibrationItems as item}
-            <div class="calibration-card">
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </div>
-          {/each}
-        </div>
-
-        <div class="calibration-wide">
-          <h3>Section 3</h3>
-          <p>Wide placeholder panel for future calibration workflows.</p>
+        <div class="card-body">
+          <div class="calibration-sections">
+            <CalibrationSection1 />
+            <CalibrationSection2 />
+            <CalibrationSection3 />
+          </div>
         </div>
       </section>
     </div>
@@ -977,44 +979,10 @@
     font-size: 0.9rem;
   }
 
-  .calibration-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
-  }
-
-  .calibration-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1.25rem;
-    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  .calibration-sections {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .calibration-card h3,
-  .calibration-wide h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #0f172a;
-  }
-
-  .calibration-card p,
-  .calibration-wide p {
-    margin: 0;
-    color: #475569;
-    font-size: 0.95rem;
-  }
-
-  .calibration-wide {
-    margin-top: 1.5rem;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1.5rem 1.75rem;
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+    gap: 1.75rem;
   }
 
   .pattern-controls {
@@ -1186,10 +1154,6 @@
 
     .settings-panel {
       padding: 1.5rem;
-    }
-
-    .calibration-grid {
-      grid-template-columns: 1fr;
     }
 
     .field-grid,

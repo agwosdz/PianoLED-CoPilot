@@ -259,6 +259,50 @@ def set_key_offset(midi_note):
         }), 500
 
 
+@calibration_bp.route('/key-offset/<int:midi_note>', methods=['DELETE'])
+def delete_key_offset(midi_note):
+    """Delete the offset for a specific key"""
+    try:
+        if not (0 <= midi_note <= 127):
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'MIDI note must be between 0 and 127'
+            }), 400
+        
+        settings_service = get_settings_service()
+        
+        # Get current offsets
+        key_offsets = settings_service.get_setting('calibration', 'key_offsets', {}) or {}
+        
+        # Remove offset for this key if it exists
+        if str(midi_note) in key_offsets:
+            del key_offsets[str(midi_note)]
+            
+            # Save updated offsets
+            settings_service.set_setting('calibration', 'key_offsets', key_offsets)
+            settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
+            
+            # Broadcast offset change
+            socketio = get_socketio()
+            socketio.emit('key_offset_changed', {
+                'midi_note': midi_note,
+                'offset': 0
+            })
+            
+            logger.info(f"Key offset for MIDI note {midi_note} deleted")
+        
+        return jsonify({
+            'message': 'Key offset deleted',
+            'midi_note': midi_note
+        }), 200
+    except Exception as e:
+        logger.error(f"Error deleting key offset: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to delete offset for MIDI note {midi_note}'
+        }), 500
+
+
 @calibration_bp.route('/key-offsets', methods=['GET'])
 def get_all_key_offsets():
     """Get all key offsets"""
