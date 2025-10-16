@@ -72,6 +72,7 @@ class MidiEventProcessor:
         self.led_orientation: str = 'normal'
         self._configured_led_count: int = 1
         self._controller_led_capacity: int = 1
+        self._calibration_adjusted_led_count: int = 1  # NEW: Store calibration-adjusted LED count
         
         # Calibration offsets
         self.global_offset: int = 0
@@ -252,8 +253,10 @@ class MidiEventProcessor:
                         "MIDI processor: Using calibration range [%d-%d] (%d available) for mapping instead of total %d",
                         start_led, end_led, available_led_range, self.num_leds
                     )
-                    self.num_leds = available_led_range
+                    self._calibration_adjusted_led_count = available_led_range
                     self.mapping_base_offset = start_led
+                else:
+                    self._calibration_adjusted_led_count = self.num_leds
                 
                 key_offsets_raw = get_setting('calibration', 'key_offsets', {}) or {}
                 # Normalize key_offsets to ensure midi note keys are integers
@@ -291,7 +294,7 @@ class MidiEventProcessor:
     def _sync_controller_geometry(self) -> None:
         controller_leds = getattr(self._led_controller, 'num_pixels', None)
         if isinstance(controller_leds, int) and controller_leds > 0:
-            if controller_leds != self.num_leds:
+            if controller_leds != self._configured_led_count:
                 logger.debug(
                     "MidiEventProcessor aligning LED capacity (configured=%s controller=%s)",
                     self._configured_led_count,
@@ -301,7 +304,9 @@ class MidiEventProcessor:
         else:
             self._controller_led_capacity = self._configured_led_count
 
-        self.num_leds = max(1, min(self._configured_led_count, self._controller_led_capacity))
+        # Use calibration-adjusted LED count for mapping, not total
+        # This ensures proportional distribution across actual available range
+        self.num_leds = max(1, min(self._calibration_adjusted_led_count, self._controller_led_capacity))
 
         controller_orientation = getattr(self._led_controller, 'led_orientation', None)
         if isinstance(controller_orientation, str) and controller_orientation:
