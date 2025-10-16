@@ -660,12 +660,13 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     Args:
         piano_size: Piano size (e.g., "88-key")
         led_count: Total number of LEDs
-        led_orientation: LED orientation ("normal" or "reversed")
+        led_orientation: LED orientation ("normal" or "reversed") - NOT applied here, 
+                        physical reversal happens in LEDController._map_led_index()
         leds_per_key: Number of LEDs per key (overrides calculation if provided)
         mapping_base_offset: Base offset for the entire mapping (default: 0)
     
     Returns:
-        dict: Mapping of MIDI note to list of LED indices
+        dict: Mapping of MIDI note to list of LED indices (logical, not physical)
     """
     specs = get_piano_specs(piano_size)
     key_count = specs["keys"]
@@ -706,23 +707,10 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
         else:
             key_led_count = leds_per_key
         
-        # Create LED range for this key
+        # Create LED range for this key (logical indices only)
         led_range = list(range(led_index, led_index + key_led_count))
-        
-        # Reverse LED order if orientation is reversed
-        if led_orientation == "reversed":
-            led_range = led_range[::-1]
-        
         mapping[midi_note] = led_range
         led_index += key_led_count
-    
-    # Reverse entire mapping if orientation is reversed
-    if led_orientation == "reversed":
-        total_leds = led_count - 1
-        reversed_mapping = {}
-        for midi_note, led_list in mapping.items():
-            reversed_mapping[midi_note] = [total_leds - led for led in led_list]
-        mapping = reversed_mapping
     
     return mapping
 
