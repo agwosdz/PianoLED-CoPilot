@@ -92,8 +92,9 @@ except Exception:
 led_controller = None
 led_effects_manager = None
 
-# Global flag to track if startup animation has run (will be set on first init)
-_startup_animation_completed = False
+# Track startup animation completion - use a set to persist across module reloads
+# This prevents the startup animation from re-triggering if the module is reloaded
+_startup_animation_states = {'completed': False}
 
 try:
     led_controller = LEDController(settings_service=settings_service)
@@ -103,15 +104,15 @@ try:
     logger.info(f"LED controller and effects manager initialized successfully with {actual_led_count} LEDs")
     
     # Play startup animation on first initialization only
-    if led_effects_manager and led_controller and not _startup_animation_completed:
+    if led_effects_manager and led_controller and not _startup_animation_states.get('completed', False):
         try:
             logger.info("🎹 Triggering fancy startup animation...")
             led_effects_manager.startup_animation(duration=2.5)
-            _startup_animation_completed = True
+            _startup_animation_states['completed'] = True
             logger.info("✨ Startup animation completed - will not repeat on config changes")
         except Exception as e:
             logger.warning(f"Startup animation failed: {e}")
-            _startup_animation_completed = True  # Mark as done even on failure to avoid retries
+            _startup_animation_states['completed'] = True  # Mark as done even on failure to avoid retries
             
 except Exception as e:
     logger.warning(f"LED controller initialization failed: {e}")
@@ -1071,7 +1072,7 @@ def trigger_startup_animation():
         force = data.get('force', False)  # Optional: force animation even if already run
         
         # Check if startup animation already ran
-        if _startup_animation_completed and not force:
+        if _startup_animation_states.get('completed', False) and not force:
             logger.info("⚠️  Startup animation already completed on initialization. Use force=true to re-run.")
             return jsonify({
                 'success': False,
