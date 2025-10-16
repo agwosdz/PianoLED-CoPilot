@@ -92,22 +92,22 @@
       <input
         id="global-offset"
         type="range"
-        min="-10"
-        max="10"
+        min="0"
+        max="20"
         step="1"
         value={globalOffsetValue}
         on:change={handleGlobalOffsetChange}
         disabled={$calibrationUI.isLoading}
       />
       <div class="slider-labels">
-        <span>-10</span>
         <span>0</span>
-        <span>+10</span>
+        <span>10</span>
+        <span>20</span>
       </div>
     </div>
 
     <p class="offset-description">
-      Uniformly shifts all LEDs left or right to account for LED strip position
+      Uniformly shifts all LEDs forward (0-20) to account for LED strip position
     </p>
   </div>
 

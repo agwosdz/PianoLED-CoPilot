@@ -490,3 +490,57 @@ def import_calibration():
             'error': 'Internal Server Error',
             'message': 'Failed to import calibration data'
         }), 500
+
+
+@calibration_bp.route('/test-led/<int:led_index>', methods=['POST'])
+def test_led(led_index: int):
+    """Light up a specific LED for calibration testing (3 seconds)"""
+    try:
+        # Import here to avoid circular imports
+        from app import led_controller
+        
+        if not led_controller:
+            return jsonify({
+                'error': 'Service Unavailable',
+                'message': 'LED controller not available'
+            }), 503
+        
+        # Validate LED index
+        led_count = led_controller.led_count
+        if led_index < 0 or led_index >= led_count:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': f'LED index must be between 0 and {led_count - 1}'
+            }), 400
+        
+        # Light up the LED with a bright color (white/cyan)
+        led_controller.turn_on_led(led_index, (0, 255, 255), auto_show=True)
+        
+        # Schedule turning off after 3 seconds
+        socketio = get_socketio()
+        socketio.start_background_task(_turn_off_led_after_delay, led_index, 3)
+        
+        logger.info(f"Test LED {led_index} lit for calibration")
+        return jsonify({
+            'message': f'LED {led_index} lit for 3 seconds',
+            'led_index': led_index
+        }), 200
+    except Exception as e:
+        logger.error(f"Error testing LED: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to test LED: {str(e)}'
+        }), 500
+
+
+def _turn_off_led_after_delay(led_index: int, delay_seconds: int):
+    """Turn off LED after specified delay"""
+    import time
+    try:
+        from app import led_controller
+        time.sleep(delay_seconds)
+        if led_controller:
+            led_controller.turn_off_led(led_index)
+            logger.info(f"Test LED {led_index} turned off after {delay_seconds}s")
+    except Exception as e:
+        logger.error(f"Error turning off LED: {e}")

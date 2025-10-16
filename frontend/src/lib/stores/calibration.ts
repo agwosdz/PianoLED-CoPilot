@@ -240,7 +240,7 @@ class CalibrationService {
   }
 
   async setGlobalOffset(offset: number): Promise<void> {
-    const clamped = Math.max(-10, Math.min(10, offset));
+    const clamped = Math.max(0, Math.min(20, offset));
     
     calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
     
@@ -253,6 +253,17 @@ class CalibrationService {
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Light up the LED at the offset index for visualization
+      try {
+        await fetch(`${this.baseUrl}/test-led/${clamped}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (ledError) {
+        console.warn('Failed to light LED for visualization:', ledError);
+        // Don't fail the whole operation if LED lighting fails
       }
 
       await this.loadStatus();

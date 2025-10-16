@@ -187,7 +187,7 @@ class SettingsService:
                 'mapping_base_offset': {'type': 'number', 'default': 0, 'min': 0, 'max': 1000}
             },
             'calibration': {
-                'global_offset': {'type': 'number', 'default': 0, 'min': -100, 'max': 100, 'description': 'Global LED offset to shift all mappings'},
+                'global_offset': {'type': 'number', 'default': 0, 'min': 0, 'max': 20, 'description': 'Global LED offset to shift all mappings (0-20)'},
                 'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key offset adjustments {midi_note: offset_value}'},
                 'calibration_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable per-key calibration offsets'},
                 'calibration_mode': {'type': 'string', 'default': 'none', 'enum': ['none', 'assisted', 'manual'], 'description': 'Calibration mode'},
