@@ -36,9 +36,29 @@ except ImportError:
             return default
 
 class LEDController:
-    """Controller for WS2812B LED strip using rpi_ws281x library."""
+    """Controller for WS2812B LED strip using rpi_ws281x library.
+    
+    Implements singleton pattern to ensure only one instance exists.
+    """
+    
+    _instance: Optional['LEDController'] = None
+    _initialized: bool = False
+
+    def __new__(cls, pin=None, num_pixels=None, brightness=None, settings_service=None):
+        """Singleton implementation - return existing instance if available."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._initialized = False
+        return cls._instance
 
     def __init__(self, pin=None, num_pixels=None, brightness=None, settings_service=None):
+        """Initialize only once per singleton instance."""
+        # Skip re-initialization if already initialized
+        if LEDController._initialized:
+            logger.debug("LEDController singleton already initialized, skipping __init__")
+            return
+        
+        LEDController._initialized = True
         self.settings_service = settings_service
 
         # Runtime hardware handles
@@ -108,6 +128,18 @@ class LEDController:
             self.led_dma = int(get_config('led_dma', 10))
             self.led_invert = bool(get_config('led_invert', False))
             self.gamma_factor = float(get_config('gamma_correction', 2.2))
+
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Reset the singleton instance. WARNING: Use only for testing or emergency recovery."""
+        if cls._instance is not None:
+            try:
+                cls._instance._cleanup_strip()
+            except Exception as e:
+                logger.warning(f"Error during singleton reset cleanup: {e}")
+        cls._instance = None
+        cls._initialized = False
+        logger.info("LEDController singleton has been reset")
 
     def _resolve_strip_type(self, strip_type_name: Optional[str]) -> int:
         if not ws:
