@@ -1,24 +1,28 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { calibrationState, calibrationUI, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset, setGlobalOffset } from '$lib/stores/calibration';
+  import { calibrationState, calibrationUI, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset, setStartLed, setEndLed } from '$lib/stores/calibration';
   import { settings } from '$lib/stores/settings';
   import type { KeyOffset } from '$lib/stores/calibration';
 
-  let globalOffsetValue = 0;
+  let startLedValue = 0;
+  let endLedValue = 245;
   let editingKeyNote: number | null = null;
   let editingKeyOffset = 0;
   let newKeyMidiNote = '';
   let newKeyOffset = 0;
   let showAddForm = false;
-  let ledCount = 0;
-  let validLedRange = { min: 0, max: 0 };
+  let ledCount = 246;
+  let lastLitLedIndex: number | null = null; // Track which LED was last lit for cleanup
 
-  $: globalOffsetValue = $calibrationState.global_offset;
-  $: ledCount = $settings?.led?.led_count || 0;
-  $: validLedRange = {
-    min: 0,
-    max: Math.max(0, ledCount - 1 - globalOffsetValue)
-  };
+  $: startLedValue = $calibrationState.start_led;
+  $: endLedValue = $calibrationState.end_led;
+  $: ledCount = $settings?.led?.led_count || 246;
+  $: {
+    // Update default end_led if it hasn't been explicitly set and ledCount changes
+    if (endLedValue === 245 && ledCount !== 246) {
+      endLedValue = ledCount - 1;
+    }
+  }
 
   onMount(() => {
     // Listen for populateMidiNote event from settings page
@@ -43,14 +47,59 @@
     newKeyOffset = 0;
   }
 
-  async function handleGlobalOffsetChange(e: Event) {
+  async function turnOffPreviousLed(): Promise<void> {
+    if (lastLitLedIndex !== null) {
+      try {
+        await fetch('/api/hardware-test/led/off', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        lastLitLedIndex = null;
+      } catch (error) {
+        console.warn('Failed to turn off previous LED:', error);
+      }
+    }
+  }
+
+  async function lightUpLed(ledIndex: number): Promise<void> {
+    try {
+      // Turn off any previously lit LED first
+      await turnOffPreviousLed();
+      
+      // Light up the new LED
+      await fetch('/api/calibration/test-led/' + ledIndex, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      lastLitLedIndex = ledIndex;
+    } catch (error) {
+      console.warn('Failed to light LED:', error);
+    }
+  }
+
+  async function handleStartLedChange(e: Event) {
     const target = e.target as HTMLInputElement;
     const value = parseInt(target.value, 10);
     if (Number.isFinite(value)) {
-      // Update local state immediately for responsive UI
-      globalOffsetValue = value;
-      // Then sync with backend
-      await setGlobalOffset(value);
+      // Ensure start_led doesn't exceed end_led
+      if (value <= endLedValue) {
+        startLedValue = value;
+        await lightUpLed(value);
+        await setStartLed(value);
+      }
+    }
+  }
+
+  async function handleEndLedChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const value = parseInt(target.value, 10);
+    if (Number.isFinite(value)) {
+      // Ensure end_led doesn't go below start_led
+      if (value >= startLedValue) {
+        endLedValue = value;
+        await lightUpLed(value);
+        await setEndLed(value);
+      }
     }
   }
 
@@ -109,38 +158,83 @@
 
 <div class="calibration-section-2">
   <div class="section-intro">
-    <h3>Offset Adjustment</h3>
-    <p>Configure global and per-key LED offsets to align with your piano keys.</p>
+    <h3>LED Strip Alignment</h3>
+    <p>Define the mappable area of your LED strip by setting where the piano begins and ends.</p>
   </div>
 
-  <!-- Global Offset Section -->
-  <div class="global-offset-container">
-    <div class="offset-header">
-      <label for="global-offset">Global Offset</label>
-      <span class="offset-value">{globalOffsetValue > 0 ? '+' : ''}{globalOffsetValue}</span>
-    </div>
-    
-    <div class="slider-container">
-      <input
-        id="global-offset"
-        type="range"
-        min="0"
-        max="20"
-        step="1"
-        value={globalOffsetValue}
-        on:change={handleGlobalOffsetChange}
-        disabled={$calibrationUI.isLoading}
-      />
-      <div class="slider-labels">
-        <span>0</span>
-        <span>10</span>
-        <span>20</span>
+  <!-- Start and End LED Adjustment Section -->
+  <div class="led-range-container">
+    <!-- Start LED (Set First LED) -->
+    <div class="led-adjustment-item">
+      <div class="adjustment-header">
+        <label for="start-led">Set First LED</label>
+        <span class="led-value">{startLedValue}</span>
       </div>
+      
+      <div class="slider-container">
+        <input
+          id="start-led"
+          type="range"
+          min="0"
+          max="20"
+          step="1"
+          value={startLedValue}
+          on:change={handleStartLedChange}
+          disabled={$calibrationUI.isLoading}
+        />
+        <div class="slider-labels">
+          <span>0</span>
+          <span>10</span>
+          <span>20</span>
+        </div>
+      </div>
+
+      <p class="adjustment-description">
+        Set this to the first LED index at the beginning of your piano keyboard. Range: 0–20. This defines the left boundary of the mappable LED area.
+      </p>
     </div>
 
-    <p class="offset-description">
-      Adjust the slider until the LED lights up at the beginning of your first key (leftmost white key). This offset shifts all LEDs to align with your piano keys.
-    </p>
+    <!-- End LED (Set Last LED) -->
+    <div class="led-adjustment-item">
+      <div class="adjustment-header">
+        <label for="end-led">Set Last LED</label>
+        <span class="led-value">{endLedValue}</span>
+      </div>
+      
+      <div class="slider-container">
+        <input
+          id="end-led"
+          type="range"
+          min={Math.max(0, ledCount - 20)}
+          max={Math.max(0, ledCount - 1)}
+          step="1"
+          value={endLedValue}
+          on:change={handleEndLedChange}
+          disabled={$calibrationUI.isLoading}
+        />
+        <div class="slider-labels">
+          <span>{Math.max(0, ledCount - 20)}</span>
+          <span>{Math.floor((Math.max(0, ledCount - 20) + Math.max(0, ledCount - 1)) / 2)}</span>
+          <span>{Math.max(0, ledCount - 1)}</span>
+        </div>
+      </div>
+
+      <p class="adjustment-description">
+        Set this to the last LED index at the end of your piano keyboard. Range: {ledCount - 20}–{ledCount - 1}. This defines the right boundary of the mappable LED area, leaving LEDs 0–{Math.min(19, ledCount - 1)} for overflow.
+      </p>
+    </div>
+
+    <!-- Mapping Range Info -->
+    <div class="mapping-info">
+      <div class="info-item">
+        <span class="info-label">Mappable LED Range:</span>
+        <span class="info-value">{startLedValue} — {endLedValue}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Total LEDs in Range:</span>
+        <span class="info-value">{Math.max(0, endLedValue - startLedValue + 1)}</span>
+      </div>
+    </div>
   </div>
 
   <!-- Per-Key Offsets Section -->
@@ -326,6 +420,88 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+  }
+
+  .led-range-container {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 10px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .led-adjustment-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+  }
+
+  .adjustment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .adjustment-header label {
+    margin: 0;
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.95rem;
+  }
+
+  .led-value {
+    background: #dbeafe;
+    border: 2px solid #2563eb;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-weight: 700;
+    color: #1e40af;
+    font-size: 0.9rem;
+    min-width: 60px;
+    text-align: center;
+  }
+
+  .adjustment-description {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .mapping-info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    background: #ecfdf5;
+    border: 1px solid #86efac;
+    border-radius: 8px;
+  }
+
+  .info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .info-label {
+    font-weight: 600;
+    color: #065f46;
+    font-size: 0.9rem;
+  }
+
+  .info-value {
+    font-weight: 700;
+    color: #059669;
+    font-size: 0.9rem;
   }
 
   .offset-header {

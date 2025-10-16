@@ -224,7 +224,7 @@
     await turnOffAllLeds();
     console.log(`[LED] All LEDs cleared, now proceeding with new key selection`);
 
-    // Select new key and light it up
+    // Select new key and light it up with appropriate color
     console.log(`[LED] Selecting key ${midiNote} and lighting up LEDs...`);
     selectedNote = midiNote;
     const ledIndices = ledMapping[midiNote];
@@ -235,7 +235,12 @@
       const validIndices = ledIndices.filter(idx => typeof idx === 'number' && Number.isFinite(idx));
       if (validIndices.length > 0) {
         console.log(`[LED] Lighting up ${validIndices.length} valid LEDs using batch endpoint...`);
-        await lightUpLedRange(validIndices);
+        
+        // Determine which color to use based on whether it's a black or white key
+        const keyColor = isBlackKey(midiNote) ? BLACK_KEY_COLOR : WHITE_KEY_COLOR;
+        console.log(`[LED] Using ${isBlackKey(midiNote) ? 'black' : 'white'} key color: RGB(${keyColor.r},${keyColor.g},${keyColor.b})`);
+        
+        await lightUpLedRangeWithColor(validIndices, keyColor);
       } else {
         console.warn(`[LED] No valid LED indices found for key ${midiNote}`);
       }
@@ -320,6 +325,14 @@
         layoutVisualizationActive = false;
         showingLayoutVisualization = false;
       }
+    }
+  }
+
+  function handleKeyPressWhileVisualizingLayout(event: KeyboardEvent | MouseEvent): void {
+    // If layout visualization is active and a key is pressed, turn it off
+    if (layoutVisualizationActive) {
+      console.log('[LED] Key/click detected during layout visualization, turning off');
+      toggleLayoutVisualization();
     }
   }
 
@@ -479,7 +492,10 @@
           } ${hoveredNote === key.midiNote ? 'hovered' : ''} ${
             key.offset !== 0 ? 'has-offset' : ''
           }`}
-          on:click={() => handleKeyClick(key.midiNote)}
+          on:click={(e) => {
+            handleKeyPressWhileVisualizingLayout(e);
+            handleKeyClick(key.midiNote);
+          }}
           on:mouseenter={() => handleKeyHover(key.midiNote)}
           on:mouseleave={() => handleKeyHover(null)}
           title={`${key.noteName} (MIDI ${key.midiNote})`}
@@ -664,11 +680,46 @@
       <span>Has Custom Offset</span>
     </div>
     <div class="legend-divider"></div>
-    <div class="legend-item color-sample white-key">
-      <span>White Key LED: RGB(0, 100, 150)</span>
-    </div>
-    <div class="legend-item color-sample black-key">
-      <span>Black Key LED: RGB(150, 0, 100)</span>
+    
+    <!-- Color Pickers -->
+    <div class="legend-color-pickers">
+      <div class="color-picker-group">
+        <label for="white-key-color-legend">White Key:</label>
+        <input
+          id="white-key-color-legend"
+          type="color"
+          value="#{WHITE_KEY_COLOR.r.toString(16).padStart(2, '0')}{WHITE_KEY_COLOR.g.toString(16).padStart(2, '0')}{WHITE_KEY_COLOR.b.toString(16).padStart(2, '0')}"
+          on:change={(e) => {
+            const hex = e.currentTarget.value.slice(1);
+            WHITE_KEY_COLOR = {
+              r: parseInt(hex.slice(0, 2), 16),
+              g: parseInt(hex.slice(2, 4), 16),
+              b: parseInt(hex.slice(4, 6), 16)
+            };
+            console.log('[LED] White key color changed:', WHITE_KEY_COLOR);
+          }}
+          title="Select white key LED color"
+        />
+      </div>
+      
+      <div class="color-picker-group">
+        <label for="black-key-color-legend">Black Key:</label>
+        <input
+          id="black-key-color-legend"
+          type="color"
+          value="#{BLACK_KEY_COLOR.r.toString(16).padStart(2, '0')}{BLACK_KEY_COLOR.g.toString(16).padStart(2, '0')}{BLACK_KEY_COLOR.b.toString(16).padStart(2, '0')}"
+          on:change={(e) => {
+            const hex = e.currentTarget.value.slice(1);
+            BLACK_KEY_COLOR = {
+              r: parseInt(hex.slice(0, 2), 16),
+              g: parseInt(hex.slice(2, 4), 16),
+              b: parseInt(hex.slice(4, 6), 16)
+            };
+            console.log('[LED] Black key color changed:', BLACK_KEY_COLOR);
+          }}
+          title="Select black key LED color"
+        />
+      </div>
     </div>
   </div>
 
@@ -684,7 +735,7 @@
       <strong>Keys with Custom Offsets:</strong> {Object.keys($calibrationState.key_offsets).length}
     </p>
     <p>
-      <strong>Global Offset:</strong> {$calibrationState.global_offset > 0 ? '+' : ''}{$calibrationState.global_offset}
+      <strong>LED Range:</strong> {$calibrationState.start_led} — {$calibrationState.end_led}
     </p>
     <p>
       <strong>Status:</strong>
@@ -1203,6 +1254,7 @@
     border-radius: 8px;
     border: 1px solid #e2e8f0;
     align-items: center;
+    justify-content: flex-start;
   }
 
   .legend-divider {
@@ -1267,6 +1319,49 @@
   .legend-item span {
     font-size: 0.9rem;
     color: #0f172a;
+  }
+
+  .legend-color-pickers {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .legend-color-pickers .color-picker-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+  }
+
+  .legend-color-pickers .color-picker-group label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0;
+  }
+
+  .legend-color-pickers .color-picker-group input[type="color"] {
+    width: 56px;
+    height: 40px;
+    border: 2px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .legend-color-pickers .color-picker-group input[type="color"]:hover {
+    border-color: #64748b;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .legend-color-pickers .color-picker-group input[type="color"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
 
   .info-box {
@@ -1360,5 +1455,58 @@
       border-radius: 8px 8px 0 0;
       z-index: 100;
     }
+  }
+
+  .color-selectors {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .color-picker-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .color-picker-group label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .color-picker-input {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .color-picker-input input[type="color"] {
+    width: 60px;
+    height: 40px;
+    border: 2px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .color-picker-input input[type="color"]:hover {
+    border-color: #64748b;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .color-picker-input input[type="color"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .color-label {
+    font-size: 0.85rem;
+    color: #64748b;
+    font-family: 'Monaco', 'Courier New', monospace;
+    background: #f1f5f9;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
   }
 </style>

@@ -51,7 +51,8 @@ def get_calibration_status():
         status = {
             'enabled': settings_service.get_setting('calibration', 'calibration_enabled', False),
             'mode': settings_service.get_setting('calibration', 'calibration_mode', 'none'),
-            'global_offset': settings_service.get_setting('calibration', 'global_offset', 0),
+            'start_led': settings_service.get_setting('calibration', 'start_led', 0),
+            'end_led': settings_service.get_setting('calibration', 'end_led', 245),
             'key_offsets': settings_service.get_setting('calibration', 'key_offsets', {}),
             'last_calibration': settings_service.get_setting('calibration', 'last_calibration', ''),
             'mapping_base_offset': settings_service.get_setting('led', 'mapping_base_offset', 0),
@@ -114,64 +115,102 @@ def disable_calibration():
         }), 500
 
 
-@calibration_bp.route('/global-offset', methods=['GET'])
-def get_global_offset():
-    """Get the global LED offset"""
-    try:
-        settings_service = get_settings_service()
-        offset = settings_service.get_setting('calibration', 'global_offset', 0)
-        
-        return jsonify({'global_offset': offset}), 200
-    except Exception as e:
-        logger.error(f"Error getting global offset: {e}")
-        return jsonify({
-            'error': 'Internal Server Error',
-            'message': 'Failed to retrieve global offset'
-        }), 500
-
-
-@calibration_bp.route('/global-offset', methods=['PUT'])
-def set_global_offset():
-    """Set the global LED offset"""
+@calibration_bp.route('/start-led', methods=['PUT'])
+def set_start_led():
+    """Set the first LED index at the beginning of the piano"""
     try:
         data = request.get_json()
-        if not data or 'global_offset' not in data:
+        if not data or 'start_led' not in data:
             return jsonify({
                 'error': 'Bad Request',
-                'message': 'Request must include "global_offset" field'
+                'message': 'Request must include "start_led" field'
             }), 400
         
-        offset = data['global_offset']
+        start_led = data['start_led']
         
-        # Validate offset is an integer in acceptable range
+        # Validate start_led is an integer in acceptable range
         try:
-            offset = int(offset)
-            if not (-100 <= offset <= 100):
+            start_led = int(start_led)
+            led_count = get_settings_service().get_setting('led', 'led_count', 246)
+            if not (0 <= start_led < led_count):
                 return jsonify({
                     'error': 'Validation Error',
-                    'message': 'global_offset must be between -100 and 100'
+                    'message': f'start_led must be between 0 and {led_count - 1}'
                 }), 400
         except (TypeError, ValueError):
             return jsonify({
                 'error': 'Validation Error',
-                'message': 'global_offset must be an integer'
+                'message': 'start_led must be an integer'
             }), 400
         
         settings_service = get_settings_service()
-        settings_service.set_setting('calibration', 'global_offset', offset)
+        settings_service.set_setting('calibration', 'start_led', start_led)
         settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
         
-        # Broadcast offset change
+        # Broadcast start_led change
         socketio = get_socketio()
-        socketio.emit('global_offset_changed', {'global_offset': offset})
+        socketio.emit('start_led_changed', {'start_led': start_led})
         
-        logger.info(f"Global offset set to {offset}")
+        logger.info(f"Start LED set to {start_led}")
         return jsonify({
-            'message': 'Global offset updated',
-            'global_offset': offset
+            'message': 'Start LED updated',
+            'start_led': start_led
         }), 200
     except Exception as e:
-        logger.error(f"Error setting global offset: {e}")
+        logger.error(f"Error setting start LED: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to set start LED'
+        }), 500
+
+
+@calibration_bp.route('/end-led', methods=['PUT'])
+def set_end_led():
+    """Set the last LED index at the end of the piano"""
+    try:
+        data = request.get_json()
+        if not data or 'end_led' not in data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Request must include "end_led" field'
+            }), 400
+        
+        end_led = data['end_led']
+        
+        # Validate end_led is an integer in acceptable range
+        try:
+            end_led = int(end_led)
+            led_count = get_settings_service().get_setting('led', 'led_count', 246)
+            if not (0 <= end_led < led_count):
+                return jsonify({
+                    'error': 'Validation Error',
+                    'message': f'end_led must be between 0 and {led_count - 1}'
+                }), 400
+        except (TypeError, ValueError):
+            return jsonify({
+                'error': 'Validation Error',
+                'message': 'end_led must be an integer'
+            }), 400
+        
+        settings_service = get_settings_service()
+        settings_service.set_setting('calibration', 'end_led', end_led)
+        settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
+        
+        # Broadcast end_led change
+        socketio = get_socketio()
+        socketio.emit('end_led_changed', {'end_led': end_led})
+        
+        logger.info(f"End LED set to {end_led}")
+        return jsonify({
+            'message': 'End LED updated',
+            'end_led': end_led
+        }), 200
+    except Exception as e:
+        logger.error(f"Error setting end LED: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to set end LED'
+        }), 500
         return jsonify({
             'error': 'Internal Server Error',
             'message': 'Failed to set global offset'
@@ -409,8 +448,10 @@ def reset_calibration():
     """Reset all calibration offsets to defaults"""
     try:
         settings_service = get_settings_service()
+        led_count = settings_service.get_setting('led', 'led_count', 246)
         
-        settings_service.set_setting('calibration', 'global_offset', 0)
+        settings_service.set_setting('calibration', 'start_led', 0)
+        settings_service.set_setting('calibration', 'end_led', led_count - 1)
         settings_service.set_setting('calibration', 'key_offsets', {})
         settings_service.set_setting('calibration', 'calibration_enabled', False)
         settings_service.set_setting('calibration', 'calibration_mode', 'none')
@@ -418,7 +459,8 @@ def reset_calibration():
         # Broadcast reset
         socketio = get_socketio()
         socketio.emit('calibration_reset', {
-            'global_offset': 0,
+            'start_led': 0,
+            'end_led': led_count - 1,
             'key_offsets': {},
             'enabled': False
         })

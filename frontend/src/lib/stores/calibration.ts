@@ -11,7 +11,8 @@ import { getSocket } from '$lib/socket';
 export interface CalibrationState {
   enabled: boolean;
   calibration_enabled: boolean;
-  global_offset: number;
+  start_led: number;
+  end_led: number;
   key_offsets: Record<number, number>;
   calibration_mode: 'none' | 'assisted' | 'manual';
   last_calibration: string | null;
@@ -57,7 +58,8 @@ export function getMidiNoteFromName(name: string): number | null {
 const defaultCalibrationState: CalibrationState = {
   enabled: false,
   calibration_enabled: false,
-  global_offset: 0,
+  start_led: 0,
+  end_led: 245,
   key_offsets: {},
   calibration_mode: 'none',
   last_calibration: null
@@ -98,7 +100,7 @@ export const hasKeyOffsets = derived(keyOffsetsList, ($list: KeyOffset[]) => $li
 
 export const isCalibrationActive = derived(
   calibrationState,
-  ($state: CalibrationState) => $state.enabled && ($state.global_offset !== 0 || Object.keys($state.key_offsets).length > 0)
+  ($state: CalibrationState) => $state.enabled && (Object.keys($state.key_offsets).length > 0 || $state.start_led !== 0 || $state.end_led !== 245)
 );
 
 // API service class
@@ -166,7 +168,8 @@ class CalibrationService {
       const state: CalibrationState = {
         enabled: data.calibration_enabled ?? false,
         calibration_enabled: data.calibration_enabled ?? false,
-        global_offset: data.global_offset ?? 0,
+        start_led: data.start_led ?? 0,
+        end_led: data.end_led ?? 245,
         key_offsets: this.normalizeKeyOffsets(data.key_offsets ?? {}),
         calibration_mode: data.calibration_mode ?? 'none',
         last_calibration: data.last_calibration ?? null
@@ -239,31 +242,28 @@ class CalibrationService {
     }
   }
 
-  async setGlobalOffset(offset: number): Promise<void> {
-    const clamped = Math.max(0, Math.min(20, offset));
-    
+  async setStartLed(ledIndex: number): Promise<void> {
     calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
     
     try {
-      const response = await fetch(`${this.baseUrl}/global-offset`, {
+      const response = await fetch(`${this.baseUrl}/start-led`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ global_offset: clamped })
+        body: JSON.stringify({ start_led: ledIndex })
       });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      // Light up the LED at the offset index for visualization
+      // Light up the LED at the start index for visualization
       try {
-        await fetch(`${this.baseUrl}/test-led/${clamped}`, {
+        await fetch(`${this.baseUrl}/test-led/${ledIndex}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
       } catch (ledError) {
         console.warn('Failed to light LED for visualization:', ledError);
-        // Don't fail the whole operation if LED lighting fails
       }
 
       await this.loadStatus();
@@ -275,17 +275,35 @@ class CalibrationService {
     }
   }
 
-  async getGlobalOffset(): Promise<number> {
+  async setEndLed(ledIndex: number): Promise<void> {
+    calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
+    
     try {
-      const response = await fetch(`${this.baseUrl}/global-offset`);
+      const response = await fetch(`${this.baseUrl}/end-led`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ end_led: ledIndex })
+      });
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      return data.global_offset ?? 0;
+      // Light up the LED at the end index for visualization
+      try {
+        await fetch(`${this.baseUrl}/test-led/${ledIndex}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (ledError) {
+        console.warn('Failed to light LED for visualization:', ledError);
+      }
+
+      await this.loadStatus();
+      calibrationUI.update(ui => ({ ...ui, isLoading: false }));
     } catch (error) {
-      console.error('Failed to get global offset:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      calibrationUI.update(ui => ({ ...ui, isLoading: false, error: message }));
       throw error;
     }
   }
@@ -453,7 +471,8 @@ export const calibrationService = new CalibrationService();
 export const loadCalibration = (): Promise<CalibrationState> => calibrationService.loadStatus();
 export const enableCalibration = (): Promise<void> => calibrationService.enableCalibration();
 export const disableCalibration = (): Promise<void> => calibrationService.disableCalibration();
-export const setGlobalOffset = (offset: number): Promise<void> => calibrationService.setGlobalOffset(offset);
+export const setStartLed = (ledIndex: number): Promise<void> => calibrationService.setStartLed(ledIndex);
+export const setEndLed = (ledIndex: number): Promise<void> => calibrationService.setEndLed(ledIndex);
 export const setKeyOffset = (midiNote: number, offset: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset);
 export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyOffset(midiNote);
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();
