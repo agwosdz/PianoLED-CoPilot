@@ -177,10 +177,15 @@
     await loadSettingsData();
     await refreshMidiStatuses();
     await loadCalibrationData();
+
+    // Listen for openAddOffset event from CalibrationSection3
+    window.addEventListener('openAddOffset', handleOpenAddOffset as EventListener);
   });
 
   onDestroy(() => {
     clearPatternResetTimer();
+    // Clean up event listener
+    window.removeEventListener('openAddOffset', handleOpenAddOffset as EventListener);
   });
 
   async function loadSettingsData() {
@@ -232,6 +237,24 @@
       draft.piano_end_note = pianoDetails.endNote;
       draft.key_mapping_mode = pianoDetails.keyMapping ?? draft.key_mapping_mode ?? 'chromatic';
     });
+  }
+
+  function handleOpenAddOffset(event: Event) {
+    const customEvent = event as CustomEvent<{ midiNote: number }>;
+    const { midiNote } = customEvent.detail;
+    
+    // Find CalibrationSection2 element and scroll it into view
+    const section2Element = document.querySelector('[data-section="calibration-2"]');
+    if (section2Element) {
+      section2Element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      
+      // Dispatch event to CalibrationSection2 to populate the MIDI note field
+      const populateEvent = new CustomEvent('populateMidiNote', { 
+        detail: { midiNote },
+        bubbles: true 
+      });
+      section2Element.dispatchEvent(populateEvent);
+    }
   }
 
   function handleDataPinChange(pin: number) {
@@ -792,7 +815,9 @@
         <div class="card-body">
           <div class="calibration-sections">
             <CalibrationSection1 />
-            <CalibrationSection2 />
+            <div data-section="calibration-2">
+              <CalibrationSection2 />
+            </div>
             <CalibrationSection3 />
           </div>
         </div>

@@ -628,6 +628,64 @@ def test_led(led_index: int):
         }), 200
 
 
+@calibration_bp.route('/led-on/<int:led_index>', methods=['POST'])
+def turn_on_led_persistent(led_index: int):
+    """Light up a specific LED persistently (stays on until turned off)"""
+    logger.info(f"Persistent LED on endpoint called for LED {led_index}")
+    
+    try:
+        led_controller = get_led_controller()
+        
+        if not led_controller:
+            logger.warning("LED controller is not available")
+            return jsonify({
+                'message': f'LED {led_index} on requested (LED controller not available)',
+                'led_index': led_index,
+                'status': 'unavailable'
+            }), 200
+        
+        # Validate LED index
+        try:
+            led_count = led_controller.num_pixels
+            logger.info(f"LED count: {led_count}")
+        except AttributeError as attr_error:
+            logger.error(f"LED controller has no num_pixels attribute: {attr_error}")
+            return jsonify({
+                'message': f'LED {led_index} on requested (LED controller error)',
+                'led_index': led_index,
+                'status': 'error'
+            }), 200
+        
+        if led_index < 0 or led_index >= led_count:
+            logger.warning(f"LED index {led_index} out of range (0-{led_count-1})")
+            return jsonify({
+                'error': 'Bad Request',
+                'message': f'LED index must be between 0 and {led_count - 1}'
+            }), 400
+        
+        # Light up the LED with white color (persistent)
+        logger.info(f"Lighting up LED {led_index} persistently")
+        success, error = led_controller.turn_on_led(led_index, (255, 255, 255), auto_show=True)
+        logger.info(f"LED turn_on_led returned: success={success}, error={error}")
+        
+        if not success:
+            logger.error(f"Failed to turn on LED: {error}")
+        
+        logger.info(f"LED {led_index} turned on persistently")
+        return jsonify({
+            'message': f'LED {led_index} turned on (persistent)',
+            'led_index': led_index
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error turning on LED {led_index}: {e}", exc_info=True)
+        return jsonify({
+            'message': f'LED {led_index} on requested',
+            'led_index': led_index,
+            'error': str(e)
+        }), 200
+
+
 def _turn_off_led_after_delay(led_index: int, delay_seconds: int):
     """Turn off LED after specified delay"""
     try:

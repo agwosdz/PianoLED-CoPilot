@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
-  import { calibrationState, getKeyLedMapping } from '$lib/stores/calibration';
+  import { calibrationState, calibrationUI, getKeyLedMapping } from '$lib/stores/calibration';
 
   // Piano size specifications for different keyboard types
   const PIANO_SPECS: Record<string, { keys: number; midiStart: number; midiEnd: number }> = {
@@ -88,8 +88,57 @@
     updatePianoSize();
   }
 
-  function handleKeyClick(midiNote: number) {
-    selectedNote = selectedNote === midiNote ? null : midiNote;
+  async function lightUpLedRange(ledIndices: number[]): Promise<void> {
+    if (!ledIndices || ledIndices.length === 0) return;
+    
+    try {
+      // Light up all LEDs in the range (persistent, white color)
+      for (const ledIndex of ledIndices) {
+        const response = await fetch(`/api/calibration/led-on/${ledIndex}`, {
+          method: 'POST'
+        });
+        if (!response.ok) {
+          console.warn(`Failed to light LED ${ledIndex}`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to light up LEDs:', error);
+    }
+  }
+
+  async function turnOffAllLeds(): Promise<void> {
+    try {
+      // Turn off all LEDs
+      const response = await fetch('/api/led/off', {
+        method: 'POST'
+      });
+      if (!response.ok) {
+        console.warn('Failed to turn off all LEDs');
+      }
+    } catch (error) {
+      console.error('Failed to turn off LEDs:', error);
+    }
+  }
+
+  async function handleKeyClick(midiNote: number) {
+    // If clicking the same key, deselect it
+    if (selectedNote === midiNote) {
+      selectedNote = null;
+      await turnOffAllLeds();
+      return;
+    }
+
+    // Turn off previous LEDs if any key was selected
+    if (selectedNote !== null) {
+      await turnOffAllLeds();
+    }
+
+    // Select new key and light it up
+    selectedNote = midiNote;
+    const ledIndices = ledMapping[midiNote];
+    if (ledIndices && ledIndices.length > 0) {
+      await lightUpLedRange(ledIndices);
+    }
   }
 
   function handleKeyHover(midiNote: number | null) {
@@ -106,6 +155,16 @@
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
+  }
+
+  function openAddOffsetForm(midiNote: number) {
+    // Dispatch event to parent or scroll to CalibrationSection2
+    // For now, we'll emit an event that parent can listen to
+    const event = new CustomEvent('openAddOffset', { 
+      detail: { midiNote },
+      bubbles: true 
+    });
+    window.dispatchEvent(event);
   }
 </script>
 
@@ -152,7 +211,10 @@
           <h4>{getMidiNoteName(selectedNote)} (MIDI {selectedNote})</h4>
           <button
             class="btn-close"
-            on:click={() => (selectedNote = null)}
+            on:click={async () => {
+              selectedNote = null;
+              await turnOffAllLeds();
+            }}
             title="Close"
           >
             ×
@@ -171,11 +233,11 @@
                 {/if}
               </span>
               <button
-                class="btn-copy"
-                on:click={() => selectedNote !== null && copyToClipboard(String(ledMapping[selectedNote][0]))}
-                title="Copy first LED index to clipboard"
+                class="btn-add-offset"
+                on:click={() => selectedNote !== null && openAddOffsetForm(selectedNote)}
+                title="Add individual offset for this key"
               >
-                📋
+                ➕ Add Offset
               </button>
             </div>
           {:else}
@@ -438,6 +500,27 @@
 
   .btn-copy:hover {
     background: #e5e7eb;
+  }
+
+  .btn-add-offset {
+    background: linear-gradient(135deg, #10b981, #059669);
+    border: none;
+    color: white;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .btn-add-offset:hover {
+    background: linear-gradient(135deg, #059669, #047857);
+    transform: scale(1.02);
+  }
+
+  .btn-add-offset:active {
+    transform: scale(0.98);
   }
 
   .no-data {

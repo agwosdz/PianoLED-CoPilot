@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { calibrationState, calibrationUI, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset, setGlobalOffset } from '$lib/stores/calibration';
   import { settings } from '$lib/stores/settings';
   import type { KeyOffset } from '$lib/stores/calibration';
@@ -18,6 +19,29 @@
     min: 0,
     max: Math.max(0, ledCount - 1 - globalOffsetValue)
   };
+
+  onMount(() => {
+    // Listen for populateMidiNote event from settings page
+    const section2Element = document.querySelector('[data-section="calibration-2"]');
+    if (section2Element) {
+      section2Element.addEventListener('populateMidiNote', handlePopulateMidiNote);
+      return () => {
+        section2Element.removeEventListener('populateMidiNote', handlePopulateMidiNote);
+      };
+    }
+  });
+
+  function handlePopulateMidiNote(event: Event) {
+    const customEvent = event as CustomEvent<{ midiNote: number }>;
+    const { midiNote } = customEvent.detail;
+    
+    // Populate the MIDI note field with the value from piano visualization
+    newKeyMidiNote = String(midiNote);
+    // Open the form if not already open
+    showAddForm = true;
+    // Reset offset to 0
+    newKeyOffset = 0;
+  }
 
   async function handleGlobalOffsetChange(e: Event) {
     const target = e.target as HTMLInputElement;
