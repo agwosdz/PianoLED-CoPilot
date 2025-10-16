@@ -271,6 +271,11 @@ class MidiEventProcessor:
         final_color = tuple(int(component * brightness) for component in color)
 
         if self._led_controller:
+            # Log which processor instance is updating LEDs (for debugging duplication)
+            logger.info(
+                "MIDI_PROCESSOR[%s]: NOTE_ON note=%d velocity=%d led_count=%d leds=%s",
+                id(self), note, velocity, self.num_leds, led_indices
+            )
             for led_index in led_indices:
                 success, error = self._led_controller.turn_on_led(led_index, final_color, auto_show=False)
                 if not success:
@@ -301,6 +306,11 @@ class MidiEventProcessor:
         led_indices = note_info.get('led_indices') if note_info else []
 
         if self._led_controller and led_indices:
+            # Log which processor instance is updating LEDs (for debugging duplication)
+            logger.info(
+                "MIDI_PROCESSOR[%s]: NOTE_OFF note=%d led_count=%d leds=%s",
+                id(self), note, self.num_leds, led_indices
+            )
             for led_index in led_indices:
                 success, error = self._led_controller.turn_off_led(led_index, auto_show=False)
                 if not success:

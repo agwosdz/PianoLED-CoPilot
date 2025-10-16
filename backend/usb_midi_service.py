@@ -313,7 +313,7 @@ class USBMIDIInputService:
         return False
 
     def _processing_loop(self) -> None:
-        logger.debug("USB MIDI processing loop started")
+        logger.debug("USB MIDI processing loop started (processor_id=%s)", id(self._event_processor))
         while not self._stop_event.is_set():
             drained = self._port_manager.drain()
             if not drained:

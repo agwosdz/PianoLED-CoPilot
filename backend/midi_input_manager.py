@@ -182,7 +182,11 @@ class MIDIInputManager:
                 )
                 self._source_status[MIDIInputSource.USB]['available'] = True
                 success_count += 1
-                logger.info("USB MIDI service initialized (exclusive instance)")
+                logger.info(
+                    "USB MIDI service initialized (exclusive instance) [service_id=%s, processor_id=%s]",
+                    id(self._usb_service),
+                    id(self._usb_service._event_processor) if hasattr(self._usb_service, '_event_processor') else 'N/A'
+                )
             except Exception as e:
                 logger.error(f"Failed to initialize USB MIDI service: {e}")
         
