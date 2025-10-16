@@ -630,10 +630,33 @@ def test_led(led_index: int):
 
 @calibration_bp.route('/led-on/<int:led_index>', methods=['POST'])
 def turn_on_led_persistent(led_index: int):
-    """Light up a specific LED persistently (stays on until turned off)"""
+    """Light up a specific LED persistently (stays on until turned off)
+    
+    Query parameters (optional):
+    - r: red component (0-255, default 255)
+    - g: green component (0-255, default 255)
+    - b: blue component (0-255, default 255)
+    """
     logger.info(f"Persistent LED on endpoint called for LED {led_index}")
     
     try:
+        # Parse color from query parameters
+        try:
+            r = int(request.args.get('r', 255))
+            g = int(request.args.get('g', 255))
+            b = int(request.args.get('b', 255))
+            
+            # Validate color values
+            r = max(0, min(255, r))
+            g = max(0, min(255, g))
+            b = max(0, min(255, b))
+            
+            color = (r, g, b)
+            logger.info(f"Using color RGB{color}")
+        except (ValueError, TypeError):
+            logger.warning("Invalid color parameters, using default white")
+            color = (255, 255, 255)
+        
         led_controller = get_led_controller()
         
         if not led_controller:
@@ -663,9 +686,9 @@ def turn_on_led_persistent(led_index: int):
                 'message': f'LED index must be between 0 and {led_count - 1}'
             }), 400
         
-        # Light up the LED with white color (persistent)
-        logger.info(f"Lighting up LED {led_index} persistently")
-        success, error = led_controller.turn_on_led(led_index, (255, 255, 255), auto_show=True)
+        # Light up the LED with specified color (persistent)
+        logger.info(f"Lighting up LED {led_index} persistently with color RGB{color}")
+        success, error = led_controller.turn_on_led(led_index, color, auto_show=True)
         logger.info(f"LED turn_on_led returned: success={success}, error={error}")
         
         if not success:
@@ -674,7 +697,8 @@ def turn_on_led_persistent(led_index: int):
         logger.info(f"LED {led_index} turned on persistently")
         return jsonify({
             'message': f'LED {led_index} turned on (persistent)',
-            'led_index': led_index
+            'led_index': led_index,
+            'color': color
         }), 200
         
     except Exception as e:

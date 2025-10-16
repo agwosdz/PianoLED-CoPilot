@@ -29,6 +29,12 @@
   let startMidiNote = 21;
   let isLoadingMapping = false;
   let ledOperationInProgress = false; // Prevent overlapping LED operations
+  let showingLayoutVisualization = false; // Toggle for layout visualization mode
+  let layoutVisualizationActive = false; // Track if LEDs are currently on for visualization
+
+  // Color configurations
+  const BLACK_KEY_COLOR = { r: 150, g: 0, b: 100 };   // Magenta/Pink
+  const WHITE_KEY_COLOR = { r: 0, g: 100, b: 150 };   // Cyan/Blue
 
   function getMidiNoteName(midiNote: number): string {
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -117,6 +123,37 @@
     }
   }
 
+  async function lightUpLedRangeWithColor(ledIndices: number[], color: { r: number; g: number; b: number }): Promise<void> {
+    if (!ledIndices || ledIndices.length === 0) return;
+    
+    try {
+      console.log(`[LED] Lighting up LEDs with color RGB(${color.r},${color.g},${color.b}): ${ledIndices.join(', ')}`);
+      // Light up all LEDs with specific color
+      for (const ledIndex of ledIndices) {
+        if (typeof ledIndex !== 'number' || !Number.isFinite(ledIndex)) {
+          console.warn(`[LED] Invalid LED index: ${ledIndex}`);
+          continue;
+        }
+        
+        try {
+          const response = await fetch(`/api/calibration/led-on/${ledIndex}?r=${color.r}&g=${color.g}&b=${color.b}`, {
+            method: 'POST'
+          });
+          if (!response.ok) {
+            console.warn(`[LED] Failed to light LED ${ledIndex}: ${response.status}`);
+          } else {
+            console.log(`[LED] LED ${ledIndex} turned on with color RGB(${color.r},${color.g},${color.b})`);
+          }
+        } catch (err) {
+          console.warn(`[LED] Error lighting LED ${ledIndex}:`, err);
+        }
+      }
+      console.log(`[LED] Finished lighting up all LEDs with custom color`);
+    } catch (error) {
+      console.error('[LED] Failed to light up LEDs with color:', error);
+    }
+  }
+
   async function turnOffAllLeds(): Promise<void> {
     try {
       console.log('[LED] Turning off all LEDs...');
@@ -198,6 +235,59 @@
     });
     window.dispatchEvent(event);
   }
+
+  async function toggleLayoutVisualization() {
+    if (layoutVisualizationActive) {
+      // Turn off visualization
+      console.log('[LED] Turning off layout visualization');
+      await turnOffAllLeds();
+      layoutVisualizationActive = false;
+      showingLayoutVisualization = false;
+    } else {
+      // Turn on visualization - show all white and black keys in their colors
+      console.log('[LED] Starting layout visualization');
+      showingLayoutVisualization = true;
+      layoutVisualizationActive = true;
+      
+      try {
+        // Light all white keys with white key color
+        const whiteKeyNotes = pianoKeys.filter(k => !k.isBlack).map(k => k.midiNote);
+        const blackKeyNotes = pianoKeys.filter(k => k.isBlack).map(k => k.midiNote);
+        
+        const whiteKeyLeds: number[] = [];
+        const blackKeyLeds: number[] = [];
+        
+        // Collect all LED indices for white and black keys
+        for (const note of whiteKeyNotes) {
+          const indices = ledMapping[note];
+          if (indices && indices.length > 0) {
+            whiteKeyLeds.push(...indices);
+          }
+        }
+        
+        for (const note of blackKeyNotes) {
+          const indices = ledMapping[note];
+          if (indices && indices.length > 0) {
+            blackKeyLeds.push(...indices);
+          }
+        }
+        
+        console.log(`[LED] Layout visualization: ${whiteKeyLeds.length} white key LEDs, ${blackKeyLeds.length} black key LEDs`);
+        
+        // Light them up with their respective colors
+        if (whiteKeyLeds.length > 0) {
+          await lightUpLedRangeWithColor(whiteKeyLeds, WHITE_KEY_COLOR);
+        }
+        if (blackKeyLeds.length > 0) {
+          await lightUpLedRangeWithColor(blackKeyLeds, BLACK_KEY_COLOR);
+        }
+      } catch (error) {
+        console.error('[LED] Layout visualization failed:', error);
+        layoutVisualizationActive = false;
+        showingLayoutVisualization = false;
+      }
+    }
+  }
 </script>
 
 <div class="calibration-section-3">
@@ -207,6 +297,16 @@
   </div>
 
   <div class="visualization-container">
+    <div class="visualization-controls">
+      <button
+        class={`btn-show-layout ${layoutVisualizationActive ? 'active' : ''}`}
+        on:click={toggleLayoutVisualization}
+        title={layoutVisualizationActive ? 'Turn off layout visualization' : 'Show layout with all white/black keys mapped to LEDs'}
+      >
+        {layoutVisualizationActive ? '✓ Layout Visible' : '🎹 Show Layout'}
+      </button>
+    </div>
+    
     <div class="piano-keyboard">
       {#each pianoKeys as key (key.midiNote)}
         <button
@@ -298,6 +398,13 @@
       <div class="legend-box offset"></div>
       <span>Has Custom Offset</span>
     </div>
+    <div class="legend-divider"></div>
+    <div class="legend-item color-sample white-key">
+      <span>White Key LED: RGB(0, 100, 150)</span>
+    </div>
+    <div class="legend-item color-sample black-key">
+      <span>Black Key LED: RGB(150, 0, 100)</span>
+    </div>
   </div>
 
   <!-- Info -->
@@ -361,6 +468,40 @@
     gap: 1.5rem;
   }
 
+  .visualization-controls {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .btn-show-layout {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    border: 2px solid #1e40af;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-show-layout:hover {
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  }
+
+  .btn-show-layout.active {
+    background: linear-gradient(135deg, #10b981, #059669);
+    border-color: #047857;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+  }
+
+  .btn-show-layout:active {
+    transform: translateY(0);
+  }
+
   .piano-keyboard {
     display: flex;
     gap: 1px;
@@ -417,6 +558,16 @@
 
   .piano-key.selected {
     box-shadow: inset 0 0 0 2px #2563eb, 0 0 10px rgba(37, 99, 235, 0.4);
+  }
+
+  .piano-key.selected.white {
+    background: linear-gradient(to bottom, rgb(0, 100, 150), rgb(0, 85, 127));
+    color: #ffffff;
+  }
+
+  .piano-key.selected.black {
+    background: linear-gradient(to bottom, rgb(150, 0, 100), rgb(127, 0, 85));
+    color: #ffffff;
   }
 
   .piano-key.has-offset {
@@ -570,6 +721,13 @@
     background: #f8fafc;
     border-radius: 8px;
     border: 1px solid #e2e8f0;
+    align-items: center;
+  }
+
+  .legend-divider {
+    width: 1px;
+    height: 30px;
+    background: #cbd5e1;
   }
 
   .legend-item {
@@ -599,6 +757,30 @@
 
   .legend-box.offset {
     background: linear-gradient(135deg, #10b981, #059669);
+  }
+
+  /* Color samples for layout visualization */
+  .legend-item.color-sample {
+    padding: 0.5rem;
+    border-radius: 6px;
+  }
+
+  .legend-item.color-sample.white-key {
+    background: linear-gradient(135deg, rgb(0, 100, 150), rgb(0, 85, 127));
+    border: 2px solid #0c4a6e;
+  }
+
+  .legend-item.color-sample.white-key span {
+    color: #ffffff;
+  }
+
+  .legend-item.color-sample.black-key {
+    background: linear-gradient(135deg, rgb(150, 0, 100), rgb(127, 0, 85));
+    border: 2px solid #7c1d5e;
+  }
+
+  .legend-item.color-sample.black-key span {
+    color: #ffffff;
   }
 
   .legend-item span {
