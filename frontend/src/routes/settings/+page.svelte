@@ -470,25 +470,28 @@
 
     try {
       saving = true;
+      console.log('🔍 saveCurrentSettings START - currentSettings:', JSON.stringify(currentSettings, null, 2));
       const payload = prepareSettingsPayload(currentSettings);
       console.log('🔍 saveCurrentSettings - final payload:', JSON.stringify(payload, null, 2));
+      console.log('🔍 Calling updateSettings with:', payload);
       await updateSettings(payload);
-  const refreshedRaw = await loadSettings();
-  const refreshed = clone(refreshedRaw);
+      console.log('🔍 updateSettings completed, reloading settings...');
+      const refreshedRaw = await loadSettings();
+      console.log('🔍 Refreshed settings from backend:', JSON.stringify(refreshedRaw, null, 2));
+      const refreshed = clone(refreshedRaw);
       currentSettings = clone(refreshed);
       originalSettings = clone(refreshed);
       hasUnsavedChanges = false;
-      console.log('🔍 After save - refreshed settings:', JSON.stringify(currentSettings, null, 2));
+      console.log('🔍 After reload - currentSettings.led.leds_per_meter:', currentSettings.led?.leds_per_meter);
       showMessage('Settings saved successfully!', 'success');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error('🔍 Save error:', message);
       showMessage(message || 'Failed to save settings', 'error');
     } finally {
       saving = false;
     }
-  }
-
-  function resetSettingsToSaved() {
+  }  function resetSettingsToSaved() {
     if (!hasUnsavedChanges) return;
     if (typeof window !== 'undefined' && !window.confirm('Reset all changes since your last save?')) {
       return;
