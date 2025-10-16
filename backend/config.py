@@ -737,14 +737,32 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
     adjusted = {}
     max_led_idx = (led_count - 1) if led_count else None
     
+    # Normalize key_offsets to ensure all keys and values are integers
+    normalized_key_offsets = {}
+    for key, value in key_offsets.items():
+        try:
+            note_num = int(key) if isinstance(key, str) else key
+            offset_val = int(value) if isinstance(value, str) else value
+            if isinstance(offset_val, float):
+                offset_val = int(offset_val)
+            normalized_key_offsets[note_num] = offset_val
+        except (ValueError, TypeError):
+            continue  # Skip invalid entries
+    
     for midi_note, led_indices in mapping.items():
         adjusted_indices = []
         
+        # Normalize midi_note to int for comparison
+        try:
+            midi_note_int = int(midi_note) if isinstance(midi_note, str) else midi_note
+        except (ValueError, TypeError):
+            continue  # Skip invalid entries
+        
         # Calculate cascading offset: sum of all key offsets for notes <= current note
         cascading_offset = 0
-        if key_offsets:
-            for offset_note, offset_value in sorted(key_offsets.items()):
-                if offset_note <= midi_note:
+        if normalized_key_offsets:
+            for offset_note, offset_value in sorted(normalized_key_offsets.items()):
+                if offset_note <= midi_note_int:
                     cascading_offset += offset_value
                 else:
                     break  # No more offsets apply to this note
