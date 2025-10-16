@@ -382,31 +382,55 @@
 		{/if}
 
 		<div class="action-buttons">
-			{#if isSelectedDeviceConnected}
+			{#if !selectedDevice}
+				<!-- No device selected -->
+				<div class="no-selection-prompt">
+					👆 Select a device to begin
+				</div>
+			{:else if isSelectedDeviceConnected}
+				<!-- Selected device is currently connected -->
 				<div class="connected-state">
 					<div class="connected-badge">
 						<span class="pulse-dot"></span>
-						<span>Connected to {currentlyConnectedDevice}</span>
+						<span>Connected to {selectedDeviceObj?.name}</span>
 					</div>
 					<button 
 						class="btn-disconnect" 
 						on:click={handleDisconnect}
-						disabled={isConnecting}
+						disabled={isDisconnecting}
 						title="Disconnect from current device"
 					>
-						{#if isConnecting}
+						{#if isDisconnecting}
 							🔄 Disconnecting...
 						{:else}
 							✕ Disconnect
 						{/if}
 					</button>
 				</div>
+			{:else if isAnythingConnected}
+				<!-- A different device is connected -->
+				<div class="different-device-connected">
+					<div class="info">A different device is currently connected</div>
+					<button 
+						class="btn-disconnect-first" 
+						on:click={handleDisconnect}
+						disabled={isDisconnecting}
+						title="Disconnect the current device first"
+					>
+						{#if isDisconnecting}
+							🔄 Disconnecting...
+						{:else}
+							Disconnect {currentlyConnectedDevice}
+						{/if}
+					</button>
+				</div>
 			{:else}
+				<!-- Nothing connected, selected device available to connect -->
 				<button 
 					class="btn-connect" 
 					on:click={handleConnect}
-					disabled={!selectedDevice || isConnecting || allDevices.length === 0}
-					title={selectedDevice ? 'Connect to selected device' : 'Select a device first'}
+					disabled={isConnecting}
+					title="Connect to selected device"
 				>
 					{#if isConnecting}
 						🔄 Connecting...
@@ -817,6 +841,57 @@
 	}
 
 	.btn-disconnect:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.no-selection-prompt {
+		padding: 12px 16px;
+		background: #e7f3ff;
+		border: 1px solid #b3d9ff;
+		border-radius: 4px;
+		color: #0056b3;
+		text-align: center;
+		font-weight: 500;
+	}
+
+	.different-device-connected {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 12px;
+		background: #fff3cd;
+		border: 1px solid #ffc107;
+		border-radius: 4px;
+	}
+
+	.different-device-connected .info {
+		color: #856404;
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
+	.btn-disconnect-first {
+		padding: 10px 16px;
+		background: #ffc107;
+		color: #333;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+		font-weight: 600;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+	}
+
+	.btn-disconnect-first:hover:not(:disabled) {
+		background: #ffb300;
+		box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+	}
+
+	.btn-disconnect-first:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
