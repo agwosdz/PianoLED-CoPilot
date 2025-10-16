@@ -40,6 +40,7 @@
 
   let dataPinSelection = 18;
   let ledCountValue = 246;
+  let ledsPerMeterValue = 60;
   let brightnessPercent = 50;
   let orientationSelection = 'normal';
   let pwmChannel = 0;
@@ -289,6 +290,16 @@
     updateLocalSettings((draft) => {
       draft.led = { ...(draft.led || {}), led_orientation: orientation };
       draft.led_orientation = orientation;
+    });
+  }
+
+  function handleLedsPerMeterChange(density: number) {
+    const validDensities = [60, 72, 100, 120, 144, 160, 180, 200];
+    const safeDensity = validDensities.includes(density) ? density : 60;
+
+    updateLocalSettings((draft) => {
+      draft.led = { ...(draft.led || {}), leds_per_meter: safeDensity };
+      draft.leds_per_meter = safeDensity;
     });
   }
 
@@ -553,6 +564,12 @@
   $: orientationSelection = typeof (currentSettings?.led?.led_orientation ?? currentSettings?.led_orientation) === 'string'
     ? (currentSettings?.led?.led_orientation ?? currentSettings?.led_orientation)
     : 'normal';
+  $: ledsPerMeterValue = (() => {
+    const validDensities = [60, 72, 100, 120, 144, 160, 180, 200];
+    const raw = currentSettings?.led?.leds_per_meter ?? 60;
+    const value = Number(raw);
+    return validDensities.includes(value) ? value : 60;
+  })();
   $: {
     const rawBrightness = Number(currentSettings?.led?.brightness ?? currentSettings?.brightness ?? 0.5);
     const percent = Math.round(Math.min(1, Math.max(0, Number.isFinite(rawBrightness) ? rawBrightness : 0.5)) * 100);
@@ -664,6 +681,26 @@
                 on:input={() => handleLedCountChange(Number(ledCountValue))}
                 disabled={loading || saving}
               />
+            </div>
+
+            <div class="field">
+              <label for="leds-per-meter">LED Density (LEDs/m)</label>
+              <select
+                id="leds-per-meter"
+                bind:value={ledsPerMeterValue}
+                on:change={() => handleLedsPerMeterChange(Number(ledsPerMeterValue))}
+                disabled={loading || saving}
+              >
+                <option value={60}>60 LEDs/m</option>
+                <option value={72}>72 LEDs/m</option>
+                <option value={100}>100 LEDs/m</option>
+                <option value={120}>120 LEDs/m</option>
+                <option value={144}>144 LEDs/m</option>
+                <option value={160}>160 LEDs/m</option>
+                <option value={180}>180 LEDs/m</option>
+                <option value={200}>200 LEDs/m</option>
+              </select>
+              <p class="field-hint">LED strip density for future auto calibration.</p>
             </div>
 
             <div class="field">

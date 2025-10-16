@@ -156,6 +156,7 @@ class SettingsService:
                 'enabled': {'type': 'boolean', 'default': False},
                 'led_count': {'type': 'number', 'default': 246, 'min': 1, 'max': 1000},
                 'max_led_count': {'type': 'number', 'default': 1000, 'min': 1, 'max': 1000},
+                'leds_per_meter': {'type': 'number', 'default': 60, 'enum': [60, 72, 100, 120, 144, 160, 180, 200], 'description': 'LED strip density in LEDs per meter'},
                 'led_channel': {'type': 'number', 'default': 0, 'min': 0, 'max': 1},
                 # Use 0-1 scale to match backend schema
                 'brightness': {'type': 'number', 'default': 0.5, 'min': 0, 'max': 1},
