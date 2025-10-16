@@ -39,6 +39,10 @@ interface PianoSettings {
     octave?: number;
     velocity_sensitivity?: number;
     channel?: number;
+    size?: string;
+    keys?: number;
+    start_note?: string;
+    end_note?: string;
 }
 
 interface AudioSettings {

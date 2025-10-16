@@ -2,11 +2,16 @@
   import { settings } from '$lib/stores/settings';
   import { calibrationState } from '$lib/stores/calibration';
 
-  // Piano configuration
-  const PIANO_KEYS = 88;
-  const START_NOTE = 'A0'; // A0 is MIDI note 21
-  const START_MIDI = 21;
-  
+  // Piano size specifications for different keyboard types
+  const PIANO_SPECS: Record<string, { keys: number; midiStart: number; midiEnd: number }> = {
+    '25-key': { keys: 25, midiStart: 48, midiEnd: 72 },     // C3 - C5
+    '37-key': { keys: 37, midiStart: 36, midiEnd: 72 },     // C2 - C5
+    '49-key': { keys: 49, midiStart: 36, midiEnd: 84 },     // C2 - C6
+    '61-key': { keys: 61, midiStart: 36, midiEnd: 96 },     // C2 - C7
+    '76-key': { keys: 76, midiStart: 28, midiEnd: 103 },    // E1 - G7
+    '88-key': { keys: 88, midiStart: 21, midiEnd: 108 }     // A0 - C8
+  };
+
   interface KeyInfo {
     midiNote: number;
     noteName: string;
@@ -19,6 +24,9 @@
   let pianoKeys: KeyInfo[] = [];
   let hoveredNote: number | null = null;
   let selectedNote: number | null = null;
+  let currentPianoSize = '88-key';
+  let pianoKeyCount = 88;
+  let startMidiNote = 21;
 
   function getMidiNoteName(midiNote: number): string {
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -34,8 +42,8 @@
 
   function generatePianoKeys(): KeyInfo[] {
     const keys: KeyInfo[] = [];
-    for (let i = 0; i < PIANO_KEYS; i++) {
-      const midiNote = START_MIDI + i;
+    for (let i = 0; i < pianoKeyCount; i++) {
+      const midiNote = startMidiNote + i;
       keys.push({
         midiNote,
         noteName: getMidiNoteName(midiNote),
@@ -47,18 +55,28 @@
     return keys;
   }
 
+  function updatePianoSize(): void {
+    const pianoSize = $settings?.piano?.size || '88-key';
+    const spec = PIANO_SPECS[pianoSize] || PIANO_SPECS['88-key'];
+    
+    currentPianoSize = pianoSize;
+    pianoKeyCount = spec.keys;
+    startMidiNote = spec.midiStart;
+    
+    updateLedMapping();
+  }
+
   function updateLedMapping(): void {
-    // For now, we'll use a simple mapping: key index = LED index
-    // In a real scenario, this would come from backend config
     const mapping: Record<number, number> = {};
     
-    // Assuming each piano key maps to one or more LEDs
-    // Simple 1:1 mapping for visualization
-    for (let i = 0; i < PIANO_KEYS; i++) {
-      const midiNote = START_MIDI + i;
-      // Calculate approximate LED index based on key position
-      const ledsPerKey = 3; // Approximate
-      mapping[midiNote] = i * ledsPerKey;
+    // Calculate LED mapping based on piano size
+    // Simple proportional mapping: distribute LEDs evenly across keys
+    const totalLeds = $settings?.led?.led_count || 246;
+    const ledsPerKey = totalLeds / pianoKeyCount;
+    
+    for (let i = 0; i < pianoKeyCount; i++) {
+      const midiNote = startMidiNote + i;
+      mapping[midiNote] = Math.floor(i * ledsPerKey);
     }
     
     ledMapping = mapping;
@@ -67,7 +85,7 @@
 
   // Update when settings or calibration changes
   $: if ($settings && $calibrationState) {
-    updateLedMapping();
+    updatePianoSize();
   }
 
   function handleKeyClick(midiNote: number) {
@@ -235,7 +253,10 @@
   <!-- Info -->
   <div class="info-box">
     <p>
-      <strong>Total Keys:</strong> {PIANO_KEYS} (A0 - C8)
+      <strong>Piano Size:</strong> {currentPianoSize}
+    </p>
+    <p>
+      <strong>Total Keys:</strong> {pianoKeyCount} ({getMidiNoteName(startMidiNote)} - {getMidiNoteName(startMidiNote + pianoKeyCount - 1)})
     </p>
     <p>
       <strong>Keys with Custom Offsets:</strong> {Object.keys($calibrationState.key_offsets).length}

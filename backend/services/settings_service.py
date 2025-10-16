@@ -21,11 +21,12 @@ except ImportError:
     def get_piano_specs(piano_size: str) -> Dict[str, Any]:
         """Fallback piano specs helper when config module is unavailable."""
         default_specs = {
-            '88-key': {'keys': 88, 'midi_start': 21, 'midi_end': 108},
-            '76-key': {'keys': 76, 'midi_start': 28, 'midi_end': 103},
-            '61-key': {'keys': 61, 'midi_start': 36, 'midi_end': 96},
-            '49-key': {'keys': 49, 'midi_start': 36, 'midi_end': 84},
             '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72},
+            '37-key': {'keys': 37, 'midi_start': 36, 'midi_end': 72},
+            '49-key': {'keys': 49, 'midi_start': 36, 'midi_end': 84},
+            '61-key': {'keys': 61, 'midi_start': 36, 'midi_end': 96},
+            '76-key': {'keys': 76, 'midi_start': 28, 'midi_end': 103},
+            '88-key': {'keys': 88, 'midi_start': 21, 'midi_end': 108},
         }
         return default_specs.get(piano_size, default_specs['88-key'])
 
