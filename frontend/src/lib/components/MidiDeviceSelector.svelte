@@ -25,9 +25,10 @@
 		last_message_time: number | null;
 	}
 
-	export let selectedDevice: number | null = null;
 	export let autoRefresh = false;
 	export let refreshInterval = 5000;
+
+	let selectedDevice: number | null = null;
 
 	let devices = writable<DeviceResponse>({
 		usb_devices: [],
@@ -150,7 +151,7 @@
 	function selectDevice(device: MidiDevice) {
 		selectedDevice = device.id;
 		connectionError = null; // Clear any previous errors when selecting a new device
-		dispatch('deviceSelected', device);
+		// Note: Not dispatching deviceSelected anymore - connection is now explicit via button click
 	}
 
 	async function handleConnect() {
