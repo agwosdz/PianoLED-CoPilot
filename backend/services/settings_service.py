@@ -191,7 +191,9 @@ class SettingsService:
                 'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key offset adjustments {midi_note: offset_value}'},
                 'calibration_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable per-key calibration offsets'},
                 'calibration_mode': {'type': 'string', 'default': 'none', 'enum': ['none', 'assisted', 'manual'], 'description': 'Calibration mode'},
-                'last_calibration': {'type': 'string', 'default': '', 'description': 'Timestamp of last calibration'}
+                'last_calibration': {'type': 'string', 'default': '', 'description': 'Timestamp of last calibration'},
+                'white_key_color': {'type': 'object', 'default': {'r': 0, 'g': 100, 'b': 150}, 'description': 'RGB color for white keys in layout visualization'},
+                'black_key_color': {'type': 'object', 'default': {'r': 150, 'g': 0, 'b': 100}, 'description': 'RGB color for black keys in layout visualization'}
             },
             'hardware': {
                 'auto_detect_midi': {'type': 'boolean', 'default': False},

@@ -32,9 +32,30 @@
   let showingLayoutVisualization = false; // Toggle for layout visualization mode
   let layoutVisualizationActive = false; // Track if LEDs are currently on for visualization
 
-  // Color configurations
-  const BLACK_KEY_COLOR = { r: 150, g: 0, b: 100 };   // Magenta/Pink
-  const WHITE_KEY_COLOR = { r: 0, g: 100, b: 150 };   // Cyan/Blue
+  // Color configurations - will be fetched from settings
+  let BLACK_KEY_COLOR = { r: 150, g: 0, b: 100 };   // Magenta/Pink (default)
+  let WHITE_KEY_COLOR = { r: 0, g: 100, b: 150 };   // Cyan/Blue (default)
+
+  async function loadColorsFromSettings(): Promise<void> {
+    try {
+      const response = await fetch('/api/settings/calibration');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.white_key_color) {
+          WHITE_KEY_COLOR = data.white_key_color;
+          console.log('[LED] White key color from settings:', WHITE_KEY_COLOR);
+        }
+        if (data.black_key_color) {
+          BLACK_KEY_COLOR = data.black_key_color;
+          console.log('[LED] Black key color from settings:', BLACK_KEY_COLOR);
+        }
+      } else {
+        console.warn('[LED] Failed to load colors from settings, using defaults');
+      }
+    } catch (error) {
+      console.warn('[LED] Could not fetch colors from settings, using defaults:', error);
+    }
+  }
 
   function getMidiNoteName(midiNote: number): string {
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -93,6 +114,7 @@
   // Update when settings or calibration changes
   $: if ($settings && $calibrationState) {
     updatePianoSize();
+    loadColorsFromSettings();
   }
 
   async function lightUpLedRange(ledIndices: number[]): Promise<void> {
@@ -201,7 +223,7 @@
       // Verify indices are valid before sending
       const validIndices = ledIndices.filter(idx => typeof idx === 'number' && Number.isFinite(idx));
       if (validIndices.length > 0) {
-        console.log(`[LED] Lighting up ${validIndices.length} valid LEDs...`);
+        console.log(`[LED] Lighting up ${validIndices.length} valid LEDs using batch endpoint...`);
         await lightUpLedRange(validIndices);
       } else {
         console.warn(`[LED] No valid LED indices found for key ${midiNote}`);
