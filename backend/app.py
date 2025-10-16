@@ -1491,27 +1491,34 @@ def get_midi_input_status():
         rtpmidi_listening = False
         
         if midi_input_manager._usb_service:
-            usb_status = midi_input_manager._usb_service.get_status()
-            current_device = usb_status.get('device_name')
-            usb_listening = usb_status.get('is_listening', False)
+            try:
+                usb_status = midi_input_manager._usb_service.get_status()
+                current_device = usb_status.get('device_name')
+                usb_listening = usb_status.get('is_listening', False)
+            except Exception as e:
+                logger.error(f"Error getting USB service status: {e}")
         
         if midi_input_manager._rtpmidi_service:
             try:
                 rtpmidi_status = midi_input_manager._rtpmidi_service.get_status()
                 rtpmidi_listening = rtpmidi_status.get('is_listening', False)
-            except:
-                rtpmidi_listening = False
+            except Exception as e:
+                logger.error(f"Error getting rtpMIDI service status: {e}")
         
-        return jsonify({
+        response_data = {
             'listening': midi_input_manager._running,
             'current_device': current_device,
             'usb_listening': usb_listening,
             'rtpmidi_listening': rtpmidi_listening,
             'last_message_time': None
-        }), 200
+        }
+        
+        logger.debug(f"Status endpoint returning: {response_data}")
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
-        logger.error(f"Error getting MIDI input status: {e}")
+        logger.error(f"Error getting MIDI input status: {e}", exc_info=True)
         return jsonify({
             'error': 'Internal Server Error',
             'message': 'An unexpected error occurred while getting MIDI input status'
