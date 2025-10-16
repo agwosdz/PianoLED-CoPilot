@@ -180,7 +180,17 @@ class SettingsService:
                 'color_mode': {'type': 'string', 'default': 'velocity', 'enum': ['rainbow', 'velocity', 'note', 'custom']},
                 'color_scheme': {'type': 'string', 'default': 'rainbow'},
                 'animation_speed': {'type': 'number', 'default': 1.0, 'min': 0.1, 'max': 3.0},
-                'gpio_pin': {'type': 'number', 'default': 19}
+                'gpio_pin': {'type': 'number', 'default': 19},
+                'mapping_mode': {'type': 'string', 'default': 'auto', 'enum': ['auto', 'manual', 'proportional']},
+                'leds_per_key': {'type': 'number', 'default': 3, 'min': 1, 'max': 10},
+                'mapping_base_offset': {'type': 'number', 'default': 0, 'min': 0, 'max': 1000}
+            },
+            'calibration': {
+                'global_offset': {'type': 'number', 'default': 0, 'min': -100, 'max': 100, 'description': 'Global LED offset to shift all mappings'},
+                'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key offset adjustments {midi_note: offset_value}'},
+                'calibration_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable per-key calibration offsets'},
+                'calibration_mode': {'type': 'string', 'default': 'none', 'enum': ['none', 'assisted', 'manual'], 'description': 'Calibration mode'},
+                'last_calibration': {'type': 'string', 'default': '', 'description': 'Timestamp of last calibration'}
             },
             'hardware': {
                 'auto_detect_midi': {'type': 'boolean', 'default': False},

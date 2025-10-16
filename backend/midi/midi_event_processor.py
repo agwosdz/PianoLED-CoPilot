@@ -72,6 +72,11 @@ class MidiEventProcessor:
         self.led_orientation: str = 'normal'
         self._configured_led_count: int = 1
         self._controller_led_capacity: int = 1
+        
+        # Calibration offsets
+        self.global_offset: int = 0
+        self.key_offsets: Dict[int, int] = {}
+        self.calibration_enabled: bool = False
 
         self._precomputed_mapping: Dict[int, List[int]] = {}
         self._active_notes: Dict[int, Dict[str, Any]] = {}
@@ -224,11 +229,27 @@ class MidiEventProcessor:
                 self.leds_per_key = get_setting('led', 'leds_per_key', 3)
                 self.mapping_base_offset = get_setting('led', 'mapping_base_offset', 0)
                 self.key_mapping = get_setting('led', 'key_mapping', {}) or {}
+                
+                # Load calibration settings
+                self.global_offset = get_setting('calibration', 'global_offset', 0)
+                self.calibration_enabled = get_setting('calibration', 'calibration_enabled', False)
+                key_offsets_raw = get_setting('calibration', 'key_offsets', {}) or {}
+                # Normalize key_offsets to ensure midi note keys are integers
+                self.key_offsets = {}
+                for note_key, offset in key_offsets_raw.items():
+                    try:
+                        midi_note = int(note_key)
+                        self.key_offsets[midi_note] = int(offset)
+                    except (TypeError, ValueError):
+                        continue
             else:
                 self.mapping_mode = 'auto'
                 self.leds_per_key = 3
                 self.mapping_base_offset = 0
                 self.key_mapping = {}
+                self.global_offset = 0
+                self.calibration_enabled = False
+                self.key_offsets = {}
         else:
             self.piano_size = self._config_getter('piano_size', '88-key')
             specs = self._piano_specs_resolver(self.piano_size)
@@ -241,6 +262,9 @@ class MidiEventProcessor:
             self.leds_per_key = self._config_getter('leds_per_key', 3)
             self.mapping_base_offset = self._config_getter('mapping_base_offset', 0)
             self.key_mapping = self._config_getter('key_mapping', {}) or {}
+            self.global_offset = 0
+            self.calibration_enabled = False
+            self.key_offsets = {}
 
     def _sync_controller_geometry(self) -> None:
         controller_leds = getattr(self._led_controller, 'num_pixels', None)
@@ -402,14 +426,38 @@ class MidiEventProcessor:
         return max(0, min(logical_index, self.num_leds - 1))
 
     def _map_note_to_leds(self, midi_note: int) -> List[int]:
+        """Map MIDI note to LED indices, applying calibration offsets."""
         mapped = self._precomputed_mapping.get(midi_note)
         if isinstance(mapped, list) and mapped:
-            return [idx for idx in mapped if 0 <= idx < self.num_leds]
-        if isinstance(mapped, int) and 0 <= mapped < self.num_leds:
-            return [mapped]
-
-        fallback = self._map_note_to_led(midi_note)
-        return [fallback] if fallback is not None else []
+            led_indices = [idx for idx in mapped if 0 <= idx < self.num_leds]
+        elif isinstance(mapped, int) and 0 <= mapped < self.num_leds:
+            led_indices = [mapped]
+        else:
+            fallback = self._map_note_to_led(midi_note)
+            led_indices = [fallback] if fallback is not None else []
+        
+        # Apply calibration offsets if enabled
+        if self.calibration_enabled and led_indices:
+            adjusted_indices = []
+            
+            for led_idx in led_indices:
+                # Start with the LED index
+                adjusted_idx = led_idx
+                
+                # Apply global offset
+                adjusted_idx += self.global_offset
+                
+                # Apply per-key offset if available
+                if midi_note in self.key_offsets:
+                    adjusted_idx += self.key_offsets[midi_note]
+                
+                # Clamp to valid LED range
+                adjusted_idx = max(0, min(adjusted_idx, self.num_leds - 1))
+                adjusted_indices.append(adjusted_idx)
+            
+            return adjusted_indices
+        
+        return led_indices
 
     @staticmethod
     def _get_note_color(note: int) -> tuple:

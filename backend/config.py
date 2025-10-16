@@ -715,6 +715,49 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     return mapping
 
 
+def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=None):
+    """Apply calibration offsets to a pre-computed key mapping
+    
+    Args:
+        mapping: Base key-to-LED mapping dict
+        global_offset: Global offset to apply to all LEDs
+        key_offsets: Per-key offset dict {midi_note: offset}
+    
+    Returns:
+        dict: Adjusted mapping with offsets applied
+    """
+    if not mapping or (global_offset == 0 and not key_offsets):
+        return mapping
+    
+    if key_offsets is None:
+        key_offsets = {}
+    
+    adjusted = {}
+    
+    for midi_note, led_indices in mapping.items():
+        adjusted_indices = []
+        
+        if isinstance(led_indices, list):
+            for idx in led_indices:
+                adjusted_idx = idx + global_offset
+                
+                # Apply per-key offset if available
+                if midi_note in key_offsets:
+                    adjusted_idx += key_offsets[midi_note]
+                
+                adjusted_indices.append(adjusted_idx)
+        elif isinstance(led_indices, int):
+            adjusted_idx = led_indices + global_offset
+            if midi_note in key_offsets:
+                adjusted_idx += key_offsets[midi_note]
+            adjusted_indices = [adjusted_idx]
+        
+        if adjusted_indices:
+            adjusted[midi_note] = adjusted_indices
+    
+    return adjusted
+
+
 def validate_gpio_pin_availability(pin, exclude_pins=None):
     """Validate if a GPIO pin is available for use"""
     if exclude_pins is None:

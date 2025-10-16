@@ -977,8 +977,10 @@ def get_performance_metrics():
 # Register settings API blueprint
 from backend.api.settings import settings_bp
 from backend.api.hardware_test import hardware_test_bp
+from backend.api.calibration import calibration_bp
 app.register_blueprint(settings_bp, url_prefix='/api/settings')
 app.register_blueprint(hardware_test_bp)
+app.register_blueprint(calibration_bp, url_prefix='/api/calibration')
 
 # Hardware test endpoint moved to /api/hardware-test blueprint for better organization
 
