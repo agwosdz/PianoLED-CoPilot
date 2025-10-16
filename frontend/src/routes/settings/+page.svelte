@@ -226,10 +226,13 @@
   }
 
   function updateLocalSettings(updater: (draft: Record<string, any>) => void) {
+    console.log('🔍 updateLocalSettings called');
     const draft = clone(currentSettings);
     updater(draft);
+    console.log('🔍 After updater - draft.led.leds_per_meter:', draft.led?.leds_per_meter);
     currentSettings = draft;
     hasUnsavedChanges = JSON.stringify(currentSettings) !== JSON.stringify(originalSettings);
+    console.log('🔍 hasUnsavedChanges:', hasUnsavedChanges);
   }
 
   function handlePianoChange(event: CustomEvent<{ piano?: Record<string, any> }>) {
@@ -709,7 +712,10 @@
               <select
                 id="leds-per-meter"
                 value={ledsPerMeterValue}
-                on:change={(e) => handleLedsPerMeterChange(Number(e.currentTarget.value))}
+                on:change={(e) => {
+                  console.log('🔍 SELECT CHANGED - e.currentTarget.value:', e.currentTarget.value, 'typeof:', typeof e.currentTarget.value);
+                  handleLedsPerMeterChange(Number(e.currentTarget.value));
+                }}
                 disabled={loading || saving}
               >
                 <option value={60}>60 LEDs/m</option>

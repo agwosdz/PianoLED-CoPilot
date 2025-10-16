@@ -68,6 +68,7 @@ class SettingsSchema:
                 'enabled': {'type': 'boolean'},
                 'led_count': {'type': 'number', 'minimum': 1, 'maximum': 1000},
                 'max_led_count': {'type': 'number', 'minimum': 1, 'maximum': 1000},
+                'leds_per_meter': {'type': 'number', 'enum': [60, 72, 100, 120, 144, 160, 180, 200]},
                 'brightness': {'type': 'number', 'minimum': 0, 'maximum': 1},
                 
                 # LED hardware configuration
