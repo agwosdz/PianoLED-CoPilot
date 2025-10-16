@@ -26,7 +26,7 @@ from werkzeug.utils import secure_filename
 # Initialize Flask app and SocketIO early so decorators work
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET', 'dev-secret')
-app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
 app.config['HOST'] = os.getenv('FLASK_HOST', '0.0.0.0')
 app.config['PORT'] = int(os.getenv('FLASK_PORT', '5001'))
 app.config.setdefault('UPLOAD_FOLDER', os.path.join(os.path.dirname(__file__), 'uploads'))
