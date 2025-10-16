@@ -296,6 +296,7 @@ class SettingsValidator:
             'led': {
                 'enabled': {'type': 'boolean', 'default': False},
                 'led_count': {'type': 'number', 'default': 246, 'min': 1, 'max': 1000},
+                'leds_per_meter': {'type': 'number', 'default': 60, 'enum': [60, 72, 100, 120, 144, 160, 180, 200]},
                 'max_led_count': {'type': 'number', 'default': 1000, 'min': 1, 'max': 1000},
                 'led_channel': {'type': 'number', 'default': 0, 'min': 0, 'max': 1},
                 'brightness': {'type': 'number', 'default': 0.5, 'min': 0, 'max': 1},
