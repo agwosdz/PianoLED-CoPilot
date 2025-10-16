@@ -157,7 +157,7 @@ class SettingsService:
                 'led_count': {'type': 'number', 'default': 255, 'min': 1, 'max': 1000},
                 'max_led_count': {'type': 'number', 'default': 1000, 'min': 1, 'max': 1000},
                 'leds_per_meter': {'type': 'number', 'default': 60, 'enum': [60, 72, 100, 120, 144, 160, 180, 200], 'description': 'LED strip density in LEDs per meter'},
-                'led_channel': {'type': 'number', 'default': 0, 'min': 0, 'max': 1},
+                'led_channel': {'type': 'number', 'default': 1, 'min': 0, 'max': 1},
                 # Use 0-1 scale to match backend schema
                 'brightness': {'type': 'number', 'default': 0.5, 'min': 0, 'max': 1},
                 'led_type': {'type': 'string', 'default': 'WS2812B', 'enum': ['WS2812B', 'WS2811', 'WS2813', 'WS2815', 'APA102', 'SK6812']},
@@ -182,7 +182,7 @@ class SettingsService:
                 'color_mode': {'type': 'string', 'default': 'velocity', 'enum': ['rainbow', 'velocity', 'note', 'custom']},
                 'color_scheme': {'type': 'string', 'default': 'rainbow'},
                 'animation_speed': {'type': 'number', 'default': 1.0, 'min': 0.1, 'max': 3.0},
-                'gpio_pin': {'type': 'number', 'default': 18},
+                'gpio_pin': {'type': 'number', 'default': 19},
                 'mapping_mode': {'type': 'string', 'default': 'auto', 'enum': ['auto', 'manual', 'proportional']},
                 'leds_per_key': {'type': 'number', 'default': None, 'min': 1, 'max': 10},
                 'mapping_base_offset': {'type': 'number', 'default': 0, 'min': 0, 'max': 1000}
