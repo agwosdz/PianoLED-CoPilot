@@ -564,35 +564,52 @@ def get_key_led_mapping():
         mapping_base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
         leds_per_key = settings_service.get_setting('led', 'leds_per_key', None)
         
-        logger.info(f"Generated mapping with piano_size={piano_size}, led_count={led_count}, "
-                   f"orientation={led_orientation}, mapping_base_offset={mapping_base_offset}")
-        
-        # Generate the base auto key-to-LED mapping
-        auto_mapping = generate_auto_key_mapping(
-            piano_size=piano_size,
-            led_count=led_count,
-            led_orientation=led_orientation,
-            leds_per_key=leds_per_key,
-            mapping_base_offset=mapping_base_offset
-        )
-        
-        # Get calibration settings
+        # Get calibration settings (LED range)
         start_led = settings_service.get_setting('calibration', 'start_led', 0)
         end_led = settings_service.get_setting('calibration', 'end_led', led_count - 1)
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
         
-        logger.info(f"Applying offsets: start_led={start_led}, end_led={end_led}, key_offsets count={len(key_offsets)}")
+        # Calculate available LED count based on the configured range
+        # This ensures the mapping is distributed across the available range only
+        available_led_range = end_led - start_led + 1
         
-        # Apply calibration offsets to the mapping (with bounds checking)
+        logger.info(f"Generating mapping: piano_size={piano_size}, "
+                   f"total_leds={led_count}, led_range=[{start_led}, {end_led}] (available={available_led_range}), "
+                   f"mapping_base_offset={mapping_base_offset}")
+        
+        # Generate the base auto key-to-LED mapping using the available range
+        # The mapping will use indices from 0 to available_led_range-1, which we then offset by start_led
+        auto_mapping = generate_auto_key_mapping(
+            piano_size=piano_size,
+            led_count=available_led_range,  # Use only the available range
+            led_orientation=led_orientation,
+            leds_per_key=leds_per_key,
+            mapping_base_offset=0  # Base offset applied after range adjustment
+        )
+        
+        # If start_led > 0, shift all indices in the mapping by start_led
+        if start_led > 0:
+            shifted_mapping = {}
+            for midi_note, led_indices in auto_mapping.items():
+                if isinstance(led_indices, list):
+                    shifted_mapping[midi_note] = [idx + start_led for idx in led_indices]
+                else:
+                    shifted_mapping[midi_note] = led_indices + start_led
+            auto_mapping = shifted_mapping
+            logger.info(f"Shifted mapping indices by start_led offset of {start_led}")
+        
+        logger.info(f"Applying key offsets: start_led={start_led}, end_led={end_led}, key_offsets count={len(key_offsets)}")
+        
+        # Apply calibration offsets to the mapping
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=auto_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=key_offsets,
-            led_count=led_count  # Pass led_count for validation
+            led_count=led_count  # Pass total LED count for validation
         )
         
-        logger.info(f"Successfully generated mapping with {len(final_mapping)} keys")
+        logger.info(f"Successfully generated mapping with {len(final_mapping)} keys mapped")
         
         return jsonify({
             'mapping': final_mapping,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
-  import { calibrationState, calibrationUI, getKeyLedMapping } from '$lib/stores/calibration';
+  import { calibrationState, calibrationUI, getKeyLedMappingWithRange } from '$lib/stores/calibration';
   import { onMount } from 'svelte';
 
   // Piano size specifications for different keyboard types
@@ -32,6 +32,11 @@
   let ledOperationInProgress = false; // Prevent overlapping LED operations
   let showingLayoutVisualization = false; // Toggle for layout visualization mode
   let layoutVisualizationActive = false; // Track if LEDs are currently on for visualization
+
+  // LED range info for coverage determination
+  let ledRangeStart = 0;
+  let ledRangeEnd = 245;
+  let totalLedCount = 246;
 
   // Validation and mapping info state
   let validationResults: any = null;
@@ -80,6 +85,24 @@
     return [1, 3, 6, 8, 10].includes(noteIndex);
   }
 
+  /**
+   * Determine if a key is covered by the LED range.
+   * A key is covered if the range [start_led, end_led] includes the LED indices that would be
+   * assigned to this key. If end_led >= the maximum LED index needed for the last piano key,
+   * then all piano keys are covered.
+   */
+  function isKeyCovered(midiNote: number): boolean {
+    // If the key has explicit LED indices, it's covered
+    const indices = ledMapping[midiNote];
+    if (indices && indices.length > 0) {
+      return true;
+    }
+    
+    // Otherwise, a key is NOT covered if the mapping is empty for it.
+    // This means the backend already determined it's outside the valid range.
+    return false;
+  }
+
   function generatePianoKeys(): KeyInfo[] {
     const keys: KeyInfo[] = [];
     for (let i = 0; i < pianoKeyCount; i++) {
@@ -109,8 +132,30 @@
   async function updateLedMapping(): Promise<void> {
     isLoadingMapping = true;
     try {
-      // Fetch the LED mapping with offsets applied from the backend
-      ledMapping = await getKeyLedMapping();
+      // Fetch the LED mapping with offsets applied from the backend, along with range info
+      const { mapping, start_led, end_led, led_count } = await getKeyLedMappingWithRange();
+      ledMapping = mapping;
+      ledRangeStart = start_led;
+      ledRangeEnd = end_led;
+      totalLedCount = led_count;
+      
+      // Debug logging
+      const coveredKeys = Object.keys(mapping).length;
+      const uncoveredKeys = pianoKeyCount - coveredKeys;
+      const mappedMidiNotes = Object.keys(mapping).map(k => parseInt(k, 10)).sort((a,b) => a - b);
+      const firstKey = startMidiNote;
+      const lastKey = startMidiNote + pianoKeyCount - 1;
+      const firstMapped = mappedMidiNotes[0];
+      const lastMapped = mappedMidiNotes[mappedMidiNotes.length - 1];
+      
+      console.log(`[CalibrationSection3] LED Range: ${start_led}-${end_led} (total: ${led_count})`);
+      console.log(`[CalibrationSection3] Piano: ${pianoKeyCount} keys (MIDI ${firstKey}-${lastKey})`);
+      console.log(`[CalibrationSection3] Mapping: ${coveredKeys} keys with LEDs, ${uncoveredKeys} keys without LEDs`);
+      console.log(`[CalibrationSection3] Mapped keys: MIDI ${firstMapped}-${lastMapped}`);
+      if (lastMapped < lastKey) {
+        console.log(`[CalibrationSection3] ⚠️ Missing keys: ${lastKey - lastMapped} keys at end (MIDI ${lastMapped + 1}-${lastKey})`);
+      }
+      
       pianoKeys = generatePianoKeys();
     } catch (error) {
       console.error('Failed to update LED mapping:', error);
@@ -491,14 +536,14 @@
             selectedNote === key.midiNote ? 'selected' : ''
           } ${hoveredNote === key.midiNote ? 'hovered' : ''} ${
             key.offset !== 0 ? 'has-offset' : ''
-          }`}
+          } ${isKeyCovered(key.midiNote) ? 'covered' : 'uncovered'}`}
           on:click={(e) => {
             handleKeyPressWhileVisualizingLayout(e);
             handleKeyClick(key.midiNote);
           }}
           on:mouseenter={() => handleKeyHover(key.midiNote)}
           on:mouseleave={() => handleKeyHover(null)}
-          title={`${key.noteName} (MIDI ${key.midiNote})`}
+          title={`${key.noteName} (MIDI ${key.midiNote})${isKeyCovered(key.midiNote) ? ' - Within LED Range' : ' - Outside LED Range'}`}
         >
           <div class="key-content">
             {#if key.adjustedLedIndices && key.adjustedLedIndices.length > 0}
@@ -508,6 +553,8 @@
                   -{key.adjustedLedIndices[key.adjustedLedIndices.length - 1]}
                 {/if}
               </span>
+            {:else if isKeyCovered(key.midiNote)}
+              <span class="key-display">{key.noteName} ✓</span>
             {:else}
               <span class="key-display">—</span>
             {/if}
@@ -1105,6 +1152,23 @@
   .piano-key.has-offset {
     border-color: #10b981;
     border-width: 2px;
+  }
+
+  .piano-key.uncovered {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .piano-key.uncovered.white {
+    background: #d1d5db;
+  }
+
+  .piano-key.uncovered.black {
+    background: #6b7280;
+  }
+
+  .piano-key.covered {
+    opacity: 1;
   }
 
   .key-content {
