@@ -28,7 +28,7 @@
 	export let autoRefresh = false;
 	export let refreshInterval = 5000;
 
-	let selectedDevice: number | null = null;
+	let selectedDeviceName: string | null = null;
 
 	let devices = writable<DeviceResponse>({
 		usb_devices: [],
@@ -149,18 +149,18 @@
 	}
 
 	function selectDevice(device: MidiDevice) {
-		selectedDevice = device.id;
+		selectedDeviceName = device.name;
 		connectionError = null; // Clear any previous errors when selecting a new device
 		// Note: Not dispatching deviceSelected anymore - connection is now explicit via button click
 	}
 
 	async function handleConnect() {
-		if (!selectedDevice) {
+		if (!selectedDeviceName) {
 			connectionError = 'Please select a device first';
 			return;
 		}
 
-		const device = allDevices.find(d => d.id === selectedDevice);
+		const device = allDevices.find(d => d.name === selectedDeviceName);
 		if (!device) {
 			connectionError = 'Selected device not found';
 			return;
@@ -241,8 +241,8 @@
 	$: allDevices = [...($devices.usb_devices || []), ...($devices.rtpmidi_sessions || [])];
 	$: currentlyConnectedDevice = $statusStore.current_device;
 	$: isAnythingConnected = $statusStore.listening;
-	$: selectedDeviceObj = getDeviceById(selectedDevice || -1);
-	$: isSelectedDeviceConnected = selectedDevice && selectedDeviceObj && currentlyConnectedDevice === selectedDeviceObj.name;</script>
+	$: selectedDeviceObj = allDevices.find(d => d.name === selectedDeviceName);
+	$: isSelectedDeviceConnected = selectedDeviceName && selectedDeviceObj && currentlyConnectedDevice === selectedDeviceObj.name;</script>
 
 <div class="midi-device-selector">
 	<div class="header">
@@ -309,7 +309,7 @@
 				<div class="device-list">
 					{#each $devices.usb_devices as device}
 						<div 
-							class="device-item {selectedDevice === device.id ? 'selected' : ''} {getDeviceStatusClass(device.status)}"
+							class="device-item {selectedDeviceName === device.name ? 'selected' : ''} {getDeviceStatusClass(device.status)}"
 							on:click={() => selectDevice(device)}
 							role="button"
 							tabindex="0"
@@ -335,7 +335,7 @@
 				<div class="device-list">
 					{#each $devices.rtpmidi_sessions as device}
 						<div 
-							class="device-item {selectedDevice === device.id ? 'selected' : ''} {getDeviceStatusClass(device.status)}"
+							class="device-item {selectedDeviceName === device.name ? 'selected' : ''} {getDeviceStatusClass(device.status)}"
 							on:click={() => selectDevice(device)}
 							role="button"
 							tabindex="0"
@@ -366,11 +366,11 @@
 		{/if}
 	</div>
 
-	{#if selectedDevice}
+	{#if selectedDeviceName}
 		<div class="selected-device-info">
 			<span class="label">Selected:</span>
 			<span class="selected-name">
-				{allDevices.find(d => d.id === selectedDevice)?.name || 'Unknown Device'}
+				{selectedDeviceName}
 			</span>
 		</div>
 	{/if}
@@ -385,7 +385,7 @@
 		{/if}
 
 		<div class="action-buttons">
-			{#if !selectedDevice}
+			{#if !selectedDeviceName}
 				<!-- No device selected -->
 				<div class="no-selection-prompt">
 					👆 Select a device to begin
