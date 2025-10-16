@@ -35,8 +35,13 @@ app.config.setdefault('MAX_CONTENT_LENGTH', 1 * 1024 * 1024)
 # Enable CORS for all routes
 CORS(app)
 
-# Use threading async mode for WebSocket support (most compatible)
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+# Use eventlet async mode for WebSocket support (most compatible with production)
+try:
+    import eventlet
+    socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet', ping_timeout=60, ping_interval=25)
+except ImportError:
+    # Fallback to threading if eventlet not available
+    socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading', ping_timeout=60, ping_interval=25)
 
 from backend.led_controller import LEDController
 from backend.led_effects_manager import LEDEffectsManager
