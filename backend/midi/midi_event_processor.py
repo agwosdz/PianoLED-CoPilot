@@ -86,12 +86,13 @@ class MidiEventProcessor:
         self.refresh_runtime_settings()
 
     def refresh_runtime_settings(self) -> None:
+        logger.info("MIDI event processor refreshing runtime settings...")
         self._load_settings()
         self._sync_controller_geometry()
         self._precomputed_mapping = self._generate_key_mapping()
         self._active_notes.clear()
-        logger.debug(
-            "MIDI event processor refreshed (leds=%s orientation=%s mapping=%s)",
+        logger.info(
+            "MIDI event processor refreshed: leds=%d orientation=%s mapping=%s",
             self.num_leds,
             self.led_orientation,
             self.mapping_mode,

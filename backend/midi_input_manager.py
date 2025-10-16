@@ -57,7 +57,7 @@ class UnifiedMIDIEvent:
 class MIDIInputManager:
     """Unified manager for coordinating USB and rtpMIDI inputs"""
     
-    def __init__(self, websocket_callback: Optional[Callable] = None, led_controller=None, settings_service: Optional[Any] = None):
+    def __init__(self, websocket_callback: Optional[Callable] = None, led_controller=None, settings_service: Optional[Any] = None, usb_midi_service=None):
         """
         Initialize unified MIDI input manager.
         
@@ -65,6 +65,7 @@ class MIDIInputManager:
             websocket_callback: Callback function for WebSocket event broadcasting
             led_controller: LED controller instance for real-time visualization
             settings_service: Settings service for runtime configuration access
+            usb_midi_service: Optional existing USBMIDIInputService to reuse instead of creating a new one
         """
         self._websocket_callback = websocket_callback
         self._led_controller = led_controller
@@ -77,7 +78,8 @@ class MIDIInputManager:
         self.duplicate_filter_window = get_config('midi_duplicate_filter_ms', 50)
         
         # Initialize MIDI services
-        self._usb_service = None
+        # If usb_midi_service provided externally, use it (avoid duplicate creation)
+        self._usb_service = usb_midi_service
         self._rtpmidi_service = None
         
         # Event processing
@@ -171,19 +173,23 @@ class MIDIInputManager:
         """
         success_count = 0
         
-        # Initialize USB MIDI service
-        if self.enable_usb and USBMIDIInputService:
+        # Initialize USB MIDI service only if not already provided
+        if self._usb_service is None and self.enable_usb and USBMIDIInputService:
             try:
                 self._usb_service = USBMIDIInputService(
                     led_controller=self._led_controller,
                     websocket_callback=self._handle_usb_event,
                     settings_service=self.settings_service
                 )
-                self._source_status[MIDIInputSource.USB]['available'] = True
-                success_count += 1
-                logger.info("USB MIDI service initialized")
+                logger.info("USB MIDI service created in initialize_services()")
             except Exception as e:
                 logger.error(f"Failed to initialize USB MIDI service: {e}")
+        
+        # Mark USB service available if it exists (either provided or created)
+        if self._usb_service:
+            self._source_status[MIDIInputSource.USB]['available'] = True
+            success_count += 1
+            logger.info("USB MIDI service available")
         
         # Initialize rtpMIDI service
         if self.enable_rtpmidi and RtpMIDIService:

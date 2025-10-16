@@ -110,9 +110,11 @@ except Exception as e:
     logger.info("Running in LED-disabled mode - hardware test features will be limited")
 
 # Initialize services that depend on LED controller
+# Create USB MIDI service ONCE - will be shared with MIDIInputManager
 usb_midi_service = USBMIDIInputService(led_controller=led_controller, websocket_callback=socketio.emit, settings_service=settings_service) if USBMIDIInputService else None
 playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
-midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
+# Pass existing usb_midi_service to avoid duplicate creation
+midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service, usb_midi_service=usb_midi_service) if MIDIInputManager else None
 
 # Initialize MIDI input manager services
 if midi_input_manager:
@@ -129,7 +131,7 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         led_config = settings_service.get_led_configuration()
         piano_config = settings_service.get_piano_configuration()
         logger.info(
-            "Refreshing runtime dependencies (pid=%d) for %s.%s with LED config %s and piano config %s",
+            "Refreshing runtime dependencies (pid=%d) for %s.%s: LED config=%s piano config=%s",
             os.getpid(),
             trigger_category,
             trigger_key,
@@ -215,10 +217,17 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     restart_required = trigger_category == 'led' and any(flag for flag in restart_flags)
 
     # Refresh dependent services with new configuration
+    # NOTE: usb_midi_service and midi_input_manager._usb_service are the SAME instance
+    # to avoid duplicate MIDI processing. Only refresh the global usb_midi_service here.
     if usb_midi_service:
+        # update_led_controller() already calls refresh_runtime_settings() internally
+        # No need to call refresh again
         if led_controller:
             usb_midi_service.update_led_controller(led_controller)
-        usb_midi_service.refresh_runtime_settings()
+            logger.debug("Updated global usb_midi_service LED controller (shared with midi_input_manager)")
+        else:
+            # If no LED controller, explicitly refresh settings
+            usb_midi_service.refresh_runtime_settings()
         if restart_required:
             usb_midi_service.restart_with_saved_device(reason=f"{trigger_category}.{trigger_key}")
 
@@ -227,9 +236,17 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
         playback_service.refresh_runtime_settings()
 
     if midi_input_manager:
-        midi_input_manager.update_led_controller(led_controller)
-        midi_input_manager.refresh_runtime_settings()
-        if restart_required and hasattr(midi_input_manager, 'restart_usb_service'):
+        # midi_input_manager._usb_service is the same as the global usb_midi_service
+        # So we update the manager's reference but don't need to refresh the USB service twice
+        if led_controller:
+            midi_input_manager.update_led_controller(led_controller)
+            logger.debug("Updated midi_input_manager LED controller (USB service already updated)")
+        else:
+            # Only refresh if we didn't already refresh via usb_midi_service
+            if not usb_midi_service:
+                midi_input_manager.refresh_runtime_settings()
+        # Only restart if usb_midi_service wasn't already restarted
+        if restart_required and not usb_midi_service and hasattr(midi_input_manager, 'restart_usb_service'):
             midi_input_manager.restart_usb_service(reason=f"{trigger_category}.{trigger_key}")
 
     # Ensure midi_parser is refreshed too (it caches led count on init)

@@ -155,11 +155,15 @@ class USBMIDIInputService:
         return self._event_processor.copy_active_notes()
 
     def update_led_controller(self, led_controller) -> None:
+        """Update LED controller reference and refresh processor without double-refresh."""
         self._led_controller = led_controller
         self._event_processor.update_led_controller(led_controller)
+        logger.debug("USB MIDI service LED controller updated")
 
     def refresh_runtime_settings(self) -> None:
+        """Refresh runtime settings from settings service."""
         self._event_processor.refresh_runtime_settings()
+        logger.debug("USB MIDI service refreshed runtime settings")
         logger.info(
             "USB MIDI service settings refreshed (leds=%s orientation=%s mapping=%s)",
             self.num_leds,
