@@ -32,6 +32,12 @@
 	let fetchInProgress = false;
 	let lastDispatchPayload: string | null = null;
 
+	// Connection state
+	let isConnecting = false;
+	let connectionError: string | null = null;
+	let isCurrentlyConnected = false;
+	let connectedDeviceName: string | null = null;
+
 	onMount(() => {
 		fetchDevices();
 		if (autoRefresh) {
@@ -55,16 +61,13 @@
 		error = null;
 
 		try {
-			// Use relative URL to work with Vite proxy configuration
 			const response = await fetch('/api/midi-input/devices');
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 			}
 
 			const response_data = await response.json();
-			// Extract devices from the backend response format
 			const devices_data = response_data.devices || response_data;
-			// Ensure the response has the expected structure
 			const safeData: DeviceResponse = {
 				usb_devices: devices_data.usb_devices || [],
 				rtpmidi_sessions: devices_data.rtpmidi_sessions || [],
@@ -100,7 +103,76 @@
 
 	function selectDevice(device: MidiDevice) {
 		selectedDevice = device.id;
+		connectionError = null; // Clear any previous errors when selecting a new device
 		dispatch('deviceSelected', device);
+	}
+
+	async function handleConnect() {
+		if (!selectedDevice) {
+			connectionError = 'Please select a device first';
+			return;
+		}
+
+		const device = allDevices.find(d => d.id === selectedDevice);
+		if (!device) {
+			connectionError = 'Selected device not found';
+			return;
+		}
+
+		isConnecting = true;
+		connectionError = null;
+
+		try {
+			const response = await fetch('/api/midi-input/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					device_name: device.name,
+					enable_usb: device.type === 'usb',
+					enable_rtpmidi: device.type === 'network'
+				})
+			});
+
+			const data = await response.json();
+
+			if (response.ok && data.status === 'success') {
+				isCurrentlyConnected = true;
+				connectedDeviceName = device.name;
+				dispatch('connected', { deviceId: selectedDevice, deviceName: device.name });
+			} else {
+				connectionError = data.message || 'Failed to connect device';
+				isCurrentlyConnected = false;
+			}
+		} catch (err) {
+			connectionError = err instanceof Error ? err.message : 'Connection failed';
+			isCurrentlyConnected = false;
+			console.error('Error connecting to MIDI device:', err);
+		} finally {
+			isConnecting = false;
+		}
+	}
+
+	async function handleDisconnect() {
+		isConnecting = true;
+		connectionError = null;
+
+		try {
+			const response = await fetch('/api/midi-input/stop', { method: 'POST' });
+			const data = await response.json();
+
+			if (response.ok && data.status === 'success') {
+				isCurrentlyConnected = false;
+				connectedDeviceName = null;
+				dispatch('disconnected');
+			} else {
+				connectionError = data.message || 'Failed to disconnect device';
+			}
+		} catch (err) {
+			connectionError = err instanceof Error ? err.message : 'Disconnection failed';
+			console.error('Error disconnecting MIDI device:', err);
+		} finally {
+			isConnecting = false;
+		}
 	}
 
 	function getDeviceStatusClass(status: string): string {
@@ -229,7 +301,51 @@
 		</div>
 	{/if}
 
+	<!-- NEW: Connection Actions Section -->
+	<div class="connection-actions">
+		{#if connectionError}
+			<div class="connection-error">
+				<span>❌ {connectionError}</span>
+				<button class="clear-error-btn" on:click={() => (connectionError = null)}>✕</button>
+			</div>
+		{/if}
 
+		<div class="action-buttons">
+			{#if isCurrentlyConnected}
+				<div class="connected-state">
+					<div class="connected-badge">
+						<span class="pulse-dot"></span>
+						<span>Connected to {connectedDeviceName}</span>
+					</div>
+					<button 
+						class="btn-disconnect" 
+						on:click={handleDisconnect}
+						disabled={isConnecting}
+						title="Disconnect from current device"
+					>
+						{#if isConnecting}
+							🔄 Disconnecting...
+						{:else}
+							✕ Disconnect
+						{/if}
+					</button>
+				</div>
+			{:else}
+				<button 
+					class="btn-connect" 
+					on:click={handleConnect}
+					disabled={!selectedDevice || isConnecting || allDevices.length === 0}
+					title={selectedDevice ? 'Connect to selected device' : 'Select a device first'}
+				>
+					{#if isConnecting}
+						🔄 Connecting...
+					{:else}
+						🎵 Connect Device
+					{/if}
+				</button>
+			{/if}
+		</div>
+	</div>
 </div>
 
 <style>
@@ -443,5 +559,137 @@
 	.selected-device-info .selected-name {
 		color: var(--text-primary, #2c3e50);
 		font-weight: 500;
+	}
+
+	/* NEW: Connection Actions Styles */
+	.connection-actions {
+		margin-top: 16px;
+		padding: 16px;
+		background: #f0f7ff;
+		border: 1px solid #bdd7ee;
+		border-radius: 6px;
+	}
+
+	.connection-error {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 12px;
+		background: #fee;
+		border: 1px solid #fcc;
+		border-radius: 4px;
+		color: #c33;
+		margin-bottom: 12px;
+		font-size: 0.9rem;
+	}
+
+	.clear-error-btn {
+		background: none;
+		border: none;
+		color: #c33;
+		cursor: pointer;
+		font-size: 16px;
+		padding: 0;
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: opacity 0.2s ease;
+	}
+
+	.clear-error-btn:hover {
+		opacity: 0.7;
+	}
+
+	.action-buttons {
+		display: flex;
+		gap: 8px;
+		flex-direction: column;
+	}
+
+	.btn-connect {
+		padding: 10px 16px;
+		background: linear-gradient(135deg, #007bff, #0056b3);
+		color: white;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+		font-weight: 600;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+	}
+
+	.btn-connect:hover:not(:disabled) {
+		background: linear-gradient(135deg, #0056b3, #003a82);
+		box-shadow: 0 4px 12px rgba(0, 86, 179, 0.3);
+	}
+
+	.btn-connect:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.connected-state {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.connected-badge {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		background: #d4edda;
+		border: 1px solid #c3e6cb;
+		border-radius: 4px;
+		color: #155724;
+		font-weight: 500;
+		font-size: 0.9rem;
+		flex: 1;
+	}
+
+	.pulse-dot {
+		width: 8px;
+		height: 8px;
+		background: #28a745;
+		border-radius: 50%;
+		animation: pulse 2s infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
+	}
+
+	.btn-disconnect {
+		padding: 10px 16px;
+		background: #dc3545;
+		color: white;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+		font-weight: 600;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		white-space: nowrap;
+	}
+
+	.btn-disconnect:hover:not(:disabled) {
+		background: #c82333;
+		box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+	}
+
+	.btn-disconnect:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>
