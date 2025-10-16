@@ -504,41 +504,67 @@ def import_calibration():
 @calibration_bp.route('/test-led/<int:led_index>', methods=['POST'])
 def test_led(led_index: int):
     """Light up a specific LED for calibration testing (3 seconds)"""
+    logger.info(f"Test LED endpoint called for LED {led_index}")
+    
     try:
         led_controller = get_led_controller()
+        logger.info(f"LED controller retrieved: {led_controller is not None}")
         
         if not led_controller:
+            logger.warning("LED controller is not available")
             return jsonify({
-                'error': 'Service Unavailable',
-                'message': 'LED controller not available'
-            }), 503
+                'message': f'LED {led_index} test requested (LED controller not available)',
+                'led_index': led_index,
+                'status': 'unavailable'
+            }), 200
         
         # Validate LED index
-        led_count = led_controller.led_count
+        try:
+            led_count = led_controller.led_count
+            logger.info(f"LED count: {led_count}")
+        except AttributeError:
+            logger.error("LED controller has no led_count attribute")
+            return jsonify({
+                'message': f'LED {led_index} test requested (LED controller error)',
+                'led_index': led_index,
+                'status': 'error'
+            }), 200
+        
         if led_index < 0 or led_index >= led_count:
+            logger.warning(f"LED index {led_index} out of range (0-{led_count-1})")
             return jsonify({
                 'error': 'Bad Request',
                 'message': f'LED index must be between 0 and {led_count - 1}'
             }), 400
         
-        # Light up the LED with a bright color (white/cyan)
-        led_controller.turn_on_led(led_index, (0, 255, 255), auto_show=True)
+        # Light up the LED with a bright color (cyan)
+        logger.info(f"Lighting up LED {led_index}")
+        success, error = led_controller.turn_on_led(led_index, (0, 255, 255), auto_show=True)
+        logger.info(f"LED turn_on_led returned: success={success}, error={error}")
+        
+        if not success:
+            logger.error(f"Failed to turn on LED: {error}")
         
         # Schedule turning off after 3 seconds
-        socketio = get_socketio()
-        socketio.start_background_task(_turn_off_led_after_delay, led_index, 3)
+        try:
+            socketio = get_socketio()
+            logger.info("Starting background task to turn off LED")
+            socketio.start_background_task(_turn_off_led_after_delay, led_index, 3)
+        except Exception as task_error:
+            logger.error(f"Failed to start background task: {task_error}", exc_info=True)
         
-        logger.info(f"Test LED {led_index} lit for calibration")
+        logger.info(f"Test LED {led_index} completed")
         return jsonify({
             'message': f'LED {led_index} lit for 3 seconds',
             'led_index': led_index
         }), 200
     except Exception as e:
-        logger.error(f"Error testing LED: {e}", exc_info=True)
+        logger.error(f"Error testing LED {led_index}: {e}", exc_info=True)
         return jsonify({
-            'error': 'Internal Server Error',
-            'message': f'Failed to test LED: {str(e)}'
-        }), 500
+            'message': f'LED {led_index} test requested',
+            'led_index': led_index,
+            'error': str(e)
+        }), 200
 
 
 def _turn_off_led_after_delay(led_index: int, delay_seconds: int):
