@@ -745,7 +745,7 @@ class SettingsAPI {
         const allowedCategories = new Set(['led', 'audio', 'piano', 'gpio', 'hardware', 'system', 'user']);
         const allowedProps: Record<string, Set<string>> = {
             led: new Set([
-                'enabled','led_count','max_led_count','led_channel','brightness','led_type','led_strip_type','led_orientation','data_pin','clock_pin','gpioPin','reverse_order','color_mode','colorScheme','color_profile','color_temperature','gamma_correction','white_balance','performance_mode','power_supply_voltage','power_supply_current','power_limiting_enabled','max_power_watts','dither_enabled','update_rate','thermal_protection_enabled','max_temperature_celsius','animationSpeed'
+                'enabled','led_count','max_led_count','led_channel','brightness','led_type','led_strip_type','led_orientation','data_pin','clock_pin','gpioPin','reverse_order','color_mode','colorScheme','color_profile','color_temperature','gamma_correction','white_balance','performance_mode','power_supply_voltage','power_supply_current','power_limiting_enabled','max_power_watts','dither_enabled','update_rate','thermal_protection_enabled','max_temperature_celsius','animationSpeed','leds_per_meter'
             ]),
     gpio: new Set(['enabled','pins','debounce_time','data_pin','clock_pin']),
             piano: new Set(['enabled','octave','velocity_sensitivity','channel','size','keys','octaves','start_note','end_note','key_mapping','key_mapping_mode']),
