@@ -181,7 +181,8 @@
 				throw new Error(errorData.message || 'Failed to connect');
 			}
 
-			await fetchStatus();
+			// Update both status and device list to reflect connection
+			await Promise.all([fetchStatus(), fetchDevices()]);
 			dispatch('connected', { device });
 		} catch (err) {
 			connectionError = err instanceof Error ? err.message : 'Connection failed';
@@ -208,7 +209,8 @@
 				throw new Error(errorData.message || 'Failed to disconnect');
 			}
 
-			await fetchStatus();
+			// Update both status and device list to reflect disconnection
+			await Promise.all([fetchStatus(), fetchDevices()]);
 			dispatch('disconnected');
 		} catch (err) {
 			connectionError = err instanceof Error ? err.message : 'Disconnection failed';
