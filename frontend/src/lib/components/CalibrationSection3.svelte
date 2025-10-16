@@ -109,7 +109,7 @@
   async function turnOffAllLeds(): Promise<void> {
     try {
       // Turn off all LEDs
-      const response = await fetch('/api/led/off', {
+      const response = await fetch('/api/hardware-test/led/off', {
         method: 'POST'
       });
       if (!response.ok) {

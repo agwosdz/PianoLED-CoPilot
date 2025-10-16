@@ -17,18 +17,18 @@ logger = get_logger(__name__)
 # Import settings service - will be initialized in app.py
 def get_settings_service():
     """Get the global settings service instance"""
-    from app import settings_service
+    from backend.app import settings_service
     return settings_service
 
 def get_socketio():
     """Get the global socketio instance"""
-    from app import socketio
+    from backend.app import socketio
     return socketio
 
 def get_led_controller():
     """Get the global LED controller instance"""
     try:
-        from app import led_controller
+        from backend.app import led_controller
         return led_controller
     except (ImportError, AttributeError):
         return None

@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 # Import settings service - will be initialized in app.py
 def get_settings_service():
     """Get the global settings service instance"""
-    from app import settings_service
+    from backend.app import settings_service
     return settings_service
 
 # Helper: normalize incoming payload to schema-compatible format
