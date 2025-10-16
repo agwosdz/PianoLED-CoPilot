@@ -783,35 +783,38 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     return mapping
 
 
-def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=None, led_count=None):
+def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, led_count=None):
     """Apply calibration offsets to a pre-computed key mapping with cascading individual offsets
     
     Args:
         mapping: Base key-to-LED mapping dict
-        global_offset: Global offset to apply to all LEDs
+        start_led: First LED index at the beginning of the piano (clamp min)
+        end_led: Last LED index at the end of the piano (clamp max)
         key_offsets: Per-key offset dict {midi_note: offset}
                      Individual offsets cascade: an offset at note N affects all notes >= N
         led_count: Total LED count for bounds checking (optional, no bounds if None)
     
     Returns:
-        dict: Adjusted mapping with cascading offsets applied (LED indices clamped to [0, led_count-1] if led_count provided)
+        dict: Adjusted mapping with LED range clamped to [start_led, end_led] and cascading offsets applied
     """
     from backend.logging_config import get_logger
     logger = get_logger(__name__)
     
-    if not mapping or (global_offset == 0 and not key_offsets):
+    if end_led is None:
+        end_led = (led_count - 1) if led_count else 245
+    
+    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets):
         logger.debug(f"Skipping offset application: mapping_empty={not mapping}, "
-                    f"global_offset={global_offset}, key_offsets_empty={not key_offsets}")
+                    f"start_led={start_led}, end_led={end_led}, key_offsets_empty={not key_offsets}")
         return mapping
     
     if key_offsets is None:
         key_offsets = {}
     
     logger.info(f"Applying calibration offsets to mapping with {len(mapping)} entries. "
-               f"global_offset={global_offset}, key_offsets_count={len(key_offsets)}, led_count={led_count}")
+               f"start_led={start_led}, end_led={end_led}, key_offsets_count={len(key_offsets)}, led_count={led_count}")
     
     adjusted = {}
-    max_led_idx = (led_count - 1) if led_count else None
     
     # Normalize key_offsets to ensure all keys and values are integers
     normalized_key_offsets = {}
@@ -861,38 +864,37 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
         
         if isinstance(led_indices, list):
             for idx in led_indices:
-                # Apply global offset first, then cascading individual offsets
-                adjusted_idx = idx + global_offset + cascading_offset
+                # Apply cascading individual offsets
+                adjusted_idx = idx + cascading_offset
                 
-                # Track if clamping occurred
+                # Clamp to the start_led and end_led range
                 was_clamped = False
-                if max_led_idx is not None:
-                    if adjusted_idx < 0 or adjusted_idx > max_led_idx:
-                        was_clamped = True
-                        clamped_count += 1
-                    adjusted_idx = max(0, min(adjusted_idx, max_led_idx))
+                if adjusted_idx < start_led or adjusted_idx > end_led:
+                    was_clamped = True
+                    clamped_count += 1
+                adjusted_idx = max(start_led, min(adjusted_idx, end_led))
                 
                 adjusted_indices.append(adjusted_idx)
                 
-                if cascading_offset != 0 or global_offset != 0:
+                if cascading_offset != 0:
                     logger.debug(f"Note {midi_note_int}: LED {idx} → {adjusted_idx} "
-                                f"(global={global_offset}, cascading={cascading_offset}, "
+                                f"(cascading={cascading_offset}, "
                                 f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         elif isinstance(led_indices, int):
-            adjusted_idx = led_indices + global_offset + cascading_offset
+            adjusted_idx = led_indices + cascading_offset
             
+            # Clamp to the start_led and end_led range
             was_clamped = False
-            if max_led_idx is not None:
-                if adjusted_idx < 0 or adjusted_idx > max_led_idx:
-                    was_clamped = True
-                    clamped_count += 1
-                adjusted_idx = max(0, min(adjusted_idx, max_led_idx))
+            if adjusted_idx < start_led or adjusted_idx > end_led:
+                was_clamped = True
+                clamped_count += 1
+            adjusted_idx = max(start_led, min(adjusted_idx, end_led))
             
             adjusted_indices = [adjusted_idx]
             
-            if cascading_offset != 0 or global_offset != 0:
+            if cascading_offset != 0:
                 logger.debug(f"Note {midi_note_int}: LED {led_indices} → {adjusted_idx} "
-                            f"(global={global_offset}, cascading={cascading_offset}, "
+                            f"(cascading={cascading_offset}, "
                             f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         
         if adjusted_indices:
@@ -902,7 +904,7 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
         logger.warning(f"Skipped {invalid_entries_count} invalid mapping entries (non-integer MIDI notes)")
     
     logger.info(f"Offset application complete. Adjusted {len(adjusted)} notes. "
-               f"Clamped {clamped_count} LED indices (bounds: 0-{max_led_idx if max_led_idx is not None else 'unlimited'}). "
+               f"Clamped {clamped_count} LED indices (bounds: {start_led}-{end_led}). "
                f"Adjusted mapping now has {sum(len(v) if isinstance(v, list) else 1 for v in adjusted.values())} total LED assignments")
     
     return adjusted

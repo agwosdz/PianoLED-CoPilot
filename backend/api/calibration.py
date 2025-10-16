@@ -576,18 +576,20 @@ def get_key_led_mapping():
             mapping_base_offset=mapping_base_offset
         )
         
-        # Get calibration offsets
-        global_offset = settings_service.get_setting('calibration', 'global_offset', 0)
+        # Get calibration settings
+        start_led = settings_service.get_setting('calibration', 'start_led', 0)
+        end_led = settings_service.get_setting('calibration', 'end_led', led_count - 1)
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
         
-        logger.info(f"Applying offsets: global_offset={global_offset}, key_offsets count={len(key_offsets)}")
+        logger.info(f"Applying offsets: start_led={start_led}, end_led={end_led}, key_offsets count={len(key_offsets)}")
         
         # Apply calibration offsets to the mapping (with bounds checking)
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=auto_mapping,
-            global_offset=global_offset,
+            start_led=start_led,
+            end_led=end_led,
             key_offsets=key_offsets,
-            led_count=led_count  # Pass led_count for bounds validation
+            led_count=led_count  # Pass led_count for validation
         )
         
         logger.info(f"Successfully generated mapping with {len(final_mapping)} keys")
@@ -596,7 +598,8 @@ def get_key_led_mapping():
             'mapping': final_mapping,
             'piano_size': piano_size,
             'led_count': led_count,
-            'global_offset': global_offset,
+            'start_led': start_led,
+            'end_led': end_led,
             'key_offsets_count': len(key_offsets),
             'timestamp': datetime.now().isoformat()
         }), 200

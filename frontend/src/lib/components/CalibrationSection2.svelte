@@ -167,7 +167,7 @@
     <!-- Start LED (Set First LED) -->
     <div class="led-adjustment-item">
       <div class="adjustment-header">
-        <label for="start-led">Set First LED</label>
+        <label for="start-led">Set First LED Index (0-20)</label>
         <span class="led-value">{startLedValue}</span>
       </div>
       
@@ -190,14 +190,14 @@
       </div>
 
       <p class="adjustment-description">
-        Set this to the first LED index at the beginning of your piano keyboard. Range: 0–20. This defines the left boundary of the mappable LED area.
+        Set this to the first LED Index at the beginning of your piano keyboard (LED numbering starts at 0). This defines the left boundary of the mappable LED area.
       </p>
     </div>
 
     <!-- End LED (Set Last LED) -->
     <div class="led-adjustment-item">
       <div class="adjustment-header">
-        <label for="end-led">Set Last LED</label>
+        <label for="end-led">Set Last LED Index ({ledCount - 20}-{ledCount - 1})</label>
         <span class="led-value">{endLedValue}</span>
       </div>
       
@@ -220,7 +220,7 @@
       </div>
 
       <p class="adjustment-description">
-        Set this to the last LED index at the end of your piano keyboard. Range: {ledCount - 20}–{ledCount - 1}. This defines the right boundary of the mappable LED area, leaving LEDs 0–{Math.min(19, ledCount - 1)} for overflow.
+        Set this to the last LED Index at the end of your piano keyboard (LED numbering starts at 0). Range: {ledCount - 20}–{ledCount - 1}. This defines the right boundary of the mappable LED area, leaving LEDs 0–{Math.min(19, ledCount - 1)} for overflow.
       </p>
     </div>
 
