@@ -1,6 +1,6 @@
 import logging
 from typing import Any, Dict, Optional, Tuple
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -29,7 +29,7 @@ try:
     from backend.config import get_config
 except ImportError:
     try:
-        from config import get_config
+        from backend.config import get_config
     except ImportError:
         logger.warning("Config module not available, using defaults")
         def get_config(key, default):

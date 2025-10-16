@@ -1,6 +1,6 @@
-from config import load_config, update_config
-from rtpmidi_service import RtpMIDISession
-from services.settings_service import SettingsService
+from backend.config import load_config, update_config
+from backend.rtpmidi_service import RtpMIDISession
+from backend.services.settings_service import SettingsService
 import colorsys
 import datetime
 import math
@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 import logging
 # Setup centralized logging before other imports
-from logging_config import setup_logging, get_logger
+from backend.logging_config import setup_logging, get_logger
 setup_logging()
 
 # Initialize logger early
@@ -38,18 +38,18 @@ CORS(app)
 # Use eventlet async mode for WebSocket support
 socketio = SocketIO(app, cors_allowed_origins='*')
 
-from led_controller import LEDController
-from led_effects_manager import LEDEffectsManager
+from backend.led_controller import LEDController
+from backend.led_effects_manager import LEDEffectsManager
 try:
-    from midi_input_manager import MIDIInputManager
+    from backend.midi_input_manager import MIDIInputManager
 except Exception:
     MIDIInputManager = None
 try:
-    from usb_midi_service import USBMIDIInputService
+    from backend.usb_midi_service import USBMIDIInputService
 except Exception:
     USBMIDIInputService = None
 try:
-    from playback_service import PlaybackService, PlaybackState
+    from backend.playback_service import PlaybackService, PlaybackState
 except Exception:
     PlaybackService = None
     PlaybackState = None
@@ -82,7 +82,7 @@ LED_COUNT = settings_service.get_setting('led', 'led_count', 100)
 
 # Initialize MIDI parser after settings service
 try:
-    from midi_parser import MIDIParser
+    from backend.midi_parser import MIDIParser
     midi_parser = MIDIParser(settings_service=settings_service)
 except Exception:
     midi_parser = None
@@ -962,8 +962,8 @@ def get_performance_metrics():
 
 
 # Register settings API blueprint
-from api.settings import settings_bp
-from api.hardware_test import hardware_test_bp
+from backend.api.settings import settings_bp
+from backend.api.hardware_test import hardware_test_bp
 app.register_blueprint(settings_bp, url_prefix='/api/settings')
 app.register_blueprint(hardware_test_bp)
 
@@ -1244,7 +1244,7 @@ def validate_configuration():
 def backup_configuration():
     """Create a backup of current configuration"""
     try:
-        from config import backup_config
+        from backend.config import backup_config
         success = backup_config()
         
         if success:
@@ -1269,7 +1269,7 @@ def backup_configuration():
 def restore_configuration():
     """Restore configuration from backup"""
     try:
-        from config import restore_config_from_backup
+        from backend.config import restore_config_from_backup
         success = restore_config_from_backup()
         
         if success:
@@ -1298,7 +1298,7 @@ def restore_configuration():
 def reset_configuration():
     """Reset configuration to defaults"""
     try:
-        from config import reset_config_to_defaults
+        from backend.config import reset_config_to_defaults
         success = reset_config_to_defaults()
         
         if success:
@@ -1336,7 +1336,7 @@ def export_configuration():
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             export_path = f"config_export_{timestamp}.json"
         
-        from config import export_config
+        from backend.config import export_config
         success = export_config(export_path)
         
         if success:
@@ -1362,7 +1362,7 @@ def export_configuration():
 def get_configuration_history():
     """Get configuration change history"""
     try:
-        from config import get_config_history
+        from backend.config import get_config_history
         history = get_config_history()
         
         return jsonify({

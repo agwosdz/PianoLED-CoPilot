@@ -6,8 +6,8 @@ Centralized validation and normalization logic for all settings
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple
-from config import get_piano_specs
-from logging_config import get_logger
+from backend.config import get_piano_specs
+from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 

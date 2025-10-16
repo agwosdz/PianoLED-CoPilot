@@ -11,14 +11,14 @@ import json
 from typing import Dict, Any, Optional, List
 from flask import Blueprint, request, jsonify
 from flask_socketio import emit
-from api.settings import get_settings_service
-from logging_config import get_logger
+from backend.api.settings import get_settings_service
+from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 # Import hardware components
 try:
-    from led_controller import LEDController
+    from backend.led_controller import LEDController
 except ImportError:
     LEDController = None
 
@@ -36,7 +36,7 @@ hardware_test_bp = Blueprint('hardware_test_api', __name__, url_prefix='/api/har
 
 def get_socketio():
     """Get the global SocketIO instance with proper error handling"""
-    from app import socketio
+    from backend.app import socketio
     if not socketio:
         raise RuntimeError("SocketIO instance not available - check application initialization")
     return socketio
@@ -64,7 +64,7 @@ def test_hardware_legacy():
         # Validate GPIO pin availability
         gpio_pin = data.get('gpio_pin', 18)
         try:
-            from config import validate_gpio_pin_availability
+            from backend.config import validate_gpio_pin_availability
             if not validate_gpio_pin_availability(gpio_pin):
                 return jsonify({
                     'success': False,

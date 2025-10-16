@@ -12,7 +12,7 @@ import os
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -32,7 +32,7 @@ except ImportError:
     PerformanceMonitor = None
 
 try:
-    from config import get_config, get_piano_specs
+    from backend.config import get_config, get_piano_specs
 except ImportError:
     logging.warning("Config module not available, using defaults")
     def get_config(key, default):
@@ -812,7 +812,7 @@ class PlaybackService:
             Dict[int, List[int]]: Mapping of MIDI note to list of LED indices
         """
         try:
-            from config import generate_auto_key_mapping
+            from backend.config import generate_auto_key_mapping
             
             if self.mapping_mode == 'manual' and self.key_mapping:
                 # Use manual mapping from configuration

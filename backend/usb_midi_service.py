@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 from midi.midi_event_processor import MidiEventProcessor, ProcessedMIDIEvent
 from midi.usb_port_manager import USBMIDIPortManager, MIDO_AVAILABLE
 
 try:  # Re-exported for test patching compatibility
-    from config import get_config, get_piano_specs  # noqa: F401
+    from backend.config import get_config, get_piano_specs  # noqa: F401
 except ImportError:  # pragma: no cover - fallback when config unavailable
     def get_config(key, default=None):
         return default

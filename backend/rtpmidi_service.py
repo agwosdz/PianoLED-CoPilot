@@ -11,7 +11,7 @@ import socket
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ except ImportError:
 
 # Configuration imports with fallbacks
 try:
-    from config import get_config
+    from backend.config import get_config
 except ImportError:
     def get_config(key, default=None):
         return default

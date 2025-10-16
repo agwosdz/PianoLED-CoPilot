@@ -1,7 +1,7 @@
 import os
 from typing import List, Dict, Any, Optional
 import logging
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 # Try to import mido with fallback
 try:
@@ -16,7 +16,7 @@ except ImportError as e:
     mido = None
 
 try:
-    from config import get_config, get_piano_specs
+    from backend.config import get_config, get_piano_specs
 except ImportError:
     logging.warning("Config module not available, using defaults")
     def get_config(key, default):
@@ -45,7 +45,7 @@ class MIDIParser:
         else:
             # Fallback to config.py
             try:
-                from config import get_config, get_piano_specs
+                from backend.config import get_config, get_piano_specs
                 piano_size = get_config('piano_size', '88-key')
                 piano_specs = get_piano_specs(piano_size)
                 self.led_count = led_count if led_count is not None else piano_specs['keys']

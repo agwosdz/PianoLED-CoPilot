@@ -7,9 +7,9 @@ Provides RESTful API access to the centralized settings service
 import logging
 from flask import Blueprint, request, jsonify
 from typing import Dict, Any
-from schemas.settings_schema import validate_setting, validate_category, validate_all_settings, get_all_defaults
-from services.settings_validator import SettingsValidator
-from logging_config import get_logger
+from backend.schemas.settings_schema import validate_setting, validate_category, validate_all_settings, get_all_defaults
+from backend.services.settings_validator import SettingsValidator
+from backend.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -255,7 +255,7 @@ def validate_settings():
 def get_settings_schema():
     """Get the settings schema"""
     try:
-        from schemas.settings_schema import SettingsSchema
+        from backend.schemas.settings_schema import SettingsSchema
         schema = SettingsSchema.SCHEMA
         return jsonify(schema), 200
     except Exception as e:

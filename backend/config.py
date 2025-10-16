@@ -8,7 +8,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 # Configure logging
 logger = get_logger(__name__)

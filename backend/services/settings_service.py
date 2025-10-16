@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Union, Callable
 from datetime import datetime
 from contextlib import contextmanager
-from services.settings_validator import SettingsValidator
-from logging_config import get_logger
+from backend.services.settings_validator import SettingsValidator
+from backend.logging_config import get_logger
 
 try:
-    from config import get_piano_specs
+    from backend.config import get_piano_specs
 except ImportError:
     def get_piano_specs(piano_size: str) -> Dict[str, Any]:
         """Fallback piano specs helper when config module is unavailable."""

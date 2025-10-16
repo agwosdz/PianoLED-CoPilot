@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 try:
     from config import get_config, get_piano_specs, generate_auto_key_mapping

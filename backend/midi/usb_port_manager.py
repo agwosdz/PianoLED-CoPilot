@@ -3,7 +3,7 @@ import time
 from collections import deque
 from typing import Deque, List, Optional, Tuple
 
-from logging_config import get_logger
+from backend.logging_config import get_logger
 
 try:
     import mido

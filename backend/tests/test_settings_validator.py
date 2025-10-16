@@ -7,7 +7,7 @@ and normalization of settings data.
 
 import pytest
 from unittest.mock import Mock
-from services.settings_validator import SettingsValidator
+from backend.services.settings_validator import SettingsValidator
 
 
 class TestSettingsValidator:
