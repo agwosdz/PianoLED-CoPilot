@@ -17,6 +17,14 @@
 		total_count: number;
 	}
 
+	interface StatusResponse {
+		listening: boolean;
+		current_device: string | null;
+		usb_listening: boolean;
+		rtpmidi_listening: boolean;
+		last_message_time: number | null;
+	}
+
 	export let selectedDevice: number | null = null;
 	export let autoRefresh = false;
 	export let refreshInterval = 5000;
@@ -26,30 +34,49 @@
 		rtpmidi_sessions: [],
 		total_count: 0
 	});
+
+	let statusStore = writable<StatusResponse>({
+		listening: false,
+		current_device: null,
+		usb_listening: false,
+		rtpmidi_listening: false,
+		last_message_time: null
+	});
+
 	let loading = false;
 	let error: string | null = null;
 	let refreshTimer: NodeJS.Timeout | null = null;
+	let statusTimer: NodeJS.Timeout | null = null;
 	let fetchInProgress = false;
+	let statusFetchInProgress = false;
 	let lastDispatchPayload: string | null = null;
 
 	// Connection state
 	let isConnecting = false;
+	let isDisconnecting = false;
 	let connectionError: string | null = null;
-	let isCurrentlyConnected = false;
-	let connectedDeviceName: string | null = null;
 
 	onMount(() => {
 		fetchDevices();
+		fetchStatus();
 		if (autoRefresh) {
 			startAutoRefresh();
 		}
+		startStatusPolling();
 
 		return () => {
 			if (refreshTimer) {
 				clearInterval(refreshTimer);
 			}
+			if (statusTimer) {
+				clearInterval(statusTimer);
+			}
 		};
 	});
+
+	function startStatusPolling() {
+		statusTimer = setInterval(fetchStatus, 2000);
+	}
 
 	async function fetchDevices() {
 		if (fetchInProgress) {
@@ -86,6 +113,25 @@
 		} finally {
 			loading = false;
 			fetchInProgress = false;
+		}
+	}
+
+	async function fetchStatus() {
+		if (statusFetchInProgress) return;
+		statusFetchInProgress = true;
+
+		try {
+			const response = await fetch('/api/midi-input/status');
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}`);
+			}
+
+			const data: StatusResponse = await response.json();
+			statusStore.set(data);
+		} catch (err) {
+			console.error('Error fetching MIDI status:', err);
+		} finally {
+			statusFetchInProgress = false;
 		}
 	}
 
@@ -126,52 +172,48 @@
 			const response = await fetch('/api/midi-input/start', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					device_name: device.name,
-					enable_usb: device.type === 'usb',
-					enable_rtpmidi: device.type === 'network'
-				})
+				body: JSON.stringify({ device_name: device.name })
 			});
 
-			const data = await response.json();
-
-			if (response.ok && data.status === 'success') {
-				isCurrentlyConnected = true;
-				connectedDeviceName = device.name;
-				dispatch('connected', { deviceId: selectedDevice, deviceName: device.name });
-			} else {
-				connectionError = data.message || 'Failed to connect device';
-				isCurrentlyConnected = false;
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.message || 'Failed to connect');
 			}
+
+			await fetchStatus();
+			dispatch('connected', { device });
 		} catch (err) {
 			connectionError = err instanceof Error ? err.message : 'Connection failed';
-			isCurrentlyConnected = false;
-			console.error('Error connecting to MIDI device:', err);
+			console.error('Error connecting:', err);
 		} finally {
 			isConnecting = false;
 		}
 	}
 
 	async function handleDisconnect() {
-		isConnecting = true;
+		if (isDisconnecting) return;
+
+		isDisconnecting = true;
 		connectionError = null;
 
 		try {
-			const response = await fetch('/api/midi-input/stop', { method: 'POST' });
-			const data = await response.json();
+			const response = await fetch('/api/midi-input/stop', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' }
+			});
 
-			if (response.ok && data.status === 'success') {
-				isCurrentlyConnected = false;
-				connectedDeviceName = null;
-				dispatch('disconnected');
-			} else {
-				connectionError = data.message || 'Failed to disconnect device';
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.message || 'Failed to disconnect');
 			}
+
+			await fetchStatus();
+			dispatch('disconnected');
 		} catch (err) {
 			connectionError = err instanceof Error ? err.message : 'Disconnection failed';
-			console.error('Error disconnecting MIDI device:', err);
+			console.error('Error disconnecting:', err);
 		} finally {
-			isConnecting = false;
+			isDisconnecting = false;
 		}
 	}
 
@@ -188,8 +230,16 @@
 		return type === 'usb' ? '🔌' : '🌐';
 	}
 
+	function getDeviceById(id: number): MidiDevice | undefined {
+		const allDevices = [...($devices.usb_devices || []), ...($devices.rtpmidi_sessions || [])];
+		return allDevices.find(d => d.id === id);
+	}
+
 	$: allDevices = [...($devices.usb_devices || []), ...($devices.rtpmidi_sessions || [])];
-</script>
+	$: currentlyConnectedDevice = $statusStore.current_device;
+	$: isAnythingConnected = $statusStore.listening;
+	$: selectedDeviceObj = getDeviceById(selectedDevice || -1);
+	$: isSelectedDeviceConnected = selectedDevice && selectedDeviceObj && currentlyConnectedDevice === selectedDeviceObj.name;</script>
 
 <div class="midi-device-selector">
 	<div class="header">
@@ -216,6 +266,27 @@
 			</button>
 		</div>
 	</div>
+
+	<!-- Real-time connection status -->
+	<div class="status-display" class:connected={isAnythingConnected}>
+		<div class="status-dot" class:active={isAnythingConnected}></div>
+		<div class="status-info">
+			{#if isAnythingConnected}
+				<span class="status-label">Connected to</span>
+				<span class="status-value">{currentlyConnectedDevice}</span>
+			{:else}
+				<span class="status-label">Status</span>
+				<span class="status-value">Disconnected</span>
+			{/if}
+		</div>
+	</div>
+
+	{#if connectionError}
+		<div class="error-message">
+			⚠️ {connectionError}
+			<button class="error-close" on:click={() => connectionError = null}>×</button>
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="error-message">
@@ -340,7 +411,7 @@
 					{#if isConnecting}
 						🔄 Connecting...
 					{:else}
-						🎵 Connect Device
+						🔌 Connect Device
 					{/if}
 				</button>
 			{/if}
@@ -361,13 +432,70 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 16px;
+		margin-bottom: 12px;
 	}
 
 	.header h3 {
 		margin: 0;
 		font-size: 1.1rem;
 		color: var(--text-primary, #2c3e50);
+	}
+
+	.status-display {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		background: linear-gradient(135deg, rgba(0,123,255,0.05) 0%, rgba(40,167,69,0.05) 100%);
+		border: 1px solid rgba(0,123,255,0.1);
+		border-radius: 6px;
+		padding: 12px;
+		margin-bottom: 12px;
+		transition: all 0.3s ease;
+	}
+
+	.status-display.connected {
+		border-color: rgba(40,167,69,0.3);
+		background: linear-gradient(135deg, rgba(40,167,69,0.08) 0%, rgba(40,167,69,0.04) 100%);
+	}
+
+	.status-dot {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: #ccc;
+		transition: all 0.3s ease;
+		flex-shrink: 0;
+	}
+
+	.status-dot.active {
+		background: #28a745;
+		box-shadow: 0 0 12px rgba(40,167,69,0.6);
+		animation: pulse 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; box-shadow: 0 0 12px rgba(40,167,69,0.6); }
+		50% { opacity: 0.6; box-shadow: 0 0 6px rgba(40,167,69,0.3); }
+	}
+
+	.status-info {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.status-label {
+		font-size: 0.75rem;
+		color: var(--text-secondary, #6c757d);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.status-value {
+		font-weight: 600;
+		color: var(--text-primary, #2c3e50);
+		font-size: 0.95rem;
 	}
 
 	.controls {
