@@ -75,6 +75,9 @@
     const piano = state.piano ?? {};
     const gpio = state.gpio ?? {};
 
+    console.log('🔍 prepareSettingsPayload - input state.led:', state.led);
+    console.log('🔍 prepareSettingsPayload - state.leds_per_meter:', state.leds_per_meter);
+    
     const ledCount = coerceNumber(
       led.led_count ?? led.ledCount ?? state.led_count ?? state.ledCount,
       246
@@ -129,6 +132,9 @@
       state.clock_pin ??
       state.gpio?.clock_pin;
 
+    const ledsPerMeter = coerceNumber(led.leds_per_meter ?? state.leds_per_meter ?? 60, 60);
+    console.log('🔍 prepareSettingsPayload - calculated ledsPerMeter:', ledsPerMeter);
+    
     const payload: Record<string, any> = {
       led: {
         enabled: led.enabled ?? true,
@@ -137,7 +143,8 @@
         brightness,
         data_pin: dataPin,
         led_channel: ledChannel,
-        update_rate: coerceNumber(led.update_rate ?? state.update_rate ?? 60, 60)
+        update_rate: coerceNumber(led.update_rate ?? state.update_rate ?? 60, 60),
+        leds_per_meter: ledsPerMeter
       },
       piano: {
         enabled: piano.enabled ?? true,
@@ -197,10 +204,13 @@
   async function loadSettingsData() {
     try {
       const fetched = await loadSettings();
+      console.log('🔍 loadSettingsData - fetched settings:', JSON.stringify(fetched, null, 2));
       const snapshot = clone(fetched);
       currentSettings = clone(snapshot);
       originalSettings = clone(snapshot);
       hasUnsavedChanges = false;
+      console.log('🔍 loadSettingsData - currentSettings.led:', currentSettings.led);
+      console.log('🔍 loadSettingsData - currentSettings.led.leds_per_meter:', currentSettings.led?.leds_per_meter);
     } catch (err) {
       console.error('Error loading settings:', err);
       showMessage('Error loading settings', 'error');
@@ -297,10 +307,15 @@
     const validDensities = [60, 72, 100, 120, 144, 160, 180, 200];
     const safeDensity = validDensities.includes(density) ? density : 60;
 
+    console.log('🔍 handleLedsPerMeterChange called with density:', density, 'safeDensity:', safeDensity);
+    
     updateLocalSettings((draft) => {
       draft.led = { ...(draft.led || {}), leds_per_meter: safeDensity };
       draft.leds_per_meter = safeDensity;
+      console.log('🔍 After update - draft.led.leds_per_meter:', draft.led.leds_per_meter);
     });
+    
+    console.log('🔍 After updateLocalSettings - currentSettings.led.leds_per_meter:', currentSettings.led?.leds_per_meter);
   }
 
   function handleBrightnessChange(percent: number) {
@@ -456,12 +471,14 @@
     try {
       saving = true;
       const payload = prepareSettingsPayload(currentSettings);
+      console.log('🔍 saveCurrentSettings - final payload:', JSON.stringify(payload, null, 2));
       await updateSettings(payload);
   const refreshedRaw = await loadSettings();
   const refreshed = clone(refreshedRaw);
       currentSettings = clone(refreshed);
       originalSettings = clone(refreshed);
       hasUnsavedChanges = false;
+      console.log('🔍 After save - refreshed settings:', JSON.stringify(currentSettings, null, 2));
       showMessage('Settings saved successfully!', 'success');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -568,6 +585,7 @@
     const validDensities = [60, 72, 100, 120, 144, 160, 180, 200];
     const raw = currentSettings?.led?.leds_per_meter ?? 60;
     const value = Number(raw);
+    console.log('🔍 ledsPerMeterValue reactive - raw:', raw, 'typeof:', typeof raw, 'Number(raw):', value, 'includes?:', validDensities.includes(value), 'result:', validDensities.includes(value) ? value : 60);
     return validDensities.includes(value) ? value : 60;
   })();
   $: {
@@ -687,8 +705,8 @@
               <label for="leds-per-meter">LED Density (LEDs/m)</label>
               <select
                 id="leds-per-meter"
-                bind:value={ledsPerMeterValue}
-                on:change={() => handleLedsPerMeterChange(Number(ledsPerMeterValue))}
+                value={ledsPerMeterValue}
+                on:change={(e) => handleLedsPerMeterChange(Number(e.currentTarget.value))}
                 disabled={loading || saving}
               >
                 <option value={60}>60 LEDs/m</option>

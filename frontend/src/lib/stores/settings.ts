@@ -32,6 +32,7 @@ interface LEDSettings {
     color_temperature?: number;
     gamma_correction?: number;
     count?: number;
+    leds_per_meter?: number;
 }
 
 interface PianoSettings {
@@ -426,6 +427,7 @@ export const ledSettings = derived(settings, ($settings: Settings): LEDSettings 
     brightness: 100,
     color_temperature: 6500,
     gamma_correction: 2.2,
+    leds_per_meter: 60,
     ...($settings.led || {})
 }));
 
@@ -1049,7 +1051,8 @@ function getCategoryDefaults(category: string): any {
             count: 60,
             brightness: 100,
             color_temperature: 6500,
-            gamma_correction: 2.2
+            gamma_correction: 2.2,
+            leds_per_meter: 60
         },
         audio: {
             enabled: true,

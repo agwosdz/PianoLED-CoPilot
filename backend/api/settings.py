@@ -42,6 +42,7 @@ def get_all_settings():
     try:
         settings_service = get_settings_service()
         settings = settings_service.get_all_settings()
+        logger.info(f"API returning LED.leds_per_meter: {settings.get('led', {}).get('leds_per_meter', 'NOT FOUND')}")
         return jsonify(settings), 200
     except Exception as e:
         logger.error(f"Error getting all settings: {e}")

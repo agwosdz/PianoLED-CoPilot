@@ -52,6 +52,7 @@ export function normalizeSettings(raw) {
   copy('led.led_count', 'led_count');
   copy('led.led_count', 'led.led_count');
   copy('led.max_led_count', 'led.max_led_count');
+  copy('led.leds_per_meter', 'led.leds_per_meter');
   copy('led.led_orientation', 'led.led_orientation');
   copy('led.led_type', 'led.led_type');
   copy('led.data_pin', 'gpio.data_pin');
