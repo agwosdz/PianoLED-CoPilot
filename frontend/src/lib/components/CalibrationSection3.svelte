@@ -99,25 +99,23 @@
     if (!ledIndices || ledIndices.length === 0) return;
     
     try {
-      console.log(`[LED] Lighting up LEDs: ${ledIndices.join(', ')}`);
-      // Light up all LEDs in the range (persistent, white color)
-      // Send requests sequentially to maintain order
-      for (const ledIndex of ledIndices) {
-        if (typeof ledIndex !== 'number' || !Number.isFinite(ledIndex)) {
-          console.warn(`[LED] Invalid LED index: ${ledIndex}`);
-          continue;
-        }
-        
-        const response = await fetch(`/api/calibration/led-on/${ledIndex}`, {
-          method: 'POST'
-        });
-        if (!response.ok) {
-          console.warn(`[LED] Failed to light LED ${ledIndex}: ${response.status}`);
-        } else {
-          console.log(`[LED] LED ${ledIndex} turned on`);
+      console.log(`[LED] Lighting up ${ledIndices.length} LEDs: ${ledIndices.join(', ')}`);
+      
+      const response = await fetch('/api/calibration/leds-on', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leds: ledIndices })
+      });
+      
+      if (!response.ok) {
+        console.warn(`[LED] Failed to light LEDs: ${response.status}`);
+      } else {
+        const data = await response.json();
+        console.log(`[LED] Successfully lit ${data.leds_turned_on}/${data.total_requested} LEDs`);
+        if (data.errors && data.errors.length > 0) {
+          console.warn('[LED] Some errors occurred:', data.errors);
         }
       }
-      console.log(`[LED] Finished lighting up all LEDs`);
     } catch (error) {
       console.error('[LED] Failed to light up LEDs:', error);
     }
@@ -127,28 +125,31 @@
     if (!ledIndices || ledIndices.length === 0) return;
     
     try {
-      console.log(`[LED] Lighting up LEDs with color RGB(${color.r},${color.g},${color.b}): ${ledIndices.join(', ')}`);
-      // Light up all LEDs with specific color
-      for (const ledIndex of ledIndices) {
-        if (typeof ledIndex !== 'number' || !Number.isFinite(ledIndex)) {
-          console.warn(`[LED] Invalid LED index: ${ledIndex}`);
-          continue;
-        }
-        
-        try {
-          const response = await fetch(`/api/calibration/led-on/${ledIndex}?r=${color.r}&g=${color.g}&b=${color.b}`, {
-            method: 'POST'
-          });
-          if (!response.ok) {
-            console.warn(`[LED] Failed to light LED ${ledIndex}: ${response.status}`);
-          } else {
-            console.log(`[LED] LED ${ledIndex} turned on with color RGB(${color.r},${color.g},${color.b})`);
-          }
-        } catch (err) {
-          console.warn(`[LED] Error lighting LED ${ledIndex}:`, err);
+      console.log(`[LED] Lighting up ${ledIndices.length} LEDs with color RGB(${color.r},${color.g},${color.b})`);
+      
+      // Build LED objects with color info
+      const ledsWithColor = ledIndices.map(index => ({
+        index,
+        r: color.r,
+        g: color.g,
+        b: color.b
+      }));
+      
+      const response = await fetch('/api/calibration/leds-on', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leds: ledsWithColor })
+      });
+      
+      if (!response.ok) {
+        console.warn(`[LED] Failed to light LEDs with color: ${response.status}`);
+      } else {
+        const data = await response.json();
+        console.log(`[LED] Successfully lit ${data.leds_turned_on}/${data.total_requested} LEDs with color`);
+        if (data.errors && data.errors.length > 0) {
+          console.warn('[LED] Some errors occurred:', data.errors);
         }
       }
-      console.log(`[LED] Finished lighting up all LEDs with custom color`);
     } catch (error) {
       console.error('[LED] Failed to light up LEDs with color:', error);
     }

@@ -720,3 +720,144 @@ def _turn_off_led_after_delay(led_index: int, delay_seconds: int):
             logger.info(f"Test LED {led_index} turned off after {delay_seconds}s")
     except Exception as e:
         logger.error(f"Error turning off LED: {e}", exc_info=True)
+
+
+@calibration_bp.route('/leds-on', methods=['POST'])
+def turn_on_leds_batch():
+    """Light up multiple LEDs with specified colors (batch operation)
+    
+    Request body (JSON):
+    {
+        "leds": [
+            {"index": 0, "r": 150, "g": 0, "b": 100},
+            {"index": 1, "r": 0, "g": 100, "b": 150},
+            ...
+        ]
+    }
+    
+    Or simple array of indices (uses white as default):
+    {
+        "leds": [0, 1, 2, 3]
+    }
+    """
+    logger.info("Batch LED on endpoint called")
+    
+    try:
+        led_controller = get_led_controller()
+        
+        if not led_controller:
+            logger.warning("LED controller is not available")
+            return jsonify({
+                'message': 'LED controller not available',
+                'status': 'unavailable',
+                'leds_turned_on': 0
+            }), 200
+        
+        # Get LED count for validation
+        try:
+            led_count = led_controller.num_pixels
+            logger.info(f"LED count: {led_count}")
+        except AttributeError as attr_error:
+            logger.error(f"LED controller has no num_pixels attribute: {attr_error}")
+            return jsonify({
+                'message': 'LED controller error',
+                'status': 'error',
+                'leds_turned_on': 0
+            }), 200
+        
+        # Parse request body
+        data = request.get_json()
+        if not data or 'leds' not in data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Request must include "leds" array'
+            }), 400
+        
+        leds_data = data['leds']
+        if not isinstance(leds_data, list):
+            return jsonify({
+                'error': 'Bad Request',
+                'message': '"leds" must be an array'
+            }), 400
+        
+        if len(leds_data) == 0:
+            return jsonify({
+                'message': 'No LEDs to turn on',
+                'leds_turned_on': 0
+            }), 200
+        
+        leds_turned_on = 0
+        errors = []
+        
+        # Process each LED
+        for led_item in leds_data:
+            try:
+                # Handle both simple index format and object format
+                if isinstance(led_item, int):
+                    led_index = led_item
+                    color = (255, 255, 255)  # Default white
+                elif isinstance(led_item, dict):
+                    if 'index' not in led_item:
+                        errors.append(f"LED object missing 'index' field")
+                        continue
+                    
+                    led_index = int(led_item['index'])
+                    r = int(led_item.get('r', 255))
+                    g = int(led_item.get('g', 255))
+                    b = int(led_item.get('b', 255))
+                    
+                    # Validate and clamp color values
+                    r = max(0, min(255, r))
+                    g = max(0, min(255, g))
+                    b = max(0, min(255, b))
+                    
+                    color = (r, g, b)
+                else:
+                    errors.append(f"Invalid LED item format: {led_item}")
+                    continue
+                
+                # Validate LED index
+                if led_index < 0 or led_index >= led_count:
+                    errors.append(f"LED index {led_index} out of range (0-{led_count-1})")
+                    continue
+                
+                # Turn on the LED
+                logger.debug(f"Turning on LED {led_index} with color RGB{color}")
+                success, error = led_controller.turn_on_led(led_index, color, auto_show=False)
+                
+                if success:
+                    leds_turned_on += 1
+                else:
+                    errors.append(f"LED {led_index}: {error}")
+                
+            except (ValueError, TypeError) as e:
+                errors.append(f"Error processing LED item {led_item}: {str(e)}")
+                continue
+        
+        # Call show once at the end to update all LEDs
+        try:
+            if leds_turned_on > 0:
+                led_controller.show()
+                logger.info(f"Batch operation complete: {leds_turned_on} LEDs turned on")
+        except Exception as e:
+            logger.error(f"Error calling show: {e}")
+            errors.append(f"Error updating display: {str(e)}")
+        
+        response = {
+            'message': f'Batch operation complete',
+            'leds_turned_on': leds_turned_on,
+            'total_requested': len(leds_data)
+        }
+        
+        if errors:
+            response['errors'] = errors
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        logger.error(f"Error in batch LED operation: {e}", exc_info=True)
+        return jsonify({
+            'message': 'Batch operation failed',
+            'error': str(e),
+            'leds_turned_on': 0
+        }), 200
