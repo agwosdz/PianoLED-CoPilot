@@ -251,7 +251,8 @@
 				currentlyConnectedDevice,
 				selectedDeviceObj: selectedDeviceObj?.name,
 				isSelectedDeviceConnected,
-				isAnythingConnected
+				isAnythingConnected,
+				fullStatusStore: $statusStore
 			});
 		}
 	}</script>
