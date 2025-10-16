@@ -71,12 +71,14 @@ class USBMIDIInputService:
         self.settings_service = settings_service
 
         self._port_manager = USBMIDIPortManager()
+        # Create SINGLE processor instance - never recreate
         self._event_processor = MidiEventProcessor(
             led_controller=led_controller,
             settings_service=settings_service,
             config_getter=get_config,
             piano_specs_resolver=get_piano_specs,
         )
+        logger.info("MidiEventProcessor created (id=%s)", id(self._event_processor))
 
         self._state = MIDIInputState.IDLE if MIDO_AVAILABLE else MIDIInputState.ERROR
         self._current_device: Optional[str] = None
@@ -175,6 +177,13 @@ class USBMIDIInputService:
         if self.is_listening:
             logger.debug("USB MIDI service already listening")
             return True
+
+        # SAFETY: Ensure old thread is completely stopped before starting new one
+        if self._processing_thread and self._processing_thread.is_alive():
+            logger.warning("USB MIDI: Old processing thread still alive! Stopping it...")
+            self._stop_event.set()
+            self._processing_thread.join(timeout=2.0)
+            logger.info("USB MIDI: Old processing thread stopped")
 
         candidates: List[Optional[str]] = []
         attempted: Set[Optional[str]] = set()
