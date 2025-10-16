@@ -57,15 +57,47 @@ class UnifiedMIDIEvent:
 class MIDIInputManager:
     """Unified manager for coordinating USB and rtpMIDI inputs"""
     
+    # Class-level singleton instance to prevent duplicate creation
+    _instance: Optional['MIDIInputManager'] = None
+    _instance_lock = threading.Lock()
+    
+    def __new__(cls, websocket_callback: Optional[Callable] = None, led_controller=None, settings_service: Optional[Any] = None):
+        """
+        Implement singleton pattern to prevent duplicate manager instances.
+        Only the FIRST call to MIDIInputManager() creates an instance.
+        Subsequent calls return the existing instance.
+        """
+        if cls._instance is None:
+            with cls._instance_lock:
+                # Double-check pattern to avoid race conditions
+                if cls._instance is None:
+                    instance = super(MIDIInputManager, cls).__new__(cls)
+                    cls._instance = instance
+                    # Mark as needing initialization
+                    instance._needs_init = True
+                    logger.info("MIDIInputManager singleton instance created")
+                else:
+                    logger.debug("MIDIInputManager singleton already exists, returning existing instance")
+        else:
+            logger.debug("Returning existing MIDIInputManager singleton instance")
+        
+        return cls._instance
+    
     def __init__(self, websocket_callback: Optional[Callable] = None, led_controller=None, settings_service: Optional[Any] = None):
         """
         Initialize unified MIDI input manager.
+        Uses singleton pattern - only initializes once.
         
         Args:
             websocket_callback: Callback function for WebSocket event broadcasting
             led_controller: LED controller instance for real-time visualization
             settings_service: Settings service for runtime configuration access
         """
+        # Skip re-initialization if already initialized
+        if hasattr(self, '_needs_init') and not self._needs_init:
+            logger.debug("MIDIInputManager already initialized, skipping re-initialization")
+            return
+        
         self._websocket_callback = websocket_callback
         self._led_controller = led_controller
         self.settings_service = settings_service
@@ -118,6 +150,9 @@ class MIDIInputManager:
         logger.info("Broadcasting initial status update...")
         self._broadcast_status_update()
         logger.info("Initial status broadcast completed")
+        
+        # Mark as fully initialized
+        self._needs_init = False
     
     @property
     def is_listening(self) -> bool:
