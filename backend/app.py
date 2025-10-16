@@ -91,6 +91,10 @@ except Exception:
 # Let the LED controller get its own LED count from settings service
 led_controller = None
 led_effects_manager = None
+
+# Global flag to track if startup animation has run (will be set on first init)
+_startup_animation_completed = False
+
 try:
     led_controller = LEDController(settings_service=settings_service)
     # Use the actual LED count from the controller to avoid mismatches
@@ -98,12 +102,16 @@ try:
     led_effects_manager = LEDEffectsManager(led_controller, actual_led_count)
     logger.info(f"LED controller and effects manager initialized successfully with {actual_led_count} LEDs")
     
-    # Play startup animation to welcome users
-    if led_effects_manager and led_controller:
+    # Play startup animation on first initialization only
+    if led_effects_manager and led_controller and not _startup_animation_completed:
         try:
+            logger.info("🎹 Triggering fancy startup animation...")
             led_effects_manager.startup_animation(duration=2.5)
+            _startup_animation_completed = True
+            logger.info("✨ Startup animation completed - will not repeat on config changes")
         except Exception as e:
             logger.warning(f"Startup animation failed: {e}")
+            _startup_animation_completed = True  # Mark as done even on failure to avoid retries
             
 except Exception as e:
     logger.warning(f"LED controller initialization failed: {e}")
@@ -1041,7 +1049,16 @@ def stop_led_test_sequence():
 
 @app.route('/api/led-startup-animation', methods=['POST'])
 def trigger_startup_animation():
-    """Trigger the LED startup animation"""
+    """
+    Trigger the LED startup animation.
+    
+    NOTE: This endpoint can be called anytime, but the actual startup animation
+    (fancy 3-phase cascade/sweep/sparkle) only runs ONCE on app initialization
+    to prevent re-triggering on config changes. Subsequent calls will be logged.
+    
+    Returns:
+        JSON with success status and message
+    """
     try:
         if not led_effects_manager:
             return jsonify({
@@ -1051,19 +1068,31 @@ def trigger_startup_animation():
             
         data = request.get_json(silent=True) or {}
         duration = data.get('duration', 2.5)  # Default 2.5 seconds
+        force = data.get('force', False)  # Optional: force animation even if already run
+        
+        # Check if startup animation already ran
+        if _startup_animation_completed and not force:
+            logger.info("⚠️  Startup animation already completed on initialization. Use force=true to re-run.")
+            return jsonify({
+                'success': False,
+                'message': 'Startup animation already ran on initialization',
+                'hint': 'Use force=true to re-run the animation'
+            }), 200  # Return 200 but indicate it didn't run
         
         # Emit startup animation start event
         socketio.emit('led_startup_animation_start', {
-            'duration': duration
+            'duration': duration,
+            'force': force
         })
         
         # Start the startup animation in a background thread
-        socketio.start_background_task(_run_startup_animation, duration)
+        socketio.start_background_task(_run_startup_animation, duration, force)
         
         return jsonify({
             'success': True,
             'message': 'LED startup animation started',
-            'duration': duration
+            'duration': duration,
+            'forced': force
         }), 200
         
     except Exception as e:
@@ -1073,13 +1102,24 @@ def trigger_startup_animation():
             'message': f'Startup animation error: {str(e)}'
         }), 500
 
-def _run_startup_animation(duration):
-    """Run startup animation in background thread"""
+def _run_startup_animation(duration, force=False):
+    """
+    Run startup animation in background thread
+    
+    Args:
+        duration: Animation duration in seconds
+        force: If True, bypass the one-time check (allows manual re-runs)
+    """
     try:
         if led_effects_manager:
+            if force:
+                logger.info("🎨 Running forced re-run of startup animation...")
+            else:
+                logger.info("🎹 Running startup animation...")
             led_effects_manager.startup_animation(duration)
             
         # Emit completion event using background task
+
         socketio.start_background_task(_emit_startup_animation_complete, duration)
         
     except Exception as e:

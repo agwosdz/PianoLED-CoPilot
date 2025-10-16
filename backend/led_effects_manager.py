@@ -236,90 +236,127 @@ class LEDEffectsManager:
         
     def startup_animation(self, duration: float = 3.0):
         """
-        Play a startup animation - rainbow wave effect
+        Play a fancy startup animation - Piano key cascade with musical color sweep
+        Creates an elegant welcome effect with cascading keys and gradient waves
         This is a one-time effect that doesn't use the threading system
         """
         try:
-            logger.info("Starting startup animation")
+            logger.info("Starting fancy startup animation")
             import math
             
-            # Rainbow wave parameters
-            wave_length = 10  # Number of LEDs in one wave cycle
-            speed = 0.02  # Animation speed
-            steps = int(duration / speed)
+            # Animation phases
+            # Phase 1: Piano key cascade (0.8s) - keys light up sequentially
+            # Phase 2: Musical gradient sweep (1.2s) - smooth color gradients flow through
+            # Phase 3: Sparkle finale (0.8s) - random sparkling with fade
             
-            for step in range(steps):
+            phase1_duration = 0.8
+            phase2_duration = 1.2
+            phase3_duration = 0.7
+            
+            # ========== PHASE 1: PIANO KEY CASCADE ==========
+            logger.info("  Phase 1: Piano key cascade...")
+            cascade_steps = 40
+            cascade_delay = phase1_duration / cascade_steps
+            
+            for step in range(cascade_steps):
                 # Clear all LEDs first
                 for i in range(self.led_count):
                     self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
-                # Create rainbow wave
+                # Create cascade effect - each key lights up in sequence
+                cascade_width = max(3, int(self.led_count * 0.15))  # Width of the cascade wave
+                cascade_pos = (step / cascade_steps) * (self.led_count + cascade_width)
+                
                 for i in range(self.led_count):
-                    # Calculate wave position
-                    wave_pos = (i + step * 2) % (wave_length * 6)  # 6 colors in rainbow
+                    distance_from_wave = abs(i - cascade_pos)
                     
-                    # Generate rainbow colors based on position
-                    if wave_pos < wave_length:
-                        # Red to Orange
-                        r = 255
-                        g = int(255 * (wave_pos / wave_length))
-                        b = 0
-                    elif wave_pos < wave_length * 2:
-                        # Orange to Yellow
-                        r = 255
-                        g = 255
-                        b = 0
-                    elif wave_pos < wave_length * 3:
-                        # Yellow to Green
-                        r = int(255 * (1 - (wave_pos - wave_length * 2) / wave_length))
-                        g = 255
-                        b = 0
-                    elif wave_pos < wave_length * 4:
-                        # Green to Cyan
-                        r = 0
-                        g = 255
-                        b = int(255 * ((wave_pos - wave_length * 3) / wave_length))
-                    elif wave_pos < wave_length * 5:
-                        # Cyan to Blue
-                        r = 0
-                        g = int(255 * (1 - (wave_pos - wave_length * 4) / wave_length))
-                        b = 255
-                    else:
-                        # Blue to Purple
-                        r = int(255 * ((wave_pos - wave_length * 5) / wave_length))
-                        g = 0
-                        b = 255
-                    
-                    # Apply brightness fade based on distance from wave center
-                    brightness = max(0.1, 1.0 - abs((wave_pos % wave_length) - wave_length/2) / (wave_length/2))
-                    
-                    color = (int(r * brightness), int(g * brightness), int(b * brightness))
-                    self.led_controller.turn_on_led(i, color, auto_show=False)
+                    if distance_from_wave < cascade_width:
+                        # Bright cyan-to-blue gradient for the cascade
+                        brightness = 1.0 - (distance_from_wave / cascade_width)
+                        
+                        # Gradient: Bright cyan -> blue
+                        hue_factor = distance_from_wave / cascade_width
+                        r = int(0 * brightness)
+                        g = int(255 * brightness * (1 - hue_factor * 0.5))
+                        b = int(255 * brightness)
+                        
+                        self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
                 
                 self.led_controller.show()
-                time.sleep(speed)
+                time.sleep(cascade_delay)
             
-            # Fade out to complete the animation
-            for fade_step in range(20):
-                brightness = 1.0 - (fade_step / 20.0)
+            # ========== PHASE 2: MUSICAL GRADIENT SWEEP ==========
+            logger.info("  Phase 2: Musical gradient sweep...")
+            sweep_steps = 60
+            sweep_delay = phase2_duration / sweep_steps
+            
+            for step in range(sweep_steps):
+                # Clear all LEDs first
                 for i in range(self.led_count):
-                    # Get current color and fade it
-                    current_color = self.led_controller._led_state[i] if hasattr(self.led_controller, '_led_state') else (0, 0, 0)
-                    faded_color = (
-                        int(current_color[0] * brightness),
-                        int(current_color[1] * brightness),
-                        int(current_color[2] * brightness)
-                    )
-                    self.led_controller.turn_on_led(i, faded_color, auto_show=False)
+                    self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
+                
+                # Create smooth gradient that sweeps through like a musical scale
+                for i in range(self.led_count):
+                    # Calculate position in the sweep cycle
+                    wave_phase = ((i / self.led_count) + (step / sweep_steps)) * 2 * math.pi
+                    
+                    # Use sine waves to create smooth, musical gradient
+                    r = int(127.5 + 127.5 * math.sin(wave_phase))
+                    g = int(127.5 + 127.5 * math.sin(wave_phase + 2 * math.pi / 3))
+                    b = int(127.5 + 127.5 * math.sin(wave_phase + 4 * math.pi / 3))
+                    
+                    self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
+                
                 self.led_controller.show()
-                time.sleep(0.05)
+                time.sleep(sweep_delay)
+            
+            # ========== PHASE 3: SPARKLE FINALE WITH FADE ==========
+            logger.info("  Phase 3: Sparkle finale...")
+            import random
+            sparkle_steps = 50
+            sparkle_delay = phase3_duration / sparkle_steps
+            
+            for step in range(sparkle_steps):
+                brightness_scale = 1.0 - (step / sparkle_steps)
+                
+                for i in range(self.led_count):
+                    # Mostly dim with occasional bright sparkles
+                    if random.random() < 0.3 * brightness_scale:
+                        # Gold/yellow sparkle
+                        r = int(255 * brightness_scale)
+                        g = int(200 * brightness_scale)
+                        b = int(0)
+                    else:
+                        # Dim purple/magenta background
+                        r = int(100 * brightness_scale)
+                        g = int(30 * brightness_scale)
+                        b = int(80 * brightness_scale)
+                    
+                    self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
+                
+                self.led_controller.show()
+                time.sleep(sparkle_delay)
+            
+            # ========== COMPLETION: SMOOTH FADE TO BLACK ==========
+            logger.info("  Fading out...")
+            fade_steps = 15
+            for fade_step in range(fade_steps):
+                brightness = 1.0 - (fade_step / fade_steps)
+                for i in range(self.led_count):
+                    # Soft fade using current strip state
+                    r = int(100 * brightness)
+                    g = int(30 * brightness)
+                    b = int(80 * brightness)
+                    self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
+                self.led_controller.show()
+                time.sleep(0.08)
             
             # Turn off all LEDs
             for i in range(self.led_count):
                 self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
             self.led_controller.show()
             
-            logger.info("Startup animation completed")
+            logger.info("✨ Startup animation completed successfully!")
             
         except Exception as e:
             logger.error(f"Startup animation error: {e}")
