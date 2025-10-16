@@ -219,6 +219,16 @@ class USBMIDIInputService:
             if not self._last_requested_device:
                 self._last_requested_device = self._current_device
 
+        # Auto-enable LEDs when USB MIDI device connects
+        if self.settings_service:
+            try:
+                led_enabled = self.settings_service.get_setting('led', 'enabled', False)
+                if not led_enabled:
+                    logger.info("Auto-enabling LEDs due to USB MIDI device connection")
+                    self.settings_service.set_setting('led', 'enabled', True)
+            except Exception as e:
+                logger.warning(f"Failed to auto-enable LEDs on USB MIDI connection: {e}")
+
         self._stop_event.clear()
         self._running = True
         self._processing_thread = threading.Thread(

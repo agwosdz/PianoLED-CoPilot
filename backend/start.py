@@ -29,7 +29,8 @@ if __name__ == '__main__':
         print("="*50)
         
         # Use standard Flask run for now to test basic functionality
-        app.run(
+        socketio.run(
+            app,
             host=app.config['HOST'],
             port=int(app.config['PORT']),
             debug=bool(app.config['DEBUG']),

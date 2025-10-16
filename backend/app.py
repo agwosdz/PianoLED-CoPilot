@@ -35,8 +35,8 @@ app.config.setdefault('MAX_CONTENT_LENGTH', 1 * 1024 * 1024)
 # Enable CORS for all routes
 CORS(app)
 
-# Use threading async mode instead of eventlet for Python 3.13 compatibility
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+# Use eventlet async mode for WebSocket support
+socketio = SocketIO(app, cors_allowed_origins='*')
 
 from led_controller import LEDController
 from led_effects_manager import LEDEffectsManager
@@ -76,6 +76,9 @@ def websocket_status_callback(status):
 
 # Initialize settings service first
 settings_service = SettingsService(websocket_callback=socketio.emit)
+
+# Initialize global LED_COUNT from settings
+LED_COUNT = settings_service.get_setting('led', 'led_count', 100)
 
 # Initialize MIDI parser after settings service
 try:
@@ -241,10 +244,17 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
 
 def _on_setting_change(category: str, key: str, value: Any) -> None:
     """Settings service listener to react to runtime configuration changes."""
+    global LED_COUNT
+    
     watched_categories = {'led', 'piano', 'calibration'}
 
     if category not in watched_categories:
         return
+
+    # Update global LED_COUNT when it changes
+    if category == 'led' and key == 'led_count':
+        LED_COUNT = int(value)
+        logger.info(f"Global LED_COUNT updated to: {LED_COUNT}")
 
     # Calibrate and downstream MIDI handling rely on LED / piano mapping.
     # We refresh dependencies only when settings tied to layout/mapping change.
