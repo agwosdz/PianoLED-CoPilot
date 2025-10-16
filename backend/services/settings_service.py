@@ -193,7 +193,10 @@ class SettingsService:
                 'calibration_mode': {'type': 'string', 'default': 'none', 'enum': ['none', 'assisted', 'manual'], 'description': 'Calibration mode'},
                 'last_calibration': {'type': 'string', 'default': '', 'description': 'Timestamp of last calibration'},
                 'white_key_color': {'type': 'object', 'default': {'r': 0, 'g': 100, 'b': 150}, 'description': 'RGB color for white keys in layout visualization'},
-                'black_key_color': {'type': 'object', 'default': {'r': 150, 'g': 0, 'b': 100}, 'description': 'RGB color for black keys in layout visualization'}
+                'black_key_color': {'type': 'object', 'default': {'r': 150, 'g': 0, 'b': 100}, 'description': 'RGB color for black keys in layout visualization'},
+                'distribution_mode': {'type': 'string', 'default': 'proportional', 'enum': ['proportional', 'fixed', 'custom'], 'description': 'LED distribution mode for auto mapping'},
+                'fixed_leds_per_key': {'type': 'number', 'default': 3, 'min': 1, 'max': 10, 'description': 'Number of LEDs per key for fixed distribution mode'},
+                'custom_distribution': {'type': 'object', 'default': {}, 'description': 'Custom distribution configuration {mode_name: config}'}
             },
             'hardware': {
                 'auto_detect_midi': {'type': 'boolean', 'default': False},

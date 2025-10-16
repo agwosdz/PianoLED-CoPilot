@@ -654,7 +654,7 @@ def calculate_led_power_consumption(led_count, brightness=1.0, led_type="WS2812B
     }
 
 
-def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", leds_per_key=None, mapping_base_offset=None):
+def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", leds_per_key=None, mapping_base_offset=None, distribution_mode="proportional"):
     """Generate automatic key-to-LED mapping based on piano size and LED count
     
     Args:
@@ -664,14 +664,19 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
                         physical reversal happens in LEDController._map_led_index()
         leds_per_key: Number of LEDs per key (overrides calculation if provided)
         mapping_base_offset: Base offset for the entire mapping (default: 0)
+        distribution_mode: LED distribution mode ("proportional", "fixed", or "custom") - default: "proportional"
     
     Returns:
         dict: Mapping of MIDI note to list of LED indices (logical, not physical)
     """
+    from backend.logging_config import get_logger
+    logger = get_logger(__name__)
+    
     specs = get_piano_specs(piano_size)
     key_count = specs["keys"]
     
     if key_count == 0:  # Custom piano size
+        logger.warning(f"Piano size '{piano_size}' has 0 keys, returning empty mapping")
         return {}
     
     # Use provided values or calculate defaults
@@ -680,20 +685,73 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     
     # Adjust available LED count based on base offset
     available_leds = led_count - mapping_base_offset
+    
+    logger.info(f"Generating auto mapping for {piano_size} ({key_count} keys) "
+               f"with {led_count} total LEDs, base_offset={mapping_base_offset}, "
+               f"available={available_leds}, distribution_mode={distribution_mode}")
+    
     if available_leds <= 0:
+        logger.error(f"Invalid LED count: total={led_count}, base_offset={mapping_base_offset}, "
+                    f"available={available_leds}. Mapping cannot be generated.")
         return {}
     
-    # Calculate LEDs per key
+    # Validate and apply distribution mode
+    valid_modes = ["proportional", "fixed", "custom"]
+    if distribution_mode not in valid_modes:
+        logger.warning(f"Invalid distribution_mode '{distribution_mode}', using 'proportional'")
+        distribution_mode = "proportional"
+    
+    logger.info(f"Distribution mode: {distribution_mode} "
+               f"{'(will use provided leds_per_key)' if leds_per_key else '(auto-calculate)'}")
+    
+    # Calculate LEDs per key based on distribution mode
+    was_leds_per_key_auto_calculated = False
+    original_key_count = key_count
+    remaining_leds = 0  # Initialize to handle all paths
+    
     if leds_per_key is None:
-        leds_per_key = available_leds // key_count
-        remaining_leds = available_leds % key_count
+        if distribution_mode == "proportional":
+            # Proportional: distribute LEDs evenly across all keys
+            leds_per_key = available_leds // key_count
+            remaining_leds = available_leds % key_count
+            was_leds_per_key_auto_calculated = True
+            logger.info(f"Proportional mode: Auto-calculated {leds_per_key} LEDs/key "
+                       f"with {remaining_leds} remaining LEDs")
+            if remaining_leds > 0:
+                logger.info(f"Distribution: First {remaining_leds} keys will get +1 LED "
+                           f"({remaining_leds} keys × {leds_per_key + 1} LEDs, "
+                           f"{key_count - remaining_leds} keys × {leds_per_key} LEDs)")
+        
+        elif distribution_mode == "fixed":
+            # Fixed: use a fixed number of LEDs per key (from settings or default)
+            # Default to 3 LEDs per key if not specified elsewhere
+            leds_per_key = 1  # Will be overridden by settings or explicit parameter
+            remaining_leds = 0  # Fixed mode doesn't use remaining LEDs distribution
+            logger.info(f"Fixed mode: Will use fixed leds_per_key (to be specified)")
+        
+        elif distribution_mode == "custom":
+            # Custom: allow for special distributions (advanced users)
+            logger.info(f"Custom mode: Using custom distribution configuration")
+            leds_per_key = available_leds // key_count  # Fallback to proportional
+            remaining_leds = available_leds % key_count
+            logger.info(f"Custom mode fallback: {leds_per_key} LEDs/key "
+                       f"with {remaining_leds} remaining LEDs")
     else:
         # When leds_per_key is specified, calculate how many keys we can map
         max_mappable_keys = available_leds // leds_per_key
         if max_mappable_keys < key_count:
-            # Truncate to mappable keys
+            logger.warning(f"Specified {leds_per_key} LEDs/key, but only {max_mappable_keys}/{key_count} "
+                          f"keys can be mapped. Keys {specs['midi_start'] + max_mappable_keys} to "
+                          f"{specs['midi_end']} will be UNMAPPED.")
             key_count = max_mappable_keys
+        else:
+            logger.info(f"Specified {leds_per_key} LEDs/key: will map {max_mappable_keys}/{original_key_count} keys")
+        
         remaining_leds = available_leds - (key_count * leds_per_key)
+        if remaining_leds > 0:
+            logger.info(f"Unused LEDs with fixed leds_per_key: {remaining_leds}")
+        else:
+            remaining_leds = 0  # Ensure non-negative
     
     mapping = {}
     led_index = mapping_base_offset
@@ -712,6 +770,16 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
         mapping[midi_note] = led_range
         led_index += key_led_count
     
+    logger.info(f"Mapping complete: {len(mapping)} keys mapped, "
+               f"LED range {mapping_base_offset} to {led_index - 1}, "
+               f"total LEDs used={led_index - mapping_base_offset}, "
+               f"distribution_mode={distribution_mode}")
+    
+    if original_key_count > key_count:
+        unmapped_count = original_key_count - key_count
+        logger.warning(f"Result: {key_count}/{original_key_count} keys mapped, "
+                      f"{unmapped_count} keys UNMAPPED (insufficient LEDs)")
+    
     return mapping
 
 
@@ -728,17 +796,26 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
     Returns:
         dict: Adjusted mapping with cascading offsets applied (LED indices clamped to [0, led_count-1] if led_count provided)
     """
+    from backend.logging_config import get_logger
+    logger = get_logger(__name__)
+    
     if not mapping or (global_offset == 0 and not key_offsets):
+        logger.debug(f"Skipping offset application: mapping_empty={not mapping}, "
+                    f"global_offset={global_offset}, key_offsets_empty={not key_offsets}")
         return mapping
     
     if key_offsets is None:
         key_offsets = {}
+    
+    logger.info(f"Applying calibration offsets to mapping with {len(mapping)} entries. "
+               f"global_offset={global_offset}, key_offsets_count={len(key_offsets)}, led_count={led_count}")
     
     adjusted = {}
     max_led_idx = (led_count - 1) if led_count else None
     
     # Normalize key_offsets to ensure all keys and values are integers
     normalized_key_offsets = {}
+    invalid_offsets_count = 0
     for key, value in key_offsets.items():
         try:
             note_num = int(key) if isinstance(key, str) else key
@@ -747,7 +824,19 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
                 offset_val = int(offset_val)
             normalized_key_offsets[note_num] = offset_val
         except (ValueError, TypeError):
+            invalid_offsets_count += 1
             continue  # Skip invalid entries
+    
+    if invalid_offsets_count > 0:
+        logger.warning(f"Skipped {invalid_offsets_count} invalid offset entries during normalization")
+    
+    if normalized_key_offsets:
+        logger.debug(f"Normalized {len(normalized_key_offsets)} key offsets. "
+                    f"Notes: {sorted(normalized_key_offsets.keys())}, "
+                    f"Offsets: {[normalized_key_offsets[n] for n in sorted(normalized_key_offsets.keys())]}")
+    
+    clamped_count = 0
+    invalid_entries_count = 0
     
     for midi_note, led_indices in mapping.items():
         adjusted_indices = []
@@ -756,14 +845,17 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
         try:
             midi_note_int = int(midi_note) if isinstance(midi_note, str) else midi_note
         except (ValueError, TypeError):
+            invalid_entries_count += 1
             continue  # Skip invalid entries
         
         # Calculate cascading offset: sum of all key offsets for notes <= current note
         cascading_offset = 0
+        contributing_offsets = []
         if normalized_key_offsets:
             for offset_note, offset_value in sorted(normalized_key_offsets.items()):
                 if offset_note <= midi_note_int:
                     cascading_offset += offset_value
+                    contributing_offsets.append((offset_note, offset_value))
                 else:
                     break  # No more offsets apply to this note
         
@@ -772,22 +864,46 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
                 # Apply global offset first, then cascading individual offsets
                 adjusted_idx = idx + global_offset + cascading_offset
                 
-                # Clamp to valid range if led_count is provided
+                # Track if clamping occurred
+                was_clamped = False
                 if max_led_idx is not None:
+                    if adjusted_idx < 0 or adjusted_idx > max_led_idx:
+                        was_clamped = True
+                        clamped_count += 1
                     adjusted_idx = max(0, min(adjusted_idx, max_led_idx))
                 
                 adjusted_indices.append(adjusted_idx)
+                
+                if cascading_offset != 0 or global_offset != 0:
+                    logger.debug(f"Note {midi_note_int}: LED {idx} → {adjusted_idx} "
+                                f"(global={global_offset}, cascading={cascading_offset}, "
+                                f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         elif isinstance(led_indices, int):
             adjusted_idx = led_indices + global_offset + cascading_offset
             
-            # Clamp to valid range if led_count is provided
+            was_clamped = False
             if max_led_idx is not None:
+                if adjusted_idx < 0 or adjusted_idx > max_led_idx:
+                    was_clamped = True
+                    clamped_count += 1
                 adjusted_idx = max(0, min(adjusted_idx, max_led_idx))
             
             adjusted_indices = [adjusted_idx]
+            
+            if cascading_offset != 0 or global_offset != 0:
+                logger.debug(f"Note {midi_note_int}: LED {led_indices} → {adjusted_idx} "
+                            f"(global={global_offset}, cascading={cascading_offset}, "
+                            f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         
         if adjusted_indices:
             adjusted[midi_note] = adjusted_indices
+    
+    if invalid_entries_count > 0:
+        logger.warning(f"Skipped {invalid_entries_count} invalid mapping entries (non-integer MIDI notes)")
+    
+    logger.info(f"Offset application complete. Adjusted {len(adjusted)} notes. "
+               f"Clamped {clamped_count} LED indices (bounds: 0-{max_led_idx if max_led_idx is not None else 'unlimited'}). "
+               f"Adjusted mapping now has {sum(len(v) if isinstance(v, list) else 1 for v in adjusted.values())} total LED assignments")
     
     return adjusted
 
@@ -1057,3 +1173,103 @@ def apply_performance_mode(config, mode_name):
     config.update(mode_settings)
     config["performance_mode"] = mode_name
     return config
+
+
+def validate_auto_mapping_config(piano_size, led_count, leds_per_key=None, base_offset=0):
+    """
+    Validate mapping configuration and return warnings/recommendations.
+    
+    Args:
+        piano_size: Piano size (e.g., "88-key")
+        led_count: Total LEDs available
+        leds_per_key: Optional fixed LEDs per key
+        base_offset: LED offset (default 0)
+    
+    Returns:
+        dict with keys:
+            - valid (bool): Whether configuration is valid
+            - warnings (list): Warning messages
+            - recommendations (list): Suggestion messages
+            - stats (dict): Configuration statistics
+    """
+    specs = get_piano_specs(piano_size)
+    key_count = specs['keys']
+    available_leds = led_count - base_offset
+    
+    warnings = []
+    recommendations = []
+    stats = {
+        'key_count': key_count,
+        'available_leds': available_leds,
+        'leds_per_key_calc': 0.0,
+        'remaining_leds': 0,
+        'mappable_keys': key_count
+    }
+    
+    # Check 1: Negative available LEDs
+    if available_leds <= 0:
+        return {
+            'valid': False,
+            'warnings': [f'No available LEDs: {led_count} total - {base_offset} offset = {available_leds}'],
+            'recommendations': ['Reduce mapping_base_offset or increase led_count'],
+            'stats': stats
+        }
+    
+    # Check 2: LEDs per key calculation
+    calc_leds_per_key = available_leds / key_count
+    stats['leds_per_key_calc'] = calc_leds_per_key
+    stats['remaining_leds'] = available_leds % key_count
+    
+    if calc_leds_per_key < 1:
+        warnings.append(
+            f'Not enough LEDs: {available_leds} / {key_count} = {calc_leds_per_key:.2f} LEDs/key'
+        )
+        recommendations.append('Increase led_count or use smaller piano size')
+        return {
+            'valid': False,
+            'warnings': warnings,
+            'recommendations': recommendations,
+            'stats': stats
+        }
+    
+    # Check 3: Uneven distribution
+    if calc_leds_per_key != int(calc_leds_per_key):
+        remainder = available_leds % key_count
+        base_per_key = int(calc_leds_per_key)
+        warnings.append(
+            f'Uneven distribution: {remainder} keys get {base_per_key + 1} LEDs, '
+            f'{key_count - remainder} keys get {base_per_key} LEDs'
+        )
+        recommendations.append(
+            f'For even distribution, use a multiple of {key_count} LEDs '
+            f'(e.g., {base_per_key * key_count} or {(base_per_key + 1) * key_count})'
+        )
+    
+    # Check 4: Specified leds_per_key vs available
+    if leds_per_key:
+        mappable_keys = available_leds // leds_per_key
+        stats['mappable_keys'] = mappable_keys
+        
+        if mappable_keys < key_count:
+            warnings.append(
+                f'With {leds_per_key} LEDs/key, only {mappable_keys}/{key_count} keys can be mapped'
+            )
+            unmapped_keys = key_count - mappable_keys
+            start_midi = specs['midi_start']
+            end_midi = specs['midi_end']
+            first_unmapped = start_midi + mappable_keys
+            recommendations.append(
+                f'Keys MIDI {first_unmapped} to {end_midi} ({unmapped_keys} keys) will be unmapped'
+            )
+    
+    # Check 5: Very low LED allocation
+    if calc_leds_per_key < 2:
+        warnings.append('Very low LED count per key - visualization may be subtle')
+        recommendations.append('Consider increasing led_count for brighter visualization')
+    
+    return {
+        'valid': True,
+        'warnings': warnings,
+        'recommendations': recommendations,
+        'stats': stats
+    }

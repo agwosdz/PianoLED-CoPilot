@@ -1,6 +1,7 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
   import { calibrationState, calibrationUI, getKeyLedMapping } from '$lib/stores/calibration';
+  import { onMount } from 'svelte';
 
   // Piano size specifications for different keyboard types
   const PIANO_SPECS: Record<string, { keys: number; midiStart: number; midiEnd: number }> = {
@@ -31,6 +32,16 @@
   let ledOperationInProgress = false; // Prevent overlapping LED operations
   let showingLayoutVisualization = false; // Toggle for layout visualization mode
   let layoutVisualizationActive = false; // Track if LEDs are currently on for visualization
+
+  // Validation and mapping info state
+  let validationResults: any = null;
+  let mappingInfo: any = null;
+  let distributionMode: string = 'proportional';
+  let availableDistributionModes: string[] = [];
+  let isLoadingValidation = false;
+  let isLoadingMappingInfo = false;
+  let showValidationPanel = false;
+  let showMappingInfo = false;
 
   // Color configurations - will be fetched from settings
   let BLACK_KEY_COLOR = { r: 150, g: 0, b: 100 };   // Magenta/Pink (default)
@@ -311,6 +322,102 @@
       }
     }
   }
+
+  // Validation and mapping info functions
+  async function loadValidationResults(): Promise<void> {
+    isLoadingValidation = true;
+    try {
+      const pianoSize = $settings?.piano?.size || '88-key';
+      const ledCount = $settings?.led?.led_count || 246;
+      
+      const response = await fetch('/api/calibration/mapping-validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ piano_size: pianoSize, led_count: ledCount })
+      });
+      
+      if (response.ok) {
+        validationResults = await response.json();
+        showValidationPanel = true;
+        console.log('[Validation] Results loaded:', validationResults);
+      } else {
+        console.warn('[Validation] Failed to load validation results');
+      }
+    } catch (error) {
+      console.error('[Validation] Error loading validation results:', error);
+    } finally {
+      isLoadingValidation = false;
+    }
+  }
+
+  async function loadMappingInfo(): Promise<void> {
+    isLoadingMappingInfo = true;
+    try {
+      const response = await fetch('/api/calibration/mapping-info');
+      
+      if (response.ok) {
+        mappingInfo = await response.json();
+        showMappingInfo = true;
+        console.log('[Mapping Info] Loaded:', mappingInfo);
+      } else {
+        console.warn('[Mapping Info] Failed to load mapping info');
+      }
+    } catch (error) {
+      console.error('[Mapping Info] Error loading mapping info:', error);
+    } finally {
+      isLoadingMappingInfo = false;
+    }
+  }
+
+  async function loadDistributionMode(): Promise<void> {
+    try {
+      const response = await fetch('/api/calibration/distribution-mode');
+      
+      if (response.ok) {
+        const data = await response.json();
+        distributionMode = data.current_mode || 'proportional';
+        availableDistributionModes = data.available_modes || ['proportional', 'fixed', 'custom'];
+        console.log('[Distribution] Current mode:', distributionMode, 'Available:', availableDistributionModes);
+      } else {
+        console.warn('[Distribution] Failed to load distribution mode');
+      }
+    } catch (error) {
+      console.error('[Distribution] Error loading distribution mode:', error);
+    }
+  }
+
+  async function changeDistributionMode(newMode: string): Promise<void> {
+    try {
+      const response = await fetch('/api/calibration/distribution-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode, apply_mapping: true })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        distributionMode = newMode;
+        console.log('[Distribution] Mode changed to:', newMode);
+        // Refresh mapping after mode change
+        await updateLedMapping();
+        // Reload validation results
+        await loadValidationResults();
+      } else {
+        console.warn('[Distribution] Failed to change distribution mode');
+      }
+    } catch (error) {
+      console.error('[Distribution] Error changing distribution mode:', error);
+    }
+  }
+
+  // Initialize on mount
+  onMount(async () => {
+    await loadColorsFromSettings();
+    updatePianoSize();
+    await loadDistributionMode();
+    await loadValidationResults();
+    await loadMappingInfo();
+  });
 </script>
 
 <div class="calibration-section-3">
@@ -327,6 +434,40 @@
         title={layoutVisualizationActive ? 'Turn off layout visualization' : 'Show layout with all white/black keys mapped to LEDs'}
       >
         {layoutVisualizationActive ? '✓ Layout Visible' : '🎹 Show Layout'}
+      </button>
+
+      <!-- Distribution Mode Selector -->
+      <div class="distribution-mode-selector">
+        <label for="dist-mode">Distribution Mode:</label>
+        <select
+          id="dist-mode"
+          value={distributionMode}
+          on:change={(e) => changeDistributionMode(e.currentTarget.value)}
+          class="mode-select"
+        >
+          {#each availableDistributionModes as mode}
+            <option value={mode}>{mode.charAt(0).toUpperCase() + mode.slice(1)}</option>
+          {/each}
+        </select>
+      </div>
+
+      <!-- Validation and Mapping Info Buttons -->
+      <button
+        class="btn-info"
+        on:click={loadValidationResults}
+        disabled={isLoadingValidation}
+        title="Load validation results for current mapping"
+      >
+        {isLoadingValidation ? '⏳ Validating...' : '✓ Validate Mapping'}
+      </button>
+      
+      <button
+        class="btn-info"
+        on:click={loadMappingInfo}
+        disabled={isLoadingMappingInfo}
+        title="Load mapping statistics"
+      >
+        {isLoadingMappingInfo ? '⏳ Loading...' : '📊 Mapping Info'}
       </button>
     </div>
     
@@ -402,6 +543,107 @@
       </div>
     {/if}
   </div>
+
+  <!-- Validation Results Panel -->
+  {#if showValidationPanel && validationResults}
+    <div class="validation-panel">
+      <div class="panel-header">
+        <h4>Validation Results</h4>
+        <button class="btn-close" on:click={() => (showValidationPanel = false)}>×</button>
+      </div>
+      <div class="panel-content">
+        {#if validationResults.warnings && validationResults.warnings.length > 0}
+          <div class="warnings-section">
+            <h5>⚠️ Warnings:</h5>
+            <ul>
+              {#each validationResults.warnings as warning}
+                <li>{warning}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+        
+        {#if validationResults.recommendations && validationResults.recommendations.length > 0}
+          <div class="recommendations-section">
+            <h5>💡 Recommendations:</h5>
+            <ul>
+              {#each validationResults.recommendations as rec}
+                <li>{rec}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+        
+        {#if validationResults.statistics}
+          <div class="stats-section">
+            <h5>📈 Statistics:</h5>
+            <div class="stats-grid">
+              {#each Object.entries(validationResults.statistics) as [key, value]}
+                <div class="stat-item">
+                  <span class="stat-label">{key.replace(/_/g, ' ')}:</span>
+                  <span class="stat-value">{value}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Mapping Info Panel -->
+  {#if showMappingInfo && mappingInfo}
+    <div class="mapping-info-panel">
+      <div class="panel-header">
+        <h4>Mapping Information</h4>
+        <button class="btn-close" on:click={() => (showMappingInfo = false)}>×</button>
+      </div>
+      <div class="panel-content">
+        {#if mappingInfo.statistics}
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">Total Keys Mapped:</span>
+              <span class="info-value">{mappingInfo.statistics.total_keys_mapped}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Piano Size:</span>
+              <span class="info-value">{mappingInfo.statistics.piano_size}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">LED Count:</span>
+              <span class="info-value">{mappingInfo.statistics.led_count}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Distribution Mode:</span>
+              <span class="info-value">{mappingInfo.statistics.distribution_mode}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Base Offset:</span>
+              <span class="info-value">{mappingInfo.statistics.base_offset || 0}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Efficiency:</span>
+              <span class="info-value">{((mappingInfo.statistics.total_keys_mapped / (mappingInfo.statistics.piano_size || 88)) * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+        {/if}
+        
+        {#if mappingInfo.distribution_breakdown}
+          <div class="distribution-section">
+            <h5>LED Distribution Breakdown:</h5>
+            <div class="distribution-items">
+              {#each Object.entries(mappingInfo.distribution_breakdown) as [ledCount, keyCount]}
+                <div class="distribution-item">
+                  <span class="dist-label">{ledCount} LEDs:</span>
+                  <span class="dist-value">{keyCount} keys</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <!-- Legend -->
   <div class="legend">
@@ -523,6 +765,222 @@
 
   .btn-show-layout:active {
     transform: translateY(0);
+  }
+
+  .distribution-mode-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .distribution-mode-selector label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .mode-select {
+    padding: 0.5rem 0.75rem;
+    border: 2px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .mode-select:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+  }
+
+  .mode-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .btn-info {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    border: 2px solid #6d28d9;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-info:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+  }
+
+  .btn-info:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .btn-info:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .validation-panel,
+  .mapping-info-panel {
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #cbd5e1;
+  }
+
+  .panel-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .btn-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #64748b;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .btn-close:hover {
+    background: rgba(100, 116, 139, 0.1);
+    color: #334155;
+  }
+
+  .panel-content {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .warnings-section,
+  .recommendations-section,
+  .distribution-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .warnings-section h5,
+  .recommendations-section h5,
+  .stats-section h5,
+  .distribution-section h5 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .warnings-section ul,
+  .recommendations-section ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    list-style: none;
+  }
+
+  .warnings-section li,
+  .recommendations-section li {
+    margin: 0.25rem 0;
+    color: #475569;
+    font-size: 0.9rem;
+    position: relative;
+  }
+
+  .warnings-section li:before {
+    content: '⚠️ ';
+    position: absolute;
+    left: -1.5rem;
+  }
+
+  .recommendations-section li:before {
+    content: '✓ ';
+    position: absolute;
+    left: -1.5rem;
+    color: #10b981;
+  }
+
+  .stats-grid,
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .stat-item,
+  .info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+  }
+
+  .stat-label,
+  .info-label {
+    font-size: 0.85rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .stat-value,
+  .info-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .distribution-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .distribution-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+
+  .dist-label {
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .dist-value {
+    color: #1e293b;
+    font-weight: 700;
   }
 
   .piano-keyboard {

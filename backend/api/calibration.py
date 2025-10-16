@@ -10,7 +10,12 @@ from flask import Blueprint, request, jsonify, current_app
 from typing import Dict, Any
 from datetime import datetime
 from backend.logging_config import get_logger
-from backend.config import generate_auto_key_mapping, apply_calibration_offsets_to_mapping
+from backend.config import (
+    generate_auto_key_mapping,
+    apply_calibration_offsets_to_mapping,
+    validate_auto_mapping_config,
+    get_piano_specs
+)
 
 logger = get_logger(__name__)
 
@@ -562,6 +567,152 @@ def get_key_led_mapping():
         }), 500
 
 
+@calibration_bp.route('/mapping-validate', methods=['POST'])
+def validate_mapping():
+    """Validate a proposed mapping configuration before applying it"""
+    logger.info("POST /mapping-validate endpoint called")
+    
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Request must include JSON body'
+            }), 400
+        
+        piano_size = data.get('piano_size', '88-key')
+        led_count = data.get('led_count', 300)
+        leds_per_key = data.get('leds_per_key')
+        base_offset = data.get('mapping_base_offset', 0)
+        
+        # Validate inputs
+        try:
+            led_count = int(led_count)
+            base_offset = int(base_offset)
+            if leds_per_key is not None:
+                leds_per_key = int(leds_per_key)
+        except (TypeError, ValueError):
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'led_count, leds_per_key, and mapping_base_offset must be integers'
+            }), 400
+        
+        # Validate configuration
+        validation = validate_auto_mapping_config(
+            piano_size=piano_size,
+            led_count=led_count,
+            leds_per_key=leds_per_key,
+            base_offset=base_offset
+        )
+        
+        logger.info(f"Mapping validation result: valid={validation['valid']}, "
+                   f"warnings={len(validation['warnings'])}")
+        
+        return jsonify(validation), 200
+        
+    except Exception as e:
+        logger.error(f"Error validating mapping: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to validate mapping: {str(e)}'
+        }), 500
+
+
+@calibration_bp.route('/mapping-info', methods=['GET'])
+def get_mapping_info():
+    """Get detailed information about current LED mapping"""
+    logger.info("GET /mapping-info endpoint called")
+    
+    try:
+        settings_service = get_settings_service()
+        
+        # Get current settings
+        piano_size = settings_service.get_setting('piano', 'size', '88-key')
+        led_count = settings_service.get_setting('led', 'led_count', 300)
+        base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
+        leds_per_key = settings_service.get_setting('led', 'leds_per_key', None)
+        
+        logger.info(f"Generating mapping info for {piano_size} with {led_count} LEDs")
+        
+        # Generate mapping
+        mapping = generate_auto_key_mapping(
+            piano_size=piano_size,
+            led_count=led_count,
+            leds_per_key=leds_per_key,
+            mapping_base_offset=base_offset
+        )
+        
+        # Analyze distribution
+        led_counts = {}
+        total_leds_used = 0
+        for midi_note, led_indices in mapping.items():
+            count = len(led_indices)
+            total_leds_used += count
+            if count not in led_counts:
+                led_counts[count] = 0
+            led_counts[count] += 1
+        
+        specs = get_piano_specs(piano_size)
+        
+        # Calculate statistics
+        avg_leds_per_key = total_leds_used / len(mapping) if mapping else 0
+        
+        info = {
+            'piano_size': piano_size,
+            'piano_specs': {
+                'keys': specs['keys'],
+                'midi_start': specs['midi_start'],
+                'midi_end': specs['midi_end'],
+                'octaves': specs['octaves'],
+                'start_note': specs['start_note'],
+                'end_note': specs['end_note']
+            },
+            'led_configuration': {
+                'total_leds': led_count,
+                'mapping_base_offset': base_offset,
+                'available_leds': led_count - base_offset,
+                'leds_per_key_setting': leds_per_key
+            },
+            'mapping_statistics': {
+                'total_keys': specs['keys'],
+                'mapped_keys': len(mapping),
+                'unmapped_keys': specs['keys'] - len(mapping),
+                'leds_used': total_leds_used,
+                'leds_unused': led_count - total_leds_used,
+                'min_leds_per_key': min(led_counts.keys()) if led_counts else 0,
+                'max_leds_per_key': max(led_counts.keys()) if led_counts else 0,
+                'avg_leds_per_key': round(avg_leds_per_key, 2)
+            },
+            'distribution': {
+                f'{count}_leds_per_key': count_keys 
+                for count, count_keys in sorted(led_counts.items())
+            },
+            'first_unmapped_key': (
+                specs['midi_start'] + len(mapping) 
+                if len(mapping) < specs['keys'] else None
+            ),
+            'validation': validate_auto_mapping_config(
+                piano_size=piano_size,
+                led_count=led_count,
+                leds_per_key=leds_per_key,
+                base_offset=base_offset
+            ),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        logger.info(f"Mapping info generated: {len(mapping)} keys mapped, "
+                   f"{total_leds_used} LEDs used")
+        
+        return jsonify(info), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting mapping info: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to get mapping info: {str(e)}'
+        }), 500
+
+
 @calibration_bp.route('/test-led/<int:led_index>', methods=['POST'])
 def test_led(led_index: int):
     """Light up a specific LED for calibration testing (3 seconds)"""
@@ -848,12 +999,12 @@ def turn_on_leds_batch():
             'leds_turned_on': leds_turned_on,
             'total_requested': len(leds_data)
         }
-        
+
         if errors:
             response['errors'] = errors
-        
+
         return jsonify(response), 200
-        
+
     except Exception as e:
         logger.error(f"Error in batch LED operation: {e}", exc_info=True)
         return jsonify({
@@ -861,3 +1012,119 @@ def turn_on_leds_batch():
             'error': str(e),
             'leds_turned_on': 0
         }), 200
+
+
+@calibration_bp.route('/distribution-mode', methods=['GET', 'POST'])
+def distribution_mode():
+    """Get or set LED distribution mode for auto mapping
+    
+    GET: Returns current distribution mode and available modes
+    POST: Sets new distribution mode (and optionally applies new mapping)
+    """
+    try:
+        settings_service = get_settings_service()
+        
+        if request.method == 'GET':
+            # Return current distribution mode and options
+            current_mode = settings_service.get_setting('calibration', 'distribution_mode', 'proportional')
+            fixed_leds = settings_service.get_setting('calibration', 'fixed_leds_per_key', 3)
+            
+            return jsonify({
+                'current_mode': current_mode,
+                'available_modes': ['proportional', 'fixed', 'custom'],
+                'mode_descriptions': {
+                    'proportional': 'Distribute LEDs evenly across all keys (default)',
+                    'fixed': 'Assign fixed number of LEDs per key',
+                    'custom': 'Use custom distribution configuration'
+                },
+                'fixed_leds_per_key': fixed_leds,
+                'timestamp': datetime.utcnow().isoformat()
+            }), 200
+        
+        elif request.method == 'POST':
+            # Set new distribution mode
+            data = request.get_json() or {}
+            new_mode = data.get('mode', '').lower()
+            fixed_leds = data.get('fixed_leds_per_key')
+            apply_mapping = data.get('apply_mapping', False)
+            
+            # Validate mode
+            valid_modes = ['proportional', 'fixed', 'custom']
+            if new_mode not in valid_modes:
+                return jsonify({
+                    'error': f"Invalid distribution mode '{new_mode}'",
+                    'valid_modes': valid_modes,
+                    'message': 'Distribution mode not changed'
+                }), 400
+            
+            # Save distribution mode
+            settings_service.set_setting('calibration', 'distribution_mode', new_mode)
+            logger.info(f"Distribution mode changed to: {new_mode}")
+            
+            # Handle fixed mode settings
+            if new_mode == 'fixed' and fixed_leds is not None:
+                try:
+                    fixed_leds = int(fixed_leds)
+                    if fixed_leds < 1 or fixed_leds > 10:
+                        return jsonify({
+                            'error': f"fixed_leds_per_key must be between 1 and 10, got {fixed_leds}",
+                            'message': 'Setting not applied'
+                        }), 400
+                    
+                    settings_service.set_setting('calibration', 'fixed_leds_per_key', fixed_leds)
+                    logger.info(f"Fixed LEDs per key set to: {fixed_leds}")
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'error': f"fixed_leds_per_key must be an integer",
+                        'message': 'Setting not applied'
+                    }), 400
+            
+            response = {
+                'message': f'Distribution mode changed to: {new_mode}',
+                'distribution_mode': new_mode,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            # If apply_mapping is true, regenerate the mapping with new mode
+            if apply_mapping:
+                try:
+                    piano_size = settings_service.get_setting('piano', 'size', '88-key')
+                    led_count = settings_service.get_setting('led', 'led_count', 246)
+                    base_offset = settings_service.get_setting('calibration', 'mapping_base_offset', 0)
+                    
+                    # Get leds_per_key if in fixed mode
+                    leds_per_key = None
+                    if new_mode == 'fixed':
+                        leds_per_key = settings_service.get_setting('calibration', 'fixed_leds_per_key', 3)
+                    
+                    # Generate new mapping
+                    new_mapping = generate_auto_key_mapping(
+                        piano_size,
+                        led_count,
+                        leds_per_key=leds_per_key,
+                        mapping_base_offset=base_offset,
+                        distribution_mode=new_mode
+                    )
+                    
+                    logger.info(f"New mapping generated with {len(new_mapping)} keys using {new_mode} mode")
+                    
+                    response['mapping_regenerated'] = True
+                    response['mapping_stats'] = {
+                        'total_keys_mapped': len(new_mapping),
+                        'piano_size': piano_size,
+                        'distribution_mode': new_mode,
+                        'base_offset': base_offset
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Error regenerating mapping: {e}")
+                    response['warning'] = f"Mapping regeneration failed: {str(e)}"
+            
+            return jsonify(response), 200
+    
+    except Exception as e:
+        logger.error(f"Error in distribution_mode endpoint: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e),
+            'message': 'Distribution mode operation failed'
+        }), 500
