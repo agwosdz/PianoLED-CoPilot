@@ -520,10 +520,10 @@ def test_led(led_index: int):
         
         # Validate LED index
         try:
-            led_count = led_controller.led_count
+            led_count = led_controller.num_pixels
             logger.info(f"LED count: {led_count}")
-        except AttributeError:
-            logger.error("LED controller has no led_count attribute")
+        except AttributeError as attr_error:
+            logger.error(f"LED controller has no num_pixels attribute: {attr_error}")
             return jsonify({
                 'message': f'LED {led_index} test requested (LED controller error)',
                 'led_index': led_index,
