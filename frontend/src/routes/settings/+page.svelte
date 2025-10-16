@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
+  import { browser } from '$app/environment';
   import { settingsLoading, settingsError, loadSettings, updateSettings } from '$lib/stores/settings';
   import { loadCalibration } from '$lib/stores/calibration';
   import SettingsValidationMessage from '$lib/components/SettingsValidationMessage.svelte';
@@ -179,13 +180,17 @@
     await loadCalibrationData();
 
     // Listen for openAddOffset event from CalibrationSection3
-    window.addEventListener('openAddOffset', handleOpenAddOffset as EventListener);
+    if (browser) {
+      window.addEventListener('openAddOffset', handleOpenAddOffset as EventListener);
+    }
   });
 
   onDestroy(() => {
     clearPatternResetTimer();
     // Clean up event listener
-    window.removeEventListener('openAddOffset', handleOpenAddOffset as EventListener);
+    if (browser) {
+      window.removeEventListener('openAddOffset', handleOpenAddOffset as EventListener);
+    }
   });
 
   async function loadSettingsData() {

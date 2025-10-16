@@ -716,16 +716,17 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
 
 
 def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=None, led_count=None):
-    """Apply calibration offsets to a pre-computed key mapping
+    """Apply calibration offsets to a pre-computed key mapping with cascading individual offsets
     
     Args:
         mapping: Base key-to-LED mapping dict
         global_offset: Global offset to apply to all LEDs
         key_offsets: Per-key offset dict {midi_note: offset}
+                     Individual offsets cascade: an offset at note N affects all notes >= N
         led_count: Total LED count for bounds checking (optional, no bounds if None)
     
     Returns:
-        dict: Adjusted mapping with offsets applied (LED indices clamped to [0, led_count-1] if led_count provided)
+        dict: Adjusted mapping with cascading offsets applied (LED indices clamped to [0, led_count-1] if led_count provided)
     """
     if not mapping or (global_offset == 0 and not key_offsets):
         return mapping
@@ -739,13 +740,19 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
     for midi_note, led_indices in mapping.items():
         adjusted_indices = []
         
+        # Calculate cascading offset: sum of all key offsets for notes <= current note
+        cascading_offset = 0
+        if key_offsets:
+            for offset_note, offset_value in sorted(key_offsets.items()):
+                if offset_note <= midi_note:
+                    cascading_offset += offset_value
+                else:
+                    break  # No more offsets apply to this note
+        
         if isinstance(led_indices, list):
             for idx in led_indices:
-                adjusted_idx = idx + global_offset
-                
-                # Apply per-key offset if available
-                if midi_note in key_offsets:
-                    adjusted_idx += key_offsets[midi_note]
+                # Apply global offset first, then cascading individual offsets
+                adjusted_idx = idx + global_offset + cascading_offset
                 
                 # Clamp to valid range if led_count is provided
                 if max_led_idx is not None:
@@ -753,9 +760,7 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
                 
                 adjusted_indices.append(adjusted_idx)
         elif isinstance(led_indices, int):
-            adjusted_idx = led_indices + global_offset
-            if midi_note in key_offsets:
-                adjusted_idx += key_offsets[midi_note]
+            adjusted_idx = led_indices + global_offset + cascading_offset
             
             # Clamp to valid range if led_count is provided
             if max_led_idx is not None:
