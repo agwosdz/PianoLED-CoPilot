@@ -10,6 +10,7 @@ from flask import Blueprint, request, jsonify, current_app
 from typing import Dict, Any
 from datetime import datetime
 from backend.logging_config import get_logger
+from backend.config import generate_auto_key_mapping, apply_calibration_offsets_to_mapping
 
 logger = get_logger(__name__)
 
@@ -498,6 +499,65 @@ def import_calibration():
         return jsonify({
             'error': 'Internal Server Error',
             'message': 'Failed to import calibration data'
+        }), 500
+
+
+@calibration_bp.route('/key-led-mapping', methods=['GET'])
+def get_key_led_mapping():
+    """Get the key-to-LED mapping with calibration offsets applied"""
+    logger.info("GET /key-led-mapping endpoint called")
+    
+    try:
+        settings_service = get_settings_service()
+        
+        # Get piano settings
+        piano_size = settings_service.get_setting('piano', 'size', 88)
+        led_count = settings_service.get_setting('led', 'led_count', 300)
+        led_orientation = settings_service.get_setting('led', 'led_orientation', 'normal')
+        mapping_base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
+        leds_per_key = settings_service.get_setting('led', 'leds_per_key', None)
+        
+        logger.info(f"Generated mapping with piano_size={piano_size}, led_count={led_count}, "
+                   f"orientation={led_orientation}, mapping_base_offset={mapping_base_offset}")
+        
+        # Generate the base auto key-to-LED mapping
+        auto_mapping = generate_auto_key_mapping(
+            piano_size=piano_size,
+            led_count=led_count,
+            led_orientation=led_orientation,
+            leds_per_key=leds_per_key,
+            mapping_base_offset=mapping_base_offset
+        )
+        
+        # Get calibration offsets
+        global_offset = settings_service.get_setting('calibration', 'global_offset', 0)
+        key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
+        
+        logger.info(f"Applying offsets: global_offset={global_offset}, key_offsets count={len(key_offsets)}")
+        
+        # Apply calibration offsets to the mapping
+        final_mapping = apply_calibration_offsets_to_mapping(
+            mapping=auto_mapping,
+            global_offset=global_offset,
+            key_offsets=key_offsets
+        )
+        
+        logger.info(f"Successfully generated mapping with {len(final_mapping)} keys")
+        
+        return jsonify({
+            'mapping': final_mapping,
+            'piano_size': piano_size,
+            'led_count': led_count,
+            'global_offset': global_offset,
+            'key_offsets_count': len(key_offsets),
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating key-LED mapping: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to generate mapping: {str(e)}'
         }), 500
 
 

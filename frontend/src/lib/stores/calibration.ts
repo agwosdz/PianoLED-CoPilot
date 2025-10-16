@@ -380,6 +380,31 @@ class CalibrationService {
     }
   }
 
+  async getKeyLedMapping(): Promise<Record<number, number[]>> {
+    try {
+      const response = await fetch(`${this.baseUrl}/key-led-mapping`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // Convert string keys to numbers for the mapping
+      const mapping: Record<number, number[]> = {};
+      for (const [key, value] of Object.entries(data.mapping)) {
+        const midiNote = parseInt(key, 10);
+        if (Number.isFinite(midiNote)) {
+          mapping[midiNote] = value as number[];
+        }
+      }
+      
+      return mapping;
+    } catch (error) {
+      console.error('Failed to get key-LED mapping:', error);
+      throw error;
+    }
+  }
+
   async exportCalibration(): Promise<CalibrationState> {
     try {
       const response = await fetch(`${this.baseUrl}/export`);
@@ -432,3 +457,4 @@ export const setGlobalOffset = (offset: number): Promise<void> => calibrationSer
 export const setKeyOffset = (midiNote: number, offset: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset);
 export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyOffset(midiNote);
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();
+export const getKeyLedMapping = (): Promise<Record<number, number[]>> => calibrationService.getKeyLedMapping();

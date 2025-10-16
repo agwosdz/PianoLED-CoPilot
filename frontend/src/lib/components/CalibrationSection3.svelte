@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
-  import { calibrationState } from '$lib/stores/calibration';
+  import { calibrationState, getKeyLedMapping } from '$lib/stores/calibration';
 
   // Piano size specifications for different keyboard types
   const PIANO_SPECS: Record<string, { keys: number; midiStart: number; midiEnd: number }> = {
@@ -16,17 +16,18 @@
     midiNote: number;
     noteName: string;
     isBlack: boolean;
-    ledIndex: number | null;
+    adjustedLedIndices: number[];
     offset: number;
   }
 
-  let ledMapping: Record<number, number> = {};
+  let ledMapping: Record<number, number[]> = {}; // Maps MIDI note to array of LED indices (after offsets applied)
   let pianoKeys: KeyInfo[] = [];
   let hoveredNote: number | null = null;
   let selectedNote: number | null = null;
   let currentPianoSize = '88-key';
   let pianoKeyCount = 88;
   let startMidiNote = 21;
+  let isLoadingMapping = false;
 
   function getMidiNoteName(midiNote: number): string {
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -48,7 +49,7 @@
         midiNote,
         noteName: getMidiNoteName(midiNote),
         isBlack: isBlackKey(midiNote),
-        ledIndex: ledMapping[midiNote] ?? null,
+        adjustedLedIndices: ledMapping[midiNote] ?? [],
         offset: $calibrationState.key_offsets[midiNote] ?? 0
       });
     }
@@ -66,21 +67,20 @@
     updateLedMapping();
   }
 
-  function updateLedMapping(): void {
-    const mapping: Record<number, number> = {};
-    
-    // Calculate LED mapping based on piano size
-    // Simple proportional mapping: distribute LEDs evenly across keys
-    const totalLeds = $settings?.led?.led_count || 246;
-    const ledsPerKey = totalLeds / pianoKeyCount;
-    
-    for (let i = 0; i < pianoKeyCount; i++) {
-      const midiNote = startMidiNote + i;
-      mapping[midiNote] = Math.floor(i * ledsPerKey);
+  async function updateLedMapping(): Promise<void> {
+    isLoadingMapping = true;
+    try {
+      // Fetch the LED mapping with offsets applied from the backend
+      ledMapping = await getKeyLedMapping();
+      pianoKeys = generatePianoKeys();
+    } catch (error) {
+      console.error('Failed to update LED mapping:', error);
+      // Fall back to empty mapping on error
+      ledMapping = {};
+      pianoKeys = generatePianoKeys();
+    } finally {
+      isLoadingMapping = false;
     }
-    
-    ledMapping = mapping;
-    pianoKeys = generatePianoKeys();
   }
 
   // Update when settings or calibration changes
@@ -96,15 +96,12 @@
     hoveredNote = midiNote;
   }
 
-  function getAdjustedLedIndex(midiNote: number): number | null {
-    const baseLedIndex = ledMapping[midiNote];
-    if (baseLedIndex === null || baseLedIndex === undefined) {
+  function getFirstAdjustedLedIndex(midiNote: number): number | null {
+    const indices = ledMapping[midiNote];
+    if (!indices || indices.length === 0) {
       return null;
     }
-    // Calculate adjusted LED: base + global offset + individual offset
-    const globalOffset = $calibrationState.global_offset ?? 0;
-    const individualOffset = $calibrationState.key_offsets[midiNote] ?? 0;
-    return baseLedIndex + globalOffset + individualOffset;
+    return indices[0];
   }
 
   function copyToClipboard(text: string) {
@@ -133,14 +130,11 @@
           title={`${key.noteName} (MIDI ${key.midiNote})`}
         >
           <div class="key-content">
-            {#if key.ledIndex !== null}
+            {#if key.adjustedLedIndices && key.adjustedLedIndices.length > 0}
               <span class="key-display">
-                {key.noteName} LED {getAdjustedLedIndex(key.midiNote)}
-                {#if $calibrationState.global_offset !== 0}
-                  G{$calibrationState.global_offset > 0 ? '+' : ''}{$calibrationState.global_offset}
-                {/if}
-                {#if key.offset !== 0}
-                  I{key.offset > 0 ? '+' : ''}{key.offset}
+                {key.noteName} LED {key.adjustedLedIndices[0]}
+                {#if key.adjustedLedIndices.length > 1}
+                  -{key.adjustedLedIndices[key.adjustedLedIndices.length - 1]}
                 {/if}
               </span>
             {:else}
@@ -166,62 +160,24 @@
         </div>
 
         <div class="details-content">
-          {#if ledMapping[selectedNote] !== null}
+          {#if ledMapping[selectedNote] && ledMapping[selectedNote].length > 0}
             <div class="detail-row">
-              <span class="detail-label">Base LED Index:</span>
-              <span class="detail-value">{ledMapping[selectedNote]}</span>
+              <span class="detail-label">LED Indices (with offsets):</span>
+              <span class="detail-value">
+                {#if ledMapping[selectedNote].length === 1}
+                  {ledMapping[selectedNote][0]}
+                {:else}
+                  {ledMapping[selectedNote][0]} to {ledMapping[selectedNote][ledMapping[selectedNote].length - 1]}
+                {/if}
+              </span>
               <button
                 class="btn-copy"
-                on:click={() => selectedNote !== null && copyToClipboard(String(ledMapping[selectedNote]))}
-                title="Copy to clipboard"
+                on:click={() => selectedNote !== null && copyToClipboard(String(ledMapping[selectedNote][0]))}
+                title="Copy first LED index to clipboard"
               >
                 📋
               </button>
             </div>
-
-            {#if $calibrationState.global_offset !== 0}
-              <div class="detail-row">
-                <span class="detail-label">Global Offset:</span>
-                <span class="detail-value">
-                  {$calibrationState.global_offset > 0 ? '+' : ''}
-                  {$calibrationState.global_offset}
-                </span>
-              </div>
-            {/if}
-
-            {#if $calibrationState.key_offsets[selectedNote]}
-              <div class="detail-row">
-                <span class="detail-label">Individual Offset:</span>
-                <span class="detail-value">
-                  {$calibrationState.key_offsets[selectedNote] > 0 ? '+' : ''}
-                  {$calibrationState.key_offsets[selectedNote]}
-                </span>
-              </div>
-            {/if}
-
-            {#if $calibrationState.global_offset !== 0 || $calibrationState.key_offsets[selectedNote]}
-              <div class="detail-row highlight">
-                <span class="detail-label">Total Offset:</span>
-                <span class="detail-value">
-                  {($calibrationState.global_offset + ($calibrationState.key_offsets[selectedNote] ?? 0)) > 0 ? '+' : ''}
-                  {$calibrationState.global_offset + ($calibrationState.key_offsets[selectedNote] ?? 0)}
-                </span>
-              </div>
-
-              <div class="detail-row highlight">
-                <span class="detail-label">Adjusted LED Index:</span>
-                <span class="detail-value">
-                  {getAdjustedLedIndex(selectedNote)}
-                </span>
-                <button
-                  class="btn-copy"
-                  on:click={() => selectedNote !== null && copyToClipboard(String(getAdjustedLedIndex(selectedNote)))}
-                  title="Copy to clipboard"
-                >
-                  📋
-                </button>
-              </div>
-            {/if}
           {:else}
             <p class="no-data">No LED mapping available for this key</p>
           {/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { calibrationState, calibrationUI, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset, setGlobalOffset } from '$lib/stores/calibration';
+  import { settings } from '$lib/stores/settings';
   import type { KeyOffset } from '$lib/stores/calibration';
 
   let globalOffsetValue = 0;
@@ -8,8 +9,15 @@
   let newKeyMidiNote = '';
   let newKeyOffset = 0;
   let showAddForm = false;
+  let ledCount = 0;
+  let validLedRange = { min: 0, max: 0 };
 
   $: globalOffsetValue = $calibrationState.global_offset;
+  $: ledCount = $settings?.led?.led_count || 0;
+  $: validLedRange = {
+    min: 0,
+    max: Math.max(0, ledCount - 1 - globalOffsetValue)
+  };
 
   async function handleGlobalOffsetChange(e: Event) {
     const target = e.target as HTMLInputElement;
@@ -107,7 +115,7 @@
     </div>
 
     <p class="offset-description">
-      Uniformly shifts all LEDs forward (0-20) to account for LED strip position
+      Adjust the slider until the LED lights up at the beginning of your first key (leftmost white key). This offset shifts all LEDs to align with your piano keys.
     </p>
   </div>
 
