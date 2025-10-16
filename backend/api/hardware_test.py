@@ -44,9 +44,19 @@ def get_socketio():
 def get_led_controller():
     """Get the global LED controller instance"""
     try:
+        from flask import current_app
+        
+        # First try to get from current app config
+        if current_app and hasattr(current_app, 'config'):
+            led_ctrl = current_app.config.get('led_controller')
+            if led_ctrl is not None:
+                return led_ctrl
+        
+        # Fallback to direct import
         from backend.app import led_controller
         return led_controller
-    except ImportError:
+    except Exception as e:
+        logger.error(f"Error getting LED controller: {e}", exc_info=True)
         return None
 
 def emit_test_event(event_type: str, data: Dict[str, Any]):

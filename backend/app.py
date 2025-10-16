@@ -103,6 +103,10 @@ try:
     led_effects_manager = LEDEffectsManager(led_controller, actual_led_count)
     logger.info(f"LED controller and effects manager initialized successfully with {actual_led_count} LEDs")
     
+    # Store in app config for access from API blueprints
+    app.config['led_controller'] = led_controller
+    app.config['led_effects_manager'] = led_effects_manager
+    
     # Play startup animation on first initialization only
     if led_effects_manager and led_controller and not _startup_animation_states.get('completed', False):
         try:
@@ -117,6 +121,8 @@ try:
 except Exception as e:
     logger.warning(f"LED controller initialization failed: {e}")
     logger.info("Running in LED-disabled mode - hardware test features will be limited")
+    app.config['led_controller'] = None
+    app.config['led_effects_manager'] = None
 
 # Initialize services that depend on LED controller
 # NOTE: USB MIDI service is created exclusively by MIDIInputManager to avoid duplicate processing
