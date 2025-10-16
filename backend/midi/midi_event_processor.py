@@ -226,13 +226,35 @@ class MidiEventProcessor:
 
             if callable(get_setting):
                 self.mapping_mode = get_setting('led', 'mapping_mode', 'auto')
-                self.leds_per_key = get_setting('led', 'leds_per_key', 3)
+                self.leds_per_key = get_setting('led', 'leds_per_key', None)  # Default to None for proportional
                 self.mapping_base_offset = get_setting('led', 'mapping_base_offset', 0)
                 self.key_mapping = get_setting('led', 'key_mapping', {}) or {}
                 
-                # Load calibration settings
+                # Load calibration settings including LED range
                 self.global_offset = get_setting('calibration', 'global_offset', 0)
                 self.calibration_enabled = get_setting('calibration', 'calibration_enabled', False)
+                
+                # CRITICAL: Load calibration range for accurate mapping
+                start_led = get_setting('calibration', 'start_led', 0)
+                end_led = get_setting('calibration', 'end_led', self.num_leds - 1)
+                available_led_range = end_led - start_led + 1
+                
+                logger.info(
+                    "MIDI processor calibration: start_led=%d, end_led=%d, available=%d, configured_total=%d",
+                    start_led, end_led, available_led_range, self.num_leds
+                )
+                
+                # Use available range for mapping, not total LED count
+                # This ensures proportional distribution across all 88 keys
+                # Only apply if range is actually limited (not full 0-N range)
+                if start_led > 0 or end_led < self.num_leds - 1:
+                    logger.info(
+                        "MIDI processor: Using calibration range [%d-%d] (%d available) for mapping instead of total %d",
+                        start_led, end_led, available_led_range, self.num_leds
+                    )
+                    self.num_leds = available_led_range
+                    self.mapping_base_offset = start_led
+                
                 key_offsets_raw = get_setting('calibration', 'key_offsets', {}) or {}
                 # Normalize key_offsets to ensure midi note keys are integers
                 self.key_offsets = {}
@@ -244,7 +266,7 @@ class MidiEventProcessor:
                         continue
             else:
                 self.mapping_mode = 'auto'
-                self.leds_per_key = 3
+                self.leds_per_key = None  # Default to None for proportional
                 self.mapping_base_offset = 0
                 self.key_mapping = {}
                 self.global_offset = 0
@@ -259,7 +281,7 @@ class MidiEventProcessor:
             self._configured_led_count = self.num_leds
             self.led_orientation = self._config_getter('led_orientation', 'normal')
             self.mapping_mode = self._config_getter('mapping_mode', 'auto')
-            self.leds_per_key = self._config_getter('leds_per_key', 3)
+            self.leds_per_key = self._config_getter('leds_per_key', None)  # Default to None for proportional
             self.mapping_base_offset = self._config_getter('mapping_base_offset', 0)
             self.key_mapping = self._config_getter('key_mapping', {}) or {}
             self.global_offset = 0
