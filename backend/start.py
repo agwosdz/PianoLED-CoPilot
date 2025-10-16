@@ -34,7 +34,8 @@ if __name__ == '__main__':
             host=app.config['HOST'],
             port=int(app.config['PORT']),
             debug=bool(app.config['DEBUG']),
-            use_reloader=False  # Disable reloader for systemd
+            use_reloader=False,  # Disable reloader for systemd
+            allow_unsafe_werkzeug=True  # Allow development server in production
         )
     except ImportError as e:
         print(f"Error importing Flask app: {e}")
