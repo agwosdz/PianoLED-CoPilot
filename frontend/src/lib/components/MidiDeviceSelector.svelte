@@ -128,6 +128,7 @@
 			}
 
 			const data: StatusResponse = await response.json();
+			console.log('Status fetched:', data);
 			statusStore.set(data);
 		} catch (err) {
 			console.error('Error fetching MIDI status:', err);
@@ -242,7 +243,18 @@
 	$: currentlyConnectedDevice = $statusStore.current_device;
 	$: isAnythingConnected = $statusStore.listening;
 	$: selectedDeviceObj = allDevices.find(d => d.name === selectedDeviceName);
-	$: isSelectedDeviceConnected = selectedDeviceName && selectedDeviceObj && currentlyConnectedDevice === selectedDeviceObj.name;</script>
+	$: isSelectedDeviceConnected = selectedDeviceName && selectedDeviceObj && currentlyConnectedDevice === selectedDeviceObj.name;
+	$: {
+		if (selectedDeviceName) {
+			console.log('Button state:', {
+				selectedDeviceName,
+				currentlyConnectedDevice,
+				selectedDeviceObj: selectedDeviceObj?.name,
+				isSelectedDeviceConnected,
+				isAnythingConnected
+			});
+		}
+	}</script>
 
 <div class="midi-device-selector">
 	<div class="header">
