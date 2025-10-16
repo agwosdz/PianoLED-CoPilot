@@ -153,7 +153,7 @@ class SettingsService:
                 'clock_pin': {'type': 'number', 'default': 19, 'min': 1, 'max': 40}
             },
             'led': {
-                'enabled': {'type': 'boolean', 'default': False},
+                'enabled': {'type': 'boolean', 'default': True},
                 'led_count': {'type': 'number', 'default': 246, 'min': 1, 'max': 1000},
                 'max_led_count': {'type': 'number', 'default': 1000, 'min': 1, 'max': 1000},
                 'leds_per_meter': {'type': 'number', 'default': 60, 'enum': [60, 72, 100, 120, 144, 160, 180, 200], 'description': 'LED strip density in LEDs per meter'},
@@ -182,9 +182,9 @@ class SettingsService:
                 'color_mode': {'type': 'string', 'default': 'velocity', 'enum': ['rainbow', 'velocity', 'note', 'custom']},
                 'color_scheme': {'type': 'string', 'default': 'rainbow'},
                 'animation_speed': {'type': 'number', 'default': 1.0, 'min': 0.1, 'max': 3.0},
-                'gpio_pin': {'type': 'number', 'default': 19},
+                'gpio_pin': {'type': 'number', 'default': 18},
                 'mapping_mode': {'type': 'string', 'default': 'auto', 'enum': ['auto', 'manual', 'proportional']},
-                'leds_per_key': {'type': 'number', 'default': 3, 'min': 1, 'max': 10},
+                'leds_per_key': {'type': 'number', 'default': None, 'min': 1, 'max': 10},
                 'mapping_base_offset': {'type': 'number', 'default': 0, 'min': 0, 'max': 1000}
             },
             'calibration': {
