@@ -28,7 +28,7 @@
   let pianoKeyCount = 88;
   let startMidiNote = 21;
   let isLoadingMapping = false;
-  let isProcessingLedCommand = false; // Prevent concurrent LED operations
+  let ledOperationInProgress = false; // Prevent overlapping LED operations
 
   function getMidiNoteName(midiNote: number): string {
     const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -91,15 +91,14 @@
 
   async function lightUpLedRange(ledIndices: number[]): Promise<void> {
     if (!ledIndices || ledIndices.length === 0) return;
-    if (isProcessingLedCommand) return; // Prevent concurrent operations
     
-    isProcessingLedCommand = true;
     try {
+      console.log(`[LED] Lighting up LEDs: ${ledIndices.join(', ')}`);
       // Light up all LEDs in the range (persistent, white color)
-      // Send requests sequentially to ensure proper ordering
+      // Send requests sequentially to maintain order
       for (const ledIndex of ledIndices) {
         if (typeof ledIndex !== 'number' || !Number.isFinite(ledIndex)) {
-          console.warn(`Invalid LED index: ${ledIndex}`);
+          console.warn(`[LED] Invalid LED index: ${ledIndex}`);
           continue;
         }
         
@@ -107,68 +106,70 @@
           method: 'POST'
         });
         if (!response.ok) {
-          console.warn(`Failed to light LED ${ledIndex}: ${response.status}`);
+          console.warn(`[LED] Failed to light LED ${ledIndex}: ${response.status}`);
+        } else {
+          console.log(`[LED] LED ${ledIndex} turned on`);
         }
       }
+      console.log(`[LED] Finished lighting up all LEDs`);
     } catch (error) {
-      console.error('Failed to light up LEDs:', error);
-    } finally {
-      isProcessingLedCommand = false;
+      console.error('[LED] Failed to light up LEDs:', error);
     }
   }
 
   async function turnOffAllLeds(): Promise<void> {
-    if (isProcessingLedCommand) {
-      // Wait for current operation to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    
-    isProcessingLedCommand = true;
     try {
+      console.log('[LED] Turning off all LEDs...');
       // Turn off all LEDs
       const response = await fetch('/api/hardware-test/led/off', {
         method: 'POST'
       });
       if (!response.ok) {
-        console.warn(`Failed to turn off all LEDs: ${response.status}`);
+        console.warn(`[LED] Failed to turn off all LEDs: ${response.status}`);
+      } else {
+        console.log('[LED] All LEDs turned off successfully');
       }
-      // Add small delay to ensure LED off completes before next operation
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Small delay to ensure hardware state updates
+      await new Promise(resolve => setTimeout(resolve, 100));
     } catch (error) {
-      console.error('Failed to turn off LEDs:', error);
-    } finally {
-      isProcessingLedCommand = false;
+      console.error('[LED] Failed to turn off LEDs:', error);
     }
   }
 
   async function handleKeyClick(midiNote: number) {
-    // Prevent multiple rapid clicks
-    if (isProcessingLedCommand) return;
-
-    // If clicking the same key, deselect it
+    console.log(`[LED] Key clicked: MIDI ${midiNote}, currently selected: ${selectedNote}`);
+    
+    // If clicking the same key, deselect it and turn off LEDs
     if (selectedNote === midiNote) {
+      console.log(`[LED] Same key clicked, deselecting...`);
       selectedNote = null;
       await turnOffAllLeds();
+      console.log(`[LED] Deselection complete`);
       return;
     }
 
-    // Turn off previous LEDs if any key was selected
-    if (selectedNote !== null) {
-      await turnOffAllLeds();
-      // Ensure turn off completes
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
+    // ALWAYS turn off all LEDs first, regardless of state
+    console.log(`[LED] Turning off any existing LEDs before selecting new key...`);
+    await turnOffAllLeds();
+    console.log(`[LED] All LEDs cleared, now proceeding with new key selection`);
 
     // Select new key and light it up
+    console.log(`[LED] Selecting key ${midiNote} and lighting up LEDs...`);
     selectedNote = midiNote;
     const ledIndices = ledMapping[midiNote];
     
     if (ledIndices && ledIndices.length > 0) {
-      // Verify indices before sending
+      console.log(`[LED] LED indices for key ${midiNote}: ${ledIndices.join(', ')}`);
+      // Verify indices are valid before sending
       const validIndices = ledIndices.filter(idx => typeof idx === 'number' && Number.isFinite(idx));
       if (validIndices.length > 0) {
+        console.log(`[LED] Lighting up ${validIndices.length} valid LEDs...`);
         await lightUpLedRange(validIndices);
+      } else {
+        console.warn(`[LED] No valid LED indices found for key ${midiNote}`);
       }
+    } else {
+      console.warn(`[LED] No LED mapping for key ${midiNote}`);
     }
   }
 

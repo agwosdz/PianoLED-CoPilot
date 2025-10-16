@@ -41,6 +41,14 @@ def get_socketio():
         raise RuntimeError("SocketIO instance not available - check application initialization")
     return socketio
 
+def get_led_controller():
+    """Get the global LED controller instance"""
+    try:
+        from backend.app import led_controller
+        return led_controller
+    except ImportError:
+        return None
+
 def emit_test_event(event_type: str, data: Dict[str, Any]):
     """Emit a test event via WebSocket"""
     try:
@@ -204,45 +212,33 @@ def test_individual_led():
 
 @hardware_test_bp.route('/led/off', methods=['POST'])
 def turn_off_all_leds():
-    """Turn off all LEDs using saved configuration"""
+    """Turn off all LEDs using the global LED controller"""
     try:
-        settings_service = get_settings_service()
-        # Get saved GPIO pin and LED count with sensible defaults
-        gpio_pin = settings_service.get_setting('led', 'gpio_pin')
-        if gpio_pin is None:
-            gpio_pin = settings_service.get_setting('led', 'gpioPin')
-        if gpio_pin is None:
-            gpio_pin = settings_service.get_setting('gpio', 'data_pin')
-        if gpio_pin is None:
-            gpio_pin = 18
-        led_count = settings_service.get_setting('led', 'led_count')
-        if led_count is None:
-            led_count = settings_service.get_setting('led', 'count')
-        if led_count is None:
-            led_count = 246
-        # Initialize controller and turn off
-        if not LEDController:
+        led_controller = get_led_controller()
+        
+        if not led_controller:
+            logger.warning("LED controller not available")
             return jsonify({
                 'success': False,
                 'error': 'LED controller not available'
             }), 503
+        
         try:
-            controller = LEDController(num_pixels=int(led_count), pin=int(gpio_pin))
-            controller.turn_off_all()
+            logger.info("Turning off all LEDs via global controller")
+            led_controller.turn_off_all()
+            logger.info("All LEDs turned off successfully")
             return jsonify({
                 'success': True,
-                'message': 'All LEDs turned off',
-                'gpio_pin': int(gpio_pin),
-                'led_count': int(led_count)
+                'message': 'All LEDs turned off'
             }), 200
         except Exception as e:
-            logger.error(f"LED controller error (turn_off_all): {e}")
+            logger.error(f"LED controller error (turn_off_all): {e}", exc_info=True)
             return jsonify({
                 'success': False,
                 'error': f'Failed to turn off LEDs: {str(e)}'
             }), 500
     except Exception as e:
-        logger.error(f"Error in turn_off_all_leds: {e}")
+        logger.error(f"Error in turn_off_all_leds: {e}", exc_info=True)
         return jsonify({
             'success': False,
             'error': f'Unexpected error: {str(e)}'
