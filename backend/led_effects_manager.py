@@ -15,9 +15,19 @@ logger = get_logger(__name__)
 class LEDEffectsManager:
     """Manages LED effects with proper thread cleanup"""
     
-    def __init__(self, led_controller, led_count: int = 88):
+    def __init__(self, led_controller, led_count: int = 88, settings_service=None):
         self.led_controller = led_controller
         self.led_count = led_count
+        self.settings_service = settings_service
+        self.start_led = 0
+        self.end_led = led_count - 1
+        
+        # Load calibration range from settings
+        if settings_service:
+            self.start_led = settings_service.get_setting('calibration', 'start_led', 0)
+            self.end_led = settings_service.get_setting('calibration', 'end_led', led_count - 1)
+            logger.info(f"LEDEffectsManager initialized with calibration range: [{self.start_led}, {self.end_led}]")
+        
         self.current_effect_thread: Optional[threading.Thread] = None
         self.stop_current_effect = threading.Event()
         self.lock = threading.Lock()
@@ -239,9 +249,10 @@ class LEDEffectsManager:
         Play a fancy startup animation - Piano key cascade with musical color sweep
         Creates an elegant welcome effect with cascading keys and gradient waves
         This is a one-time effect that doesn't use the threading system
+        Uses the calibration range (start_led to end_led) for visible LEDs
         """
         try:
-            logger.info("Starting fancy startup animation")
+            logger.info(f"Starting fancy startup animation (range: [{self.start_led}, {self.end_led}])")
             import math
             
             # Animation phases
@@ -253,24 +264,28 @@ class LEDEffectsManager:
             phase2_duration = 1.2
             phase3_duration = 0.7
             
+            # Calculate visible LED range
+            visible_led_count = self.end_led - self.start_led + 1
+            
             # ========== PHASE 1: PIANO KEY CASCADE ==========
             logger.info("  Phase 1: Piano key cascade...")
             cascade_steps = 40
             cascade_delay = phase1_duration / cascade_steps
             
             for step in range(cascade_steps):
-                # Clear all LEDs first
+                # Clear all LEDs first (full strip)
                 for i in range(self.led_count):
                     self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
-                # Create cascade effect - each key lights up in sequence
-                cascade_width = max(3, int(self.led_count * 0.15))  # Width of the cascade wave
-                cascade_pos = (step / cascade_steps) * (self.led_count + cascade_width)
+                # Create cascade effect - each key lights up in sequence within the visible range
+                cascade_width = max(3, int(visible_led_count * 0.15))  # Width of the cascade wave
+                cascade_pos = (step / cascade_steps) * (visible_led_count + cascade_width)
                 
                 for i in range(self.led_count):
-                    distance_from_wave = abs(i - cascade_pos)
+                    distance_from_wave = abs((i - self.start_led) - cascade_pos)
                     
-                    if distance_from_wave < cascade_width:
+                    # Only light LEDs within the visible calibration range
+                    if self.start_led <= i <= self.end_led and distance_from_wave < cascade_width:
                         # Bright cyan-to-blue gradient for the cascade
                         brightness = 1.0 - (distance_from_wave / cascade_width)
                         
@@ -291,14 +306,16 @@ class LEDEffectsManager:
             sweep_delay = phase2_duration / sweep_steps
             
             for step in range(sweep_steps):
-                # Clear all LEDs first
+                # Clear all LEDs first (full strip)
                 for i in range(self.led_count):
                     self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
                 # Create smooth gradient that sweeps through like a musical scale
-                for i in range(self.led_count):
-                    # Calculate position in the sweep cycle
-                    wave_phase = ((i / self.led_count) + (step / sweep_steps)) * 2 * math.pi
+                # Only animate LEDs within the visible calibration range
+                for i in range(self.start_led, self.end_led + 1):
+                    # Calculate position in the sweep cycle relative to visible range
+                    relative_pos = (i - self.start_led) / visible_led_count
+                    wave_phase = (relative_pos + (step / sweep_steps)) * 2 * math.pi
                     
                     # Use sine waves to create smooth, musical gradient
                     r = int(127.5 + 127.5 * math.sin(wave_phase))
@@ -319,20 +336,25 @@ class LEDEffectsManager:
             for step in range(sparkle_steps):
                 brightness_scale = 1.0 - (step / sparkle_steps)
                 
+                # Clear full strip, then only illuminate within calibration range
                 for i in range(self.led_count):
-                    # Mostly dim with occasional bright sparkles
-                    if random.random() < 0.3 * brightness_scale:
-                        # Gold/yellow sparkle
-                        r = int(255 * brightness_scale)
-                        g = int(200 * brightness_scale)
-                        b = int(0)
+                    if self.start_led <= i <= self.end_led:
+                        # Mostly dim with occasional bright sparkles
+                        if random.random() < 0.3 * brightness_scale:
+                            # Gold/yellow sparkle
+                            r = int(255 * brightness_scale)
+                            g = int(200 * brightness_scale)
+                            b = int(0)
+                        else:
+                            # Dim purple/magenta background
+                            r = int(100 * brightness_scale)
+                            g = int(30 * brightness_scale)
+                            b = int(80 * brightness_scale)
+                        
+                        self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
                     else:
-                        # Dim purple/magenta background
-                        r = int(100 * brightness_scale)
-                        g = int(30 * brightness_scale)
-                        b = int(80 * brightness_scale)
-                    
-                    self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
+                        # Keep LEDs outside calibration range off
+                        self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
                 self.led_controller.show()
                 time.sleep(sparkle_delay)

@@ -100,7 +100,7 @@ try:
     led_controller = LEDController(settings_service=settings_service)
     # Use the actual LED count from the controller to avoid mismatches
     actual_led_count = led_controller.num_pixels
-    led_effects_manager = LEDEffectsManager(led_controller, actual_led_count)
+    led_effects_manager = LEDEffectsManager(led_controller, actual_led_count, settings_service=settings_service)
     logger.info(f"LED controller and effects manager initialized successfully with {actual_led_count} LEDs")
     
     # Store in app config for access from API blueprints
