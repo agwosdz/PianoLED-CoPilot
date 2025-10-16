@@ -452,6 +452,9 @@ class SettingsService:
             True if successful, False otherwise
         """
         try:
+            if category == 'led' and key == 'leds_per_meter':
+                logger.info(f"set_setting {category}.{key} = {value}")
+            
             storage_key = SettingsValidator.resolve_key_alias(category, key)
             schema = SettingsValidator._get_category_schema(category) or {}
 
@@ -467,6 +470,9 @@ class SettingsService:
                 logger.error(f"Validation failed for {category}.{storage_key}: {errors[0]}")
                 return False
             
+            if category == 'led' and key == 'leds_per_meter':
+                logger.info(f"After validation/normalization - {category}.{storage_key} = {normalized_value}")
+            
             data_type = self._get_data_type(normalized_value)
             
             with self._get_db_connection() as conn:
@@ -477,6 +483,9 @@ class SettingsService:
                     (category, storage_key, json.dumps(normalized_value), data_type, datetime.now().isoformat())
                 )
                 conn.commit()
+            
+            if category == 'led' and key == 'leds_per_meter':
+                logger.info(f"Saved to DB: {category}.{storage_key} = {normalized_value}")
             
             # Notify internal listeners before broadcasting
             self._notify_listeners(category, storage_key, normalized_value)
@@ -558,8 +567,14 @@ class SettingsService:
             True if all updates successful, False otherwise
         """
         try:
+            logger.info(f"update_settings called with: {settings}")
+            logger.info(f"LED settings in input: {settings.get('led', {})}")
+            
             # Validate and normalize all settings
             normalized_settings, errors = SettingsValidator.validate_and_normalize(settings)
+            
+            logger.info(f"After normalization - LED settings: {normalized_settings.get('led', {})}")
+            logger.info(f"Normalization errors: {errors}")
             
             if errors:
                 logger.error(f"Settings validation failed: {errors}")
@@ -569,6 +584,8 @@ class SettingsService:
             
             for category, category_settings in normalized_settings.items():
                 for key, value in category_settings.items():
+                    if category == 'led' and key == 'leds_per_meter':
+                        logger.info(f"Setting {category}.{key} = {value}")
                     if self.set_setting(category, key, value):
                         updated_settings.append((category, key, value))
             
@@ -576,6 +593,7 @@ class SettingsService:
             if updated_settings:
                 self._broadcast_bulk_update(updated_settings)
             
+            logger.info(f"update_settings completed. Updated {len(updated_settings)} settings")
             return len(updated_settings) == sum(len(cat_settings) for cat_settings in normalized_settings.values())
             
         except Exception as e:
