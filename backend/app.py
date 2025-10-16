@@ -110,11 +110,11 @@ except Exception as e:
     logger.info("Running in LED-disabled mode - hardware test features will be limited")
 
 # Initialize services that depend on LED controller
-# Create USB MIDI service ONCE - will be shared with MIDIInputManager
-usb_midi_service = USBMIDIInputService(led_controller=led_controller, websocket_callback=socketio.emit, settings_service=settings_service) if USBMIDIInputService else None
+# NOTE: USB MIDI service is created exclusively by MIDIInputManager to avoid duplicate processing
+# All USB MIDI events route through MIDIInputManager for unified event handling
 playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
-# Pass existing usb_midi_service to avoid duplicate creation
-midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service, usb_midi_service=usb_midi_service) if MIDIInputManager else None
+midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
+usb_midi_service = midi_input_manager._usb_service if midi_input_manager else None  # Reference manager's service
 
 # Initialize MIDI input manager services
 if midi_input_manager:
@@ -217,36 +217,23 @@ def _refresh_runtime_dependencies(trigger_category: str, trigger_key: str) -> No
     restart_required = trigger_category == 'led' and any(flag for flag in restart_flags)
 
     # Refresh dependent services with new configuration
-    # NOTE: usb_midi_service and midi_input_manager._usb_service are the SAME instance
-    # to avoid duplicate MIDI processing. Only refresh the global usb_midi_service here.
-    if usb_midi_service:
-        # update_led_controller() already calls refresh_runtime_settings() internally
-        # No need to call refresh again
-        if led_controller:
-            usb_midi_service.update_led_controller(led_controller)
-            logger.debug("Updated global usb_midi_service LED controller (shared with midi_input_manager)")
-        else:
-            # If no LED controller, explicitly refresh settings
-            usb_midi_service.refresh_runtime_settings()
-        if restart_required:
-            usb_midi_service.restart_with_saved_device(reason=f"{trigger_category}.{trigger_key}")
-
+    # IMPORTANT: USB MIDI service is managed EXCLUSIVELY by MIDIInputManager
+    # All coordination flows through midi_input_manager to ensure single processing path
+    
     if playback_service:
         playback_service.led_controller = led_controller
         playback_service.refresh_runtime_settings()
 
     if midi_input_manager:
-        # midi_input_manager._usb_service is the same as the global usb_midi_service
-        # So we update the manager's reference but don't need to refresh the USB service twice
+        # Update manager's LED controller reference (propagates to USB service internally)
         if led_controller:
             midi_input_manager.update_led_controller(led_controller)
-            logger.debug("Updated midi_input_manager LED controller (USB service already updated)")
+            logger.info("Updated midi_input_manager LED controller (routes through USB service)")
         else:
-            # Only refresh if we didn't already refresh via usb_midi_service
-            if not usb_midi_service:
-                midi_input_manager.refresh_runtime_settings()
-        # Only restart if usb_midi_service wasn't already restarted
-        if restart_required and not usb_midi_service and hasattr(midi_input_manager, 'restart_usb_service'):
+            midi_input_manager.refresh_runtime_settings()
+        
+        # Restart USB service if settings changed significantly
+        if restart_required and hasattr(midi_input_manager, 'restart_usb_service'):
             midi_input_manager.restart_usb_service(reason=f"{trigger_category}.{trigger_key}")
 
     # Ensure midi_parser is refreshed too (it caches led count on init)
