@@ -1485,10 +1485,29 @@ def get_midi_input_status():
                 'message': 'MIDI input manager not available'
             }), 503
         
-        status = midi_input_manager.get_status()
+        # Get current device from USB service
+        current_device = None
+        usb_listening = False
+        rtpmidi_listening = False
+        
+        if midi_input_manager._usb_service:
+            usb_status = midi_input_manager._usb_service.get_status()
+            current_device = usb_status.get('device_name')
+            usb_listening = usb_status.get('is_listening', False)
+        
+        if midi_input_manager._rtpmidi_service:
+            try:
+                rtpmidi_status = midi_input_manager._rtpmidi_service.get_status()
+                rtpmidi_listening = rtpmidi_status.get('is_listening', False)
+            except:
+                rtpmidi_listening = False
+        
         return jsonify({
-            'status': 'success',
-            'midi_input': status
+            'listening': midi_input_manager._running,
+            'current_device': current_device,
+            'usb_listening': usb_listening,
+            'rtpmidi_listening': rtpmidi_listening,
+            'last_message_time': None
         }), 200
         
     except Exception as e:
