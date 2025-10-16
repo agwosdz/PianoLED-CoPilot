@@ -5,7 +5,8 @@ Provides REST endpoints for managing global and per-key calibration offsets
 """
 
 import logging
-from flask import Blueprint, request, jsonify
+import time
+from flask import Blueprint, request, jsonify, current_app
 from typing import Dict, Any
 from datetime import datetime
 from backend.logging_config import get_logger
@@ -22,6 +23,14 @@ def get_socketio():
     """Get the global socketio instance"""
     from app import socketio
     return socketio
+
+def get_led_controller():
+    """Get the global LED controller instance"""
+    try:
+        from app import led_controller
+        return led_controller
+    except (ImportError, AttributeError):
+        return None
 
 # Create the blueprint
 calibration_bp = Blueprint('calibration_api', __name__, url_prefix='/api/calibration')
@@ -496,8 +505,7 @@ def import_calibration():
 def test_led(led_index: int):
     """Light up a specific LED for calibration testing (3 seconds)"""
     try:
-        # Import here to avoid circular imports
-        from app import led_controller
+        led_controller = get_led_controller()
         
         if not led_controller:
             return jsonify({
@@ -526,7 +534,7 @@ def test_led(led_index: int):
             'led_index': led_index
         }), 200
     except Exception as e:
-        logger.error(f"Error testing LED: {e}")
+        logger.error(f"Error testing LED: {e}", exc_info=True)
         return jsonify({
             'error': 'Internal Server Error',
             'message': f'Failed to test LED: {str(e)}'
@@ -535,12 +543,11 @@ def test_led(led_index: int):
 
 def _turn_off_led_after_delay(led_index: int, delay_seconds: int):
     """Turn off LED after specified delay"""
-    import time
     try:
-        from app import led_controller
         time.sleep(delay_seconds)
+        led_controller = get_led_controller()
         if led_controller:
             led_controller.turn_off_led(led_index)
             logger.info(f"Test LED {led_index} turned off after {delay_seconds}s")
     except Exception as e:
-        logger.error(f"Error turning off LED: {e}")
+        logger.error(f"Error turning off LED: {e}", exc_info=True)
