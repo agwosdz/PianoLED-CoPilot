@@ -382,11 +382,11 @@
 		{/if}
 
 		<div class="action-buttons">
-			{#if isCurrentlyConnected}
+			{#if isSelectedDeviceConnected}
 				<div class="connected-state">
 					<div class="connected-badge">
 						<span class="pulse-dot"></span>
-						<span>Connected to {connectedDeviceName}</span>
+						<span>Connected to {currentlyConnectedDevice}</span>
 					</div>
 					<button 
 						class="btn-disconnect" 
