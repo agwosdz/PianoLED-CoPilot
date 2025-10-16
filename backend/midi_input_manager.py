@@ -80,6 +80,9 @@ class MIDIInputManager:
         self._usb_service = None
         self._rtpmidi_service = None
         
+        # Initialization lock to prevent race conditions
+        self._init_lock = threading.Lock()
+        
         # Event processing
         self._event_buffer: List[UnifiedMIDIEvent] = []
         self._buffer_lock = threading.Lock()
@@ -172,62 +175,63 @@ class MIDIInputManager:
         Returns:
             bool: True if at least one service initialized successfully
         """
-        success_count = 0
-        
-        # Initialize USB MIDI service (IDEMPOTENT - skip if already exists)
-        # Note: This is the EXCLUSIVE USB MIDI service - no other instances should be created
-        if self.enable_usb and USBMIDIInputService:
-            if self._usb_service is None:
-                # Only create if not already initialized
-                try:
-                    self._usb_service = USBMIDIInputService(
-                        led_controller=self._led_controller,
-                        websocket_callback=self._handle_usb_event,
-                        settings_service=self.settings_service
-                    )
-                    self._source_status[MIDIInputSource.USB]['available'] = True
+        with self._init_lock:
+            success_count = 0
+            
+            # Initialize USB MIDI service (IDEMPOTENT - skip if already exists)
+            # Note: This is the EXCLUSIVE USB MIDI service - no other instances should be created
+            if self.enable_usb and USBMIDIInputService:
+                if self._usb_service is None:
+                    # Only create if not already initialized
+                    try:
+                        self._usb_service = USBMIDIInputService(
+                            led_controller=self._led_controller,
+                            websocket_callback=self._handle_usb_event,
+                            settings_service=self.settings_service
+                        )
+                        self._source_status[MIDIInputSource.USB]['available'] = True
+                        success_count += 1
+                        logger.info(
+                            "USB MIDI service initialized (exclusive instance) [service_id=%s, processor_id=%s]",
+                            id(self._usb_service),
+                            id(self._usb_service._event_processor) if hasattr(self._usb_service, '_event_processor') else 'N/A'
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to initialize USB MIDI service: {e}")
+                else:
+                    # Service already exists - mark as successful
+                    logger.debug("USB MIDI service already initialized (skipping recreation)")
+                    if not self._source_status[MIDIInputSource.USB].get('available', False):
+                        self._source_status[MIDIInputSource.USB]['available'] = True
                     success_count += 1
-                    logger.info(
-                        "USB MIDI service initialized (exclusive instance) [service_id=%s, processor_id=%s]",
-                        id(self._usb_service),
-                        id(self._usb_service._event_processor) if hasattr(self._usb_service, '_event_processor') else 'N/A'
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to initialize USB MIDI service: {e}")
-            else:
-                # Service already exists - mark as successful
-                logger.debug("USB MIDI service already initialized (skipping recreation)")
-                if not self._source_status[MIDIInputSource.USB].get('available', False):
-                    self._source_status[MIDIInputSource.USB]['available'] = True
-                success_count += 1
-        
-        # Initialize rtpMIDI service (IDEMPOTENT - skip if already exists)
-        if self.enable_rtpmidi and RtpMIDIService:
-            if self._rtpmidi_service is None:
-                # Only create if not already initialized
-                try:
-                    self._rtpmidi_service = RtpMIDIService(
-                        midi_input_manager=self,
-                        websocket_callback=self._handle_rtpmidi_event
-                    )
-                    self._source_status[MIDIInputSource.RTPMIDI]['available'] = True
+            
+            # Initialize rtpMIDI service (IDEMPOTENT - skip if already exists)
+            if self.enable_rtpmidi and RtpMIDIService:
+                if self._rtpmidi_service is None:
+                    # Only create if not already initialized
+                    try:
+                        self._rtpmidi_service = RtpMIDIService(
+                            midi_input_manager=self,
+                            websocket_callback=self._handle_rtpmidi_event
+                        )
+                        self._source_status[MIDIInputSource.RTPMIDI]['available'] = True
+                        success_count += 1
+                        logger.info("rtpMIDI service initialized")
+                    except Exception as e:
+                        logger.error(f"Failed to initialize rtpMIDI service: {e}")
+                else:
+                    # Service already exists - mark as successful
+                    logger.debug("rtpMIDI service already initialized (skipping recreation)")
+                    if not self._source_status[MIDIInputSource.RTPMIDI].get('available', False):
+                        self._source_status[MIDIInputSource.RTPMIDI]['available'] = True
                     success_count += 1
-                    logger.info("rtpMIDI service initialized")
-                except Exception as e:
-                    logger.error(f"Failed to initialize rtpMIDI service: {e}")
-            else:
-                # Service already exists - mark as successful
-                logger.debug("rtpMIDI service already initialized (skipping recreation)")
-                if not self._source_status[MIDIInputSource.RTPMIDI].get('available', False):
-                    self._source_status[MIDIInputSource.RTPMIDI]['available'] = True
-                success_count += 1
-        
-        if success_count == 0:
-            logger.error("No MIDI input services could be initialized")
-            return False
-        
-        logger.info(f"Initialized {success_count} MIDI input service(s)")
-        return True
+            
+            if success_count == 0:
+                logger.error("No MIDI input services could be initialized")
+                return False
+            
+            logger.info(f"Initialized {success_count} MIDI input service(s)")
+            return True
     
     def start_listening(self, device_name: Optional[str] = None, enable_usb: bool = True, enable_rtpmidi: bool = True) -> bool:
         """
