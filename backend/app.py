@@ -112,13 +112,31 @@ except Exception as e:
 # Initialize services that depend on LED controller
 # NOTE: USB MIDI service is created exclusively by MIDIInputManager to avoid duplicate processing
 # All USB MIDI events route through MIDIInputManager for unified event handling
-playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
-midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
-usb_midi_service = midi_input_manager._usb_service if midi_input_manager else None  # Reference manager's service
 
-# Initialize MIDI input manager services
-if midi_input_manager:
-    midi_input_manager.initialize_services()
+# Guard against multiple initializations (e.g., from module reloads or import loops)
+# These should only be initialized ONCE at application startup
+_app_services_initialized = False
+playback_service = None
+midi_input_manager = None
+usb_midi_service = None
+
+if not _app_services_initialized:
+    try:
+        playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
+        midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
+        usb_midi_service = midi_input_manager._usb_service if midi_input_manager else None  # Reference manager's service
+        
+        # Initialize MIDI input manager services
+        if midi_input_manager:
+            midi_input_manager.initialize_services()
+        
+        _app_services_initialized = True
+        logger.info("Application services initialized successfully")
+    except Exception as exc:
+        logger.error(f"Failed to initialize application services: {exc}")
+        _app_services_initialized = True  # Mark as initialized even on error to prevent retry loops
+elif midi_input_manager:
+    logger.debug("Application services already initialized, skipping re-initialization")
 
 ALLOWED_MIDI_EXTENSIONS = {'.mid', '.midi'}
 
