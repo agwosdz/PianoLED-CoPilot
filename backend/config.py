@@ -715,16 +715,17 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     return mapping
 
 
-def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=None):
+def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=None, led_count=None):
     """Apply calibration offsets to a pre-computed key mapping
     
     Args:
         mapping: Base key-to-LED mapping dict
         global_offset: Global offset to apply to all LEDs
         key_offsets: Per-key offset dict {midi_note: offset}
+        led_count: Total LED count for bounds checking (optional, no bounds if None)
     
     Returns:
-        dict: Adjusted mapping with offsets applied
+        dict: Adjusted mapping with offsets applied (LED indices clamped to [0, led_count-1] if led_count provided)
     """
     if not mapping or (global_offset == 0 and not key_offsets):
         return mapping
@@ -733,6 +734,7 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
         key_offsets = {}
     
     adjusted = {}
+    max_led_idx = (led_count - 1) if led_count else None
     
     for midi_note, led_indices in mapping.items():
         adjusted_indices = []
@@ -745,11 +747,20 @@ def apply_calibration_offsets_to_mapping(mapping, global_offset=0, key_offsets=N
                 if midi_note in key_offsets:
                     adjusted_idx += key_offsets[midi_note]
                 
+                # Clamp to valid range if led_count is provided
+                if max_led_idx is not None:
+                    adjusted_idx = max(0, min(adjusted_idx, max_led_idx))
+                
                 adjusted_indices.append(adjusted_idx)
         elif isinstance(led_indices, int):
             adjusted_idx = led_indices + global_offset
             if midi_note in key_offsets:
                 adjusted_idx += key_offsets[midi_note]
+            
+            # Clamp to valid range if led_count is provided
+            if max_led_idx is not None:
+                adjusted_idx = max(0, min(adjusted_idx, max_led_idx))
+            
             adjusted_indices = [adjusted_idx]
         
         if adjusted_indices:

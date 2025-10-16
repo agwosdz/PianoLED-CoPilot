@@ -535,11 +535,12 @@ def get_key_led_mapping():
         
         logger.info(f"Applying offsets: global_offset={global_offset}, key_offsets count={len(key_offsets)}")
         
-        # Apply calibration offsets to the mapping
+        # Apply calibration offsets to the mapping (with bounds checking)
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=auto_mapping,
             global_offset=global_offset,
-            key_offsets=key_offsets
+            key_offsets=key_offsets,
+            led_count=led_count  # Pass led_count for bounds validation
         )
         
         logger.info(f"Successfully generated mapping with {len(final_mapping)} keys")
