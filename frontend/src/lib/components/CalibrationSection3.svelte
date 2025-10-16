@@ -78,6 +78,17 @@
     hoveredNote = midiNote;
   }
 
+  function getAdjustedLedIndex(midiNote: number): number | null {
+    const baseLedIndex = ledMapping[midiNote];
+    if (baseLedIndex === null || baseLedIndex === undefined) {
+      return null;
+    }
+    // Calculate adjusted LED: base + global offset + individual offset
+    const globalOffset = $calibrationState.global_offset ?? 0;
+    const individualOffset = $calibrationState.key_offsets[midiNote] ?? 0;
+    return baseLedIndex + globalOffset + individualOffset;
+  }
+
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
   }
@@ -95,35 +106,28 @@
         <button
           class={`piano-key ${key.isBlack ? 'black' : 'white'} ${
             selectedNote === key.midiNote ? 'selected' : ''
-          } ${hoveredNote === key.midiNote ? 'hovered' : ''}`}
+          } ${hoveredNote === key.midiNote ? 'hovered' : ''} ${
+            key.offset !== 0 ? 'has-offset' : ''
+          }`}
           on:click={() => handleKeyClick(key.midiNote)}
           on:mouseenter={() => handleKeyHover(key.midiNote)}
           on:mouseleave={() => handleKeyHover(null)}
           title={`${key.noteName} (MIDI ${key.midiNote})`}
         >
           <div class="key-content">
-            <span class="note-label">{key.noteName}</span>
-            <div class="led-info">
-              {#if key.ledIndex !== null}
-                <span class="led-index">LED {key.ledIndex}</span>
-                {#if $calibrationState.global_offset !== 0 || key.offset !== 0}
-                  <div class="offset-indicators">
-                    {#if $calibrationState.global_offset !== 0}
-                      <span class="offset-badge global-offset" title="Global offset applied to all keys">
-                        G{$calibrationState.global_offset > 0 ? '+' : ''}{$calibrationState.global_offset}
-                      </span>
-                    {/if}
-                    {#if key.offset !== 0}
-                      <span class="offset-badge individual-offset" title="Individual offset for this key">
-                        I{key.offset > 0 ? '+' : ''}{key.offset}
-                      </span>
-                    {/if}
-                  </div>
+            {#if key.ledIndex !== null}
+              <span class="key-display">
+                {key.noteName} LED {getAdjustedLedIndex(key.midiNote)}
+                {#if $calibrationState.global_offset !== 0}
+                  G{$calibrationState.global_offset > 0 ? '+' : ''}{$calibrationState.global_offset}
                 {/if}
-              {:else}
-                <span class="no-mapping">—</span>
-              {/if}
-            </div>
+                {#if key.offset !== 0}
+                  I{key.offset > 0 ? '+' : ''}{key.offset}
+                {/if}
+              </span>
+            {:else}
+              <span class="key-display">—</span>
+            {/if}
           </div>
         </button>
       {/each}
@@ -146,7 +150,7 @@
         <div class="details-content">
           {#if ledMapping[selectedNote] !== null}
             <div class="detail-row">
-              <span class="detail-label">LED Index:</span>
+              <span class="detail-label">Base LED Index:</span>
               <span class="detail-value">{ledMapping[selectedNote]}</span>
               <button
                 class="btn-copy"
@@ -187,10 +191,17 @@
               </div>
 
               <div class="detail-row highlight">
-                <span class="detail-label">Adjusted LED:</span>
+                <span class="detail-label">Adjusted LED Index:</span>
                 <span class="detail-value">
-                  {ledMapping[selectedNote] + $calibrationState.global_offset + ($calibrationState.key_offsets[selectedNote] ?? 0)}
+                  {getAdjustedLedIndex(selectedNote)}
                 </span>
+                <button
+                  class="btn-copy"
+                  on:click={() => selectedNote !== null && copyToClipboard(String(getAdjustedLedIndex(selectedNote)))}
+                  title="Copy to clipboard"
+                >
+                  📋
+                </button>
               </div>
             {/if}
           {:else}
@@ -288,6 +299,7 @@
     min-height: 200px;
     overflow-x: auto;
     position: relative;
+    align-items: flex-end;
   }
 
   .piano-key {
@@ -299,10 +311,10 @@
     border: 2px solid #1e293b;
     border-radius: 4px;
     transition: all 0.2s ease;
-    padding: 0.5rem 0.25rem;
-    font-size: 0.7rem;
-    min-width: 40px;
-    flex-shrink: 0;
+    padding: 0.5rem 0.08rem;
+    font-size: 0.6rem;
+    flex: 1;
+    min-width: 0;
     position: relative;
     background: none;
   }
@@ -310,15 +322,16 @@
   .piano-key.white {
     background: linear-gradient(to bottom, #ffffff, #f1f5f9);
     color: #0f172a;
-    height: 140px;
+    height: 180px;
   }
 
   .piano-key.black {
     background: linear-gradient(to bottom, #1e293b, #0f172a);
     color: #ffffff;
     height: 90px;
-    margin: 0 -15px 0 -15px;
+    margin: 0 -8px 0 -8px;
     z-index: 10;
+    align-self: flex-start;
   }
 
   .piano-key.white.hovered {
@@ -335,79 +348,33 @@
     box-shadow: inset 0 0 0 2px #2563eb, 0 0 10px rgba(37, 99, 235, 0.4);
   }
 
+  .piano-key.has-offset {
+    border-color: #10b981;
+    border-width: 2px;
+  }
+
   .key-content {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.25rem;
     text-align: center;
+    width: 100%;
+    height: 100%;
+    padding-bottom: 1.3rem;
   }
 
-  .note-label {
+  .key-display {
     font-weight: 600;
-    font-size: 0.75rem;
-  }
-
-  .led-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    font-size: 0.65rem;
-  }
-
-  .led-index {
-    background: rgba(37, 99, 235, 0.1);
-    padding: 0.1rem 0.2rem;
-    border-radius: 2px;
-  }
-
-  .piano-key.black .led-index {
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .led-offset {
-    color: #10b981;
-    font-weight: 600;
-  }
-
-  .offset-indicators {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  .offset-badge {
-    display: inline-block;
-    padding: 0.15rem 0.3rem;
-    border-radius: 2px;
-    font-size: 0.6rem;
-    font-weight: 700;
-    text-align: center;
-    line-height: 1;
-  }
-
-  .offset-badge.global-offset {
-    background: rgba(59, 130, 246, 0.2);
-    color: #1e40af;
-    border: 1px solid rgba(59, 130, 246, 0.4);
-  }
-
-  .piano-key.black .offset-badge.global-offset {
-    background: rgba(147, 197, 253, 0.2);
-    color: #dbeafe;
-    border: 1px solid rgba(147, 197, 253, 0.4);
-  }
-
-  .offset-badge.individual-offset {
-    background: rgba(34, 197, 94, 0.2);
-    color: #15803d;
-    border: 1px solid rgba(34, 197, 94, 0.4);
-  }
-
-  .piano-key.black .offset-badge.individual-offset {
-    background: rgba(134, 239, 172, 0.2);
-    color: #86efac;
-    border: 1px solid rgba(134, 239, 172, 0.4);
+    font-size: 0.45rem;
+    white-space: nowrap;
+    transform: rotate(-90deg);
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    line-height: 1.1;
   }
 
   .no-mapping {
@@ -589,11 +556,12 @@
     }
 
     .piano-key {
-      min-width: 35px;
+      flex: 1;
+      min-width: 0;
     }
 
     .piano-key.white {
-      height: 100px;
+      height: 130px;
     }
 
     .piano-key.black {
@@ -612,12 +580,13 @@
     }
 
     .piano-key {
-      min-width: 30px;
-      padding: 0.25rem;
+      flex: 1;
+      min-width: 0;
+      padding: 0.25rem 0.06rem;
     }
 
     .piano-key.white {
-      height: 80px;
+      height: 110px;
     }
 
     .piano-key.black {
