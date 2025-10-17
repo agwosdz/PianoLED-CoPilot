@@ -1648,8 +1648,14 @@ def get_physical_analysis():
                                             settings_service.get_setting('led', 'leds_per_meter') or 200)))
         led_physical_width = float(data.get('led_physical_width',
                                            settings_service.get_setting('calibration', 'led_physical_width') or 3.5))
-        led_strip_offset = float(data.get('led_strip_offset',
-                                         settings_service.get_setting('calibration', 'led_strip_offset') or 1.75))
+        # LED strip offset: only use explicit value if provided, otherwise let it default to led_physical_width/2
+        led_strip_offset = None
+        if 'led_strip_offset' in data:
+            led_strip_offset = float(data['led_strip_offset'])
+        elif settings_service.get_setting('calibration', 'led_strip_offset'):
+            led_strip_offset = float(settings_service.get_setting('calibration', 'led_strip_offset'))
+        # If still None, it will default to led_physical_width/2 in LEDPlacementCalculator
+        
         overhang_threshold = float(data.get('overhang_threshold',
                                            settings_service.get_setting('calibration', 'led_overhang_threshold') or 1.5))
         white_key_width = float(data.get('white_key_width',

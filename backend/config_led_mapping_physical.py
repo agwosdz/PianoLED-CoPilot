@@ -529,7 +529,7 @@ class PhysicalMappingAnalyzer:
         self,
         led_density: float = 200.0,
         led_physical_width: float = 3.5,
-        led_strip_offset: float = 1.75,
+        led_strip_offset: Optional[float] = None,
         overhang_threshold_mm: float = 1.5,
         white_key_width: float = 23.5,
         black_key_width: float = 13.7,
@@ -538,7 +538,8 @@ class PhysicalMappingAnalyzer:
         """Initialize the complete analyzer with all parameters."""
         self.led_density = led_density
         self.led_physical_width = led_physical_width
-        self.led_strip_offset = led_strip_offset
+        # Use the provided offset or let LEDPhysicalPlacement calculate default
+        self.led_strip_offset = led_strip_offset if led_strip_offset is not None else (led_physical_width / 2)
         self.overhang_threshold_mm = overhang_threshold_mm
         self.white_key_width = white_key_width
         self.black_key_width = black_key_width
@@ -548,7 +549,7 @@ class PhysicalMappingAnalyzer:
         self.led_placement = LEDPhysicalPlacement(
             led_density=led_density,
             led_physical_width=led_physical_width,
-            led_strip_offset=led_strip_offset,
+            led_strip_offset=led_strip_offset,  # Pass None to use default
         )
         self.symmetry = SymmetryAnalysis()
 
