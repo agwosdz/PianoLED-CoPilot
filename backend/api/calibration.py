@@ -651,16 +651,36 @@ def get_key_led_mapping():
         logger.info(f"Generating mapping with distribution mode '{distribution_mode}' (allow_led_sharing={allow_led_sharing}), "
                    f"LEDs: {start_led}-{end_led}, piano_size={piano_size}")
         
-        # Use the advanced algorithm that respects distribution mode
-        from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
-        
-        allocation_result = calculate_per_key_led_allocation(
-            leds_per_meter=leds_per_meter,
-            start_led=start_led,
-            end_led=end_led,
-            piano_size=piano_size,
-            allow_led_sharing=allow_led_sharing
-        )
+        # Choose allocation algorithm based on distribution mode
+        if distribution_mode == 'Physics-Based LED Detection':
+            # Use physics-based allocation
+            from backend.services.physics_led_allocation import PhysicsBasedAllocationService
+            
+            led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
+            led_width = settings_service.get_setting('led', 'physical_width_mm', 3.5)
+            overhang_threshold = settings_service.get_setting('calibration', 'overhang_threshold_mm', 1.5)
+            
+            service = PhysicsBasedAllocationService(
+                led_density=led_density,
+                led_physical_width=led_width,
+                overhang_threshold_mm=overhang_threshold
+            )
+            
+            allocation_result = service.allocate_leds(
+                start_led=start_led,
+                end_led=end_led
+            )
+        else:
+            # Use traditional Piano-Based allocation
+            from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+            
+            allocation_result = calculate_per_key_led_allocation(
+                leds_per_meter=leds_per_meter,
+                start_led=start_led,
+                end_led=end_led,
+                piano_size=piano_size,
+                allow_led_sharing=allow_led_sharing
+            )
         
         if not allocation_result.get('success'):
             logger.warning(f"LED allocation returned success=false: {allocation_result}")
@@ -673,12 +693,30 @@ def get_key_led_mapping():
         base_mapping = allocation_result.get('key_led_mapping', {})
         logger.info(f"Base mapping generated with {len(base_mapping)} keys")
         
-        # Apply calibration key offsets to the mapping
+        # Convert offset keys from MIDI notes (21-108) to key indices (0-87)
+        # The base mapping uses key indices, but offsets are stored as MIDI notes
+        converted_offsets = {}
+        if key_offsets:
+            for midi_note_str, offset_value in key_offsets.items():
+                try:
+                    midi_note = int(midi_note_str) if isinstance(midi_note_str, str) else midi_note_str
+                    key_index = midi_note - 21  # Convert MIDI to index (MIDI 21 = index 0, MIDI 42 = index 21)
+                    if 0 <= key_index < 88:
+                        converted_offsets[key_index] = offset_value
+                        logger.debug(f"Converted offset: MIDI {midi_note} → index {key_index}, offset={offset_value}")
+                    else:
+                        logger.warning(f"Offset MIDI note {midi_note} out of range, skipped")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to convert offset key {midi_note_str}: {e}")
+        
+        logger.info(f"Converted {len(converted_offsets)} offsets from MIDI notes to key indices")
+        
+        # Apply calibration key offsets to the mapping (now with matching key indices)
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=base_mapping,
             start_led=start_led,
             end_led=end_led,
-            key_offsets=key_offsets,
+            key_offsets=converted_offsets,
             led_count=led_count
         )
         
