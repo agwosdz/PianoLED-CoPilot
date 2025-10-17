@@ -97,6 +97,15 @@ led_effects_manager = None
 # This prevents the startup animation from re-triggering if the module is reloaded
 _startup_animation_states = {'completed': False}
 
+# CRITICAL FIX: Reset LEDController singleton to ensure fresh initialization
+# This fixes the issue where pushing a new settings.db doesn't take effect because
+# the singleton pattern's _initialized flag prevents re-reading the new settings
+try:
+    LEDController.reset_singleton()
+    logger.info("LED Controller singleton reset - will initialize with current settings.db")
+except Exception as e:
+    logger.warning(f"Failed to reset LED controller singleton: {e}")
+
 try:
     led_controller = LEDController(settings_service=settings_service)
     # Use the actual LED count from the controller to avoid mismatches

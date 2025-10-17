@@ -1,22 +1,47 @@
-# Smart Physical LED Mapping - Documentation Index
+# PianoLED-CoPilot Documentation Index
 
-## Quick Navigation
+## 🚨 CURRENT ISSUE: LED Controller Settings.db Fix
 
-### Start Here
-- 📋 **[PROJECT_COMPLETION_SUMMARY.md](PROJECT_COMPLETION_SUMMARY.md)** - Overview of what was built
+### 🚀 Start Here (Choose Your Speed)
 
-### For Understanding the System
+**⚡ 2 Minutes?** → [QUICK_DEPLOY.md](QUICK_DEPLOY.md)
+**⏱️ 5 Minutes?** → [READY_TO_DEPLOY.md](READY_TO_DEPLOY.md)  
+**📖 Full Understanding?** → [LED_ISSUE_SUMMARY.md](LED_ISSUE_SUMMARY.md)
+
+### 🔧 Technical Documentation
+
+| Document | Purpose | Best For |
+|----------|---------|----------|
+| [SINGLETON_PATTERN_EXPLANATION.md](SINGLETON_PATTERN_EXPLANATION.md) | Visual timeline of the bug | Understanding exactly what went wrong |
+| [SETTINGS_DB_LED_CONTROLLER_ISSUE.md](SETTINGS_DB_LED_CONTROLLER_ISSUE.md) | Root cause & solutions | Deep technical analysis |
+| [COMPLETE_LED_FIX_RESOLUTION.md](COMPLETE_LED_FIX_RESOLUTION.md) | Full resolution guide | Complete reference |
+| [DEPLOY_LED_FIX.md](DEPLOY_LED_FIX.md) | Comprehensive deployment | Step-by-step with troubleshooting |
+
+### ✅ Verification
+
+| Resource | Purpose |
+|----------|---------|
+| [verify_led_fix.sh](verify_led_fix.sh) | Automated verification script (run on Pi) |
+| READY_TO_DEPLOY.md | Manual verification checklist |
+
+---
+
+## 📚 Original Project Documentation
+
+### Smart Physical LED Mapping
+
+**For Understanding the LED Mapping System:**
 1. **[PIANO_GEOMETRY_ANALYSIS.md](PIANO_GEOMETRY_ANALYSIS.md)** - Physical measurements and algorithm design
 2. **[VISUAL_MAPPING_GUIDE.md](VISUAL_MAPPING_GUIDE.md)** - ASCII diagrams and visual explanations
 3. **[SMART_LED_MAPPING_SUMMARY.md](SMART_LED_MAPPING_SUMMARY.md)** - Implementation details
 
-### For Integration
+**For Integration:**
 - 🔧 **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)** - Step-by-step integration instructions
 
-### For Testing
+**For Testing:**
 - ✅ **[test_physical_led_mapping.py](test_physical_led_mapping.py)** - Comprehensive test suite
 
-### The Code
+**The Code:**
 - 💻 **[backend/config.py](backend/config.py)** - Algorithm implementation (functions added starting around line 1190)
 
 ---
