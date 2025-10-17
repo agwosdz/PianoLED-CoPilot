@@ -53,6 +53,72 @@ def get_led_controller():
 calibration_bp = Blueprint('calibration_api', __name__, url_prefix='/api/calibration')
 
 
+@calibration_bp.route('/health', methods=['GET'])
+def led_health_check():
+    """Check if LED controller is properly initialized and responsive"""
+    try:
+        led_controller = get_led_controller()
+        
+        # Build health status
+        health_status = {
+            'timestamp': datetime.now().isoformat(),
+            'led_controller_exists': led_controller is not None,
+            'led_controller_type': type(led_controller).__name__ if led_controller else 'None',
+        }
+        
+        if led_controller is None:
+            logger.warning("LED controller is None")
+            return jsonify({
+                **health_status,
+                'status': 'ERROR',
+                'message': 'LED controller not available'
+            }), 503
+        
+        # Check LED controller attributes
+        try:
+            health_status['num_pixels'] = getattr(led_controller, 'num_pixels', None)
+            health_status['led_enabled'] = getattr(led_controller, 'led_enabled', None)
+            health_status['pixels_initialized'] = bool(getattr(led_controller, 'pixels', None))
+            health_status['brightness'] = getattr(led_controller, 'brightness', None)
+            health_status['pin'] = getattr(led_controller, 'pin', None)
+        except Exception as attr_error:
+            logger.error(f"Error reading LED controller attributes: {attr_error}")
+            return jsonify({
+                **health_status,
+                'status': 'ERROR',
+                'message': f'LED controller has errors: {str(attr_error)}'
+            }), 503
+        
+        # Check if LED controller can execute a safe operation
+        try:
+            # Just read a value, don't modify state
+            if hasattr(led_controller, '_led_state'):
+                health_status['led_state_length'] = len(led_controller._led_state)
+        except Exception as e:
+            logger.warning(f"Could not check LED state: {e}")
+        
+        # Determine overall health
+        is_healthy = (
+            led_controller is not None and
+            health_status.get('num_pixels', 0) > 0 and
+            health_status.get('led_enabled', False)
+        )
+        
+        return jsonify({
+            **health_status,
+            'status': 'OK' if is_healthy else 'DEGRADED',
+            'message': 'LED controller is responsive' if is_healthy else 'LED controller is in degraded state'
+        }), (200 if is_healthy else 503)
+        
+    except Exception as e:
+        logger.error(f"Error during LED health check: {e}", exc_info=True)
+        return jsonify({
+            'status': 'ERROR',
+            'message': f'Health check failed: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 503
+
+
 @calibration_bp.route('/status', methods=['GET'])
 def get_calibration_status():
     """Get current calibration status and settings"""
