@@ -249,10 +249,13 @@ class LEDEffectsManager:
         Play a fancy startup animation - Piano key cascade with musical color sweep
         Creates an elegant welcome effect with cascading keys and gradient waves
         This is a one-time effect that doesn't use the threading system
-        Uses the calibration range (start_led to end_led) for visible LEDs
+        Uses the FULL LED strip for the animation (not restricted to calibration range)
         """
         try:
-            logger.info(f"Starting fancy startup animation (range: [{self.start_led}, {self.end_led}])")
+            # Use full LED strip for startup animation (not calibration range)
+            animation_start = 0
+            animation_end = self.led_count - 1
+            logger.info(f"Starting fancy startup animation (range: [{animation_start}, {animation_end}])")
             import math
             
             # Animation phases
@@ -264,8 +267,8 @@ class LEDEffectsManager:
             phase2_duration = 1.2
             phase3_duration = 0.7
             
-            # Calculate visible LED range
-            visible_led_count = self.end_led - self.start_led + 1
+            # Calculate visible LED range (full strip for startup)
+            visible_led_count = animation_end - animation_start + 1
             
             # ========== PHASE 1: PIANO KEY CASCADE ==========
             logger.info("  Phase 1: Piano key cascade...")
@@ -282,10 +285,10 @@ class LEDEffectsManager:
                 cascade_pos = (step / cascade_steps) * (visible_led_count + cascade_width)
                 
                 for i in range(self.led_count):
-                    distance_from_wave = abs((i - self.start_led) - cascade_pos)
+                    distance_from_wave = abs((i - animation_start) - cascade_pos)
                     
-                    # Only light LEDs within the visible calibration range
-                    if self.start_led <= i <= self.end_led and distance_from_wave < cascade_width:
+                    # Only light LEDs within the animation range
+                    if animation_start <= i <= animation_end and distance_from_wave < cascade_width:
                         # Bright cyan-to-blue gradient for the cascade
                         brightness = 1.0 - (distance_from_wave / cascade_width)
                         
@@ -311,10 +314,10 @@ class LEDEffectsManager:
                     self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
                 # Create smooth gradient that sweeps through like a musical scale
-                # Only animate LEDs within the visible calibration range
-                for i in range(self.start_led, self.end_led + 1):
+                # Animate LEDs within the animation range
+                for i in range(animation_start, animation_end + 1):
                     # Calculate position in the sweep cycle relative to visible range
-                    relative_pos = (i - self.start_led) / visible_led_count
+                    relative_pos = (i - animation_start) / visible_led_count
                     wave_phase = (relative_pos + (step / sweep_steps)) * 2 * math.pi
                     
                     # Use sine waves to create smooth, musical gradient
@@ -336,9 +339,9 @@ class LEDEffectsManager:
             for step in range(sparkle_steps):
                 brightness_scale = 1.0 - (step / sparkle_steps)
                 
-                # Clear full strip, then only illuminate within calibration range
+                # Clear full strip, then only illuminate within animation range (full strip for startup)
                 for i in range(self.led_count):
-                    if self.start_led <= i <= self.end_led:
+                    if animation_start <= i <= animation_end:
                         # Mostly dim with occasional bright sparkles
                         if random.random() < 0.3 * brightness_scale:
                             # Gold/yellow sparkle
@@ -353,7 +356,7 @@ class LEDEffectsManager:
                         
                         self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
                     else:
-                        # Keep LEDs outside calibration range off
+                        # Keep LEDs outside animation range off
                         self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
                 self.led_controller.show()
@@ -365,10 +368,10 @@ class LEDEffectsManager:
             for fade_step in range(fade_steps):
                 brightness = 1.0 - (fade_step / fade_steps)
                 for i in range(self.led_count):
-                    # Soft fade using current strip state
-                    r = int(100 * brightness)
-                    g = int(30 * brightness)
-                    b = int(80 * brightness)
+                    # Fade smoothly to black (all zeros)
+                    r = int(0)
+                    g = int(0)
+                    b = int(0)
                     self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
                 self.led_controller.show()
                 time.sleep(0.08)
