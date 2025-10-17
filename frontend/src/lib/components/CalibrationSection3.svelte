@@ -52,6 +52,109 @@
   let BLACK_KEY_COLOR = { r: 150, g: 0, b: 100 };   // Magenta/Pink (default)
   let WHITE_KEY_COLOR = { r: 0, g: 100, b: 150 };   // Cyan/Blue (default)
 
+  // Advanced physics parameters
+  interface PhysicsParameters {
+    white_key_width: number;
+    black_key_width: number;
+    white_key_gap: number;
+    led_physical_width: number;
+    overhang_threshold_mm: number;
+  }
+
+  interface ParameterRange {
+    min: number;
+    max: number;
+    default: number;
+  }
+
+  let physicsParameters: PhysicsParameters = {
+    white_key_width: 23.5,
+    black_key_width: 13.7,
+    white_key_gap: 1.0,
+    led_physical_width: 3.5,
+    overhang_threshold_mm: 1.5
+  };
+
+  let parameterRanges: Record<string, ParameterRange> = {
+    white_key_width: { min: 20.0, max: 30.0, default: 23.5 },
+    black_key_width: { min: 10.0, max: 20.0, default: 13.7 },
+    white_key_gap: { min: 0.5, max: 5.0, default: 1.0 },
+    led_physical_width: { min: 1.0, max: 10.0, default: 3.5 },
+    overhang_threshold_mm: { min: 0.5, max: 5.0, default: 1.5 }
+  };
+
+  let parameterDisplayNames: Record<string, string> = {
+    white_key_width: 'White Key Width (mm)',
+    black_key_width: 'Black Key Width (mm)',
+    white_key_gap: 'Key Gap (mm)',
+    led_physical_width: 'LED Width (mm)',
+    overhang_threshold_mm: 'Overhang Threshold (mm)'
+  };
+
+  let isLoadingPhysicsParams = false;
+  let isSavingPhysicsParams = false;
+  let physicsParamsChanged = false;
+  let previewStats: any = null;
+
+  async function loadPhysicsParameters(): Promise<void> {
+    try {
+      const response = await fetch('/api/calibration/physics-parameters');
+      if (response.ok) {
+        const data = await response.json();
+        physicsParameters = data.physics_parameters;
+        parameterRanges = data.parameter_ranges;
+        physicsParamsChanged = false;
+        console.log('[Physics] Parameters loaded:', physicsParameters);
+      }
+    } catch (error) {
+      console.error('[Physics] Error loading parameters:', error);
+    }
+  }
+
+  async function savePhysicsParameters(regenerateMapping: boolean = false): Promise<void> {
+    isSavingPhysicsParams = true;
+    try {
+      const response = await fetch('/api/calibration/physics-parameters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...physicsParameters,
+          apply_mapping: regenerateMapping
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        physicsParamsChanged = false;
+        if (regenerateMapping) {
+          previewStats = result.mapping_stats;
+          // Reload LED mapping
+          await updateLedMapping();
+          pianoKeys = generatePianoKeys();
+          console.log('[Physics] Mapping regenerated with new parameters');
+        }
+        console.log('[Physics] Parameters saved successfully');
+      } else {
+        console.error('[Physics] Failed to save parameters');
+      }
+    } catch (error) {
+      console.error('[Physics] Error saving parameters:', error);
+    } finally {
+      isSavingPhysicsParams = false;
+    }
+  }
+
+  function resetPhysicsParameters(): void {
+    physicsParameters = {
+      white_key_width: 23.5,
+      black_key_width: 13.7,
+      white_key_gap: 1.0,
+      led_physical_width: 3.5,
+      overhang_threshold_mm: 1.5
+    };
+    physicsParamsChanged = true;
+  }
+
   async function loadColorsFromSettings(): Promise<void> {
     try {
       const response = await fetch('/api/settings/calibration');
@@ -484,6 +587,10 @@
     await loadColorsFromSettings();
     updatePianoSize();
     await loadDistributionMode();
+    // Load physics parameters if using physics-based mode
+    if (distributionMode === 'Physics-Based LED Detection') {
+      await loadPhysicsParameters();
+    }
     // Mapping is now auto-updated when distribution mode changes
     // No need to load validation/mapping info on mount
   });
@@ -662,6 +769,98 @@
       </div>
     </div>
   </div>
+
+  <!-- Advanced Settings (Physics-Based Mode) -->
+  {#if distributionMode === 'Physics-Based LED Detection'}
+    <div class="advanced-settings-section">
+      <div class="advanced-settings-header">
+        <h4>🔧 Advanced Physics Parameters</h4>
+        <p>Fine-tune keyboard geometry for your piano model</p>
+      </div>
+
+      <div class="parameters-grid">
+        {#each Object.entries(parameterDisplayNames) as [paramKey, displayName]}
+          <div class="parameter-control">
+            <label for={`param-${paramKey}`}>{displayName}</label>
+            <div class="parameter-input-group">
+              <input
+                id={`param-${paramKey}`}
+                type="range"
+                min={parameterRanges[paramKey].min}
+                max={parameterRanges[paramKey].max}
+                step="0.1"
+                value={physicsParameters[paramKey as keyof PhysicsParameters]}
+                on:change={(e) => {
+                  physicsParameters[paramKey as keyof PhysicsParameters] = parseFloat(e.currentTarget.value);
+                  physicsParamsChanged = true;
+                }}
+                title={`${displayName} - Default: ${parameterRanges[paramKey].default}mm`}
+              />
+              <input
+                type="number"
+                min={parameterRanges[paramKey].min}
+                max={parameterRanges[paramKey].max}
+                step="0.1"
+                value={physicsParameters[paramKey as keyof PhysicsParameters]}
+                on:change={(e) => {
+                  const val = parseFloat(e.currentTarget.value);
+                  const range = parameterRanges[paramKey];
+                  physicsParameters[paramKey as keyof PhysicsParameters] = Math.max(range.min, Math.min(range.max, val));
+                  physicsParamsChanged = true;
+                }}
+                class="parameter-number-input"
+              />
+              <span class="parameter-default-hint">
+                Default: {parameterRanges[paramKey].default}
+              </span>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="advanced-settings-actions">
+        <button
+          class="btn-reset"
+          on:click={resetPhysicsParameters}
+          disabled={isSavingPhysicsParams}
+          title="Reset all parameters to defaults"
+        >
+          ↻ Reset to Defaults
+        </button>
+        
+        <div class="action-buttons">
+          <button
+            class="btn-apply"
+            on:click={() => savePhysicsParameters(true)}
+            disabled={!physicsParamsChanged || isSavingPhysicsParams}
+            title="Save parameters and regenerate LED mapping"
+          >
+            {isSavingPhysicsParams ? '⏳ Applying...' : '✓ Apply Changes'}
+          </button>
+          
+          <button
+            class="btn-preview"
+            on:click={() => savePhysicsParameters(false)}
+            disabled={!physicsParamsChanged || isSavingPhysicsParams}
+            title="Save parameters without regenerating mapping"
+          >
+            {isSavingPhysicsParams ? '⏳ Saving...' : '💾 Save Only'}
+          </button>
+        </div>
+      </div>
+
+      {#if previewStats}
+        <div class="preview-stats">
+          <p><strong>Preview Stats:</strong></p>
+          <ul>
+            <li>Keys Mapped: {previewStats.total_keys_mapped}</li>
+            <li>LEDs Used: {previewStats.total_leds_used}</li>
+            <li>Avg LEDs/Key: {previewStats.avg_leds_per_key.toFixed(2)}</li>
+          </ul>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Info -->
   <div class="info-box">
@@ -1465,5 +1664,258 @@
     background: #f1f5f9;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
+  }
+
+  /* Advanced Settings Section */
+  .advanced-settings-section {
+    background: linear-gradient(135deg, #f0f9ff, #f8fafc);
+    border: 2px solid #3b82f6;
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .advanced-settings-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-bottom: 2px solid #3b82f6;
+    padding-bottom: 1rem;
+  }
+
+  .advanced-settings-header h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e40af;
+  }
+
+  .advanced-settings-header p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #475569;
+  }
+
+  .parameters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+  }
+
+  .parameter-control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .parameter-control label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .parameter-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .parameter-input-group input[type="range"] {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, #cbd5e1, #94a3b8);
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .parameter-input-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    cursor: pointer;
+    border: 2px solid #1e40af;
+    transition: all 0.2s ease;
+  }
+
+  .parameter-input-group input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  }
+
+  .parameter-input-group input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    cursor: pointer;
+    border: 2px solid #1e40af;
+    transition: all 0.2s ease;
+  }
+
+  .parameter-input-group input[type="range"]::-moz-range-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+  }
+
+  .parameter-number-input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e293b;
+    background: #ffffff;
+    transition: all 0.2s ease;
+  }
+
+  .parameter-number-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .parameter-default-hint {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-style: italic;
+  }
+
+  .advanced-settings-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 1rem;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+
+  .btn-reset {
+    background: #f1f5f9;
+    border: 2px solid #94a3b8;
+    color: #1e293b;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-reset:hover:not(:disabled) {
+    background: #e2e8f0;
+    border-color: #64748b;
+    transform: translateY(-2px);
+  }
+
+  .btn-reset:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-apply {
+    background: linear-gradient(135deg, #10b981, #059669);
+    border: 2px solid #047857;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-apply:hover:not(:disabled) {
+    background: linear-gradient(135deg, #059669, #047857);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-apply:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-preview {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    border: 2px solid #b45309;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-preview:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d97706, #b45309);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+  }
+
+  .btn-preview:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .preview-stats {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .preview-stats p {
+    margin: 0 0 0.5rem 0;
+    font-weight: 600;
+    color: #166534;
+    font-size: 0.9rem;
+  }
+
+  .preview-stats ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    list-style: disc;
+  }
+
+  .preview-stats li {
+    color: #16a34a;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  @media (max-width: 768px) {
+    .parameters-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .advanced-settings-actions {
+      flex-direction: column;
+    }
+
+    .action-buttons {
+      width: 100%;
+      flex-direction: column;
+    }
+
+    .btn-reset,
+    .btn-apply,
+    .btn-preview {
+      width: 100%;
+    }
   }
 </style>

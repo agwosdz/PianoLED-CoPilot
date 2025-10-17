@@ -1844,3 +1844,143 @@ def get_physical_analysis():
             'timestamp': datetime.now().isoformat()
         }), 500
 
+
+@calibration_bp.route('/physics-parameters', methods=['GET', 'POST'])
+def get_set_physics_parameters():
+    """
+    Get or set advanced physics-based parameters for LED allocation.
+    
+    GET: Returns current physics parameter values
+    POST: Updates physics parameters and regenerates mapping if requested
+    
+    Parameters (all in millimeters):
+    - white_key_width: Width of white piano keys (default 23.5mm)
+    - black_key_width: Width of black piano keys (default 13.7mm)
+    - white_key_gap: Gap between white keys (default 1.0mm)
+    - led_physical_width: Physical width of each LED (default 3.5mm)
+    - overhang_threshold_mm: Overhang threshold for LED detection (default 1.5mm)
+    """
+    try:
+        settings_service = get_settings_service()
+        
+        if request.method == 'GET':
+            # Return current physics parameters
+            return jsonify({
+                'physics_parameters': {
+                    'white_key_width': settings_service.get_setting('calibration', 'white_key_width', 23.5),
+                    'black_key_width': settings_service.get_setting('calibration', 'black_key_width', 13.7),
+                    'white_key_gap': settings_service.get_setting('calibration', 'white_key_gap', 1.0),
+                    'led_physical_width': settings_service.get_setting('calibration', 'led_physical_width', 3.5),
+                    'overhang_threshold_mm': settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5),
+                },
+                'parameter_ranges': {
+                    'white_key_width': {'min': 20.0, 'max': 30.0, 'default': 23.5},
+                    'black_key_width': {'min': 10.0, 'max': 20.0, 'default': 13.7},
+                    'white_key_gap': {'min': 0.5, 'max': 5.0, 'default': 1.0},
+                    'led_physical_width': {'min': 1.0, 'max': 10.0, 'default': 3.5},
+                    'overhang_threshold_mm': {'min': 0.5, 'max': 5.0, 'default': 1.5},
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }), 200
+        
+        elif request.method == 'POST':
+            # Update physics parameters
+            data = request.get_json() or {}
+            apply_mapping = data.get('apply_mapping', False)
+            
+            # Validate and save parameters
+            params_to_save = {}
+            for param_name in ['white_key_width', 'black_key_width', 'white_key_gap', 'led_physical_width']:
+                if param_name in data:
+                    try:
+                        value = float(data[param_name])
+                        params_to_save[param_name] = value
+                    except (ValueError, TypeError):
+                        return jsonify({
+                            'error': f'Invalid value for {param_name}',
+                            'message': f'Parameter must be a number'
+                        }), 400
+            
+            # Handle overhang threshold (stored as led_overhang_threshold)
+            if 'overhang_threshold_mm' in data:
+                try:
+                    value = float(data['overhang_threshold_mm'])
+                    params_to_save['led_overhang_threshold'] = value
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'error': 'Invalid value for overhang_threshold_mm',
+                        'message': 'Parameter must be a number'
+                    }), 400
+            
+            # Save all parameters
+            for param_name, value in params_to_save.items():
+                logger.info(f"Setting physics parameter: {param_name} = {value}")
+                settings_service.set_setting('calibration', param_name, value)
+            
+            response = {
+                'message': f'Updated {len(params_to_save)} physics parameters',
+                'parameters_updated': params_to_save,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            # Optionally regenerate mapping with new parameters
+            if apply_mapping:
+                try:
+                    distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
+                    
+                    if distribution_mode == 'Physics-Based LED Detection':
+                        # Regenerate physics-based mapping with new parameters
+                        from backend.services.physics_led_allocation import PhysicsBasedAllocationService
+                        
+                        start_led = settings_service.get_setting('calibration', 'start_led', 4)
+                        end_led = settings_service.get_setting('calibration', 'end_led', 249)
+                        led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
+                        led_width = params_to_save.get('led_physical_width', settings_service.get_setting('calibration', 'led_physical_width', 3.5))
+                        overhang_threshold = params_to_save.get('led_overhang_threshold', settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5))
+                        white_key_width = params_to_save.get('white_key_width', settings_service.get_setting('calibration', 'white_key_width', 23.5))
+                        black_key_width = params_to_save.get('black_key_width', settings_service.get_setting('calibration', 'black_key_width', 13.7))
+                        white_key_gap = params_to_save.get('white_key_gap', settings_service.get_setting('calibration', 'white_key_gap', 1.0))
+                        
+                        service = PhysicsBasedAllocationService(
+                            led_density=led_density,
+                            led_physical_width=led_width,
+                            overhang_threshold_mm=overhang_threshold
+                        )
+                        
+                        # Override geometry parameters in analyzer
+                        service.analyzer.white_key_width = white_key_width
+                        service.analyzer.black_key_width = black_key_width
+                        service.analyzer.white_key_gap = white_key_gap
+                        
+                        allocation_result = service.allocate_leds(
+                            start_led=start_led,
+                            end_led=end_led
+                        )
+                        
+                        if allocation_result.get('success'):
+                            stats = allocation_result.get('led_allocation_stats', {})
+                            response['mapping_regenerated'] = True
+                            response['mapping_stats'] = {
+                                'total_keys_mapped': stats.get('total_key_count', 0),
+                                'total_leds_used': stats.get('total_led_count', 0),
+                                'avg_leds_per_key': stats.get('avg_leds_per_key', 0),
+                            }
+                            logger.info(f"Mapping regenerated with new physics parameters")
+                        else:
+                            response['warning'] = 'Mapping regeneration failed'
+                    else:
+                        logger.info(f"Skipping mapping regeneration: not using Physics-Based mode (current: {distribution_mode})")
+                
+                except Exception as e:
+                    logger.error(f"Error regenerating mapping: {e}", exc_info=True)
+                    response['warning'] = f'Mapping regeneration failed: {str(e)}'
+            
+            return jsonify(response), 200
+    
+    except Exception as e:
+        logger.error(f"Error in physics parameters endpoint: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e),
+            'message': 'Physics parameters operation failed'
+        }), 500
+
