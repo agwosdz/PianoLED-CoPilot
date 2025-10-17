@@ -456,6 +456,8 @@ class PhysicalMappingAnalyzer:
         self,
         key_led_mapping: Dict[int, List[int]],
         led_count: int,
+        start_led: int = 0,
+        end_led: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Perform complete physical analysis on a key-to-LED mapping.
@@ -463,10 +465,15 @@ class PhysicalMappingAnalyzer:
         Args:
             key_led_mapping: Dictionary mapping key_index to list of LED indices
             led_count: Total number of LEDs on the strip
+            start_led: First LED index in usable range (default 0)
+            end_led: Last LED index in usable range (default led_count-1)
 
         Returns:
             Complete analysis result with detailed metrics per key
         """
+        if end_led is None:
+            end_led = led_count - 1
+
         # Calculate geometries
         key_geometries = self.key_geometry.calculate_all_key_geometries(
             white_key_width=self.white_key_width,
@@ -474,8 +481,15 @@ class PhysicalMappingAnalyzer:
             white_key_gap=self.white_key_gap,
         )
 
-        # Calculate LED placements
-        led_placements = self.led_placement.calculate_led_placements(led_count)
+        # Calculate LED placements for ALL LEDs (so we have position info for all)
+        all_led_placements = self.led_placement.calculate_led_placements(led_count)
+        
+        # Filter to only usable range for analysis
+        led_placements = {
+            idx: placement 
+            for idx, placement in all_led_placements.items() 
+            if start_led <= idx <= end_led
+        }
 
         # Analyze each key
         per_key_analysis = {}
@@ -518,22 +532,84 @@ class PhysicalMappingAnalyzer:
                 key_geom, led_indices, led_placements
             )
 
+            # Calculate LED gaps and detail information (matching piano.py output)
+            led_details = []
+            if led_indices:
+                for i, led_idx in enumerate(led_indices):
+                    if led_idx in led_placements:
+                        led_placement = led_placements[led_idx]
+                        led_detail = {
+                            "led_index": led_idx,
+                            "center_mm": round(led_placement.center_mm, 2),
+                            "start_mm": round(led_placement.start_mm, 2),
+                            "end_mm": round(led_placement.end_mm, 2),
+                        }
+                        # Add gap info from previous LED
+                        if i > 0 and led_indices[i-1] in led_placements:
+                            prev_led = led_placements[led_indices[i-1]]
+                            gap = led_placement.start_mm - prev_led.end_mm
+                            led_detail["gap_from_previous_mm"] = round(gap, 2)
+                        led_details.append(led_detail)
+
+            # Neighbor analysis
+            neighbor_prev = None
+            neighbor_next = None
+            
+            # Analyze with previous key
+            if key_idx > 0:
+                prev_indices = set(key_led_mapping.get(key_idx - 1, []))
+                curr_indices = set(led_indices)
+                shared = prev_indices.intersection(curr_indices)
+                neighbor_prev = {
+                    "key_index": key_idx - 1,
+                    "shared_leds": sorted(list(shared)),
+                    "consecutive": False
+                }
+                # Check if consecutive
+                if prev_indices and curr_indices:
+                    if max(prev_indices) + 1 == min(curr_indices):
+                        neighbor_prev["consecutive"] = True
+
+            # Analyze with next key
+            if key_idx < 87:
+                curr_indices = set(led_indices)
+                next_indices = set(key_led_mapping.get(key_idx + 1, []))
+                shared = curr_indices.intersection(next_indices)
+                neighbor_next = {
+                    "key_index": key_idx + 1,
+                    "shared_leds": sorted(list(shared)),
+                    "consecutive": False
+                }
+                # Check if consecutive
+                if curr_indices and next_indices:
+                    if max(curr_indices) + 1 == min(next_indices):
+                        neighbor_next["consecutive"] = True
+
             # Build analysis record
             per_key_analysis[key_idx] = {
+                "key_number": key_idx + 1,
                 "key_type": key_geom.key_type.value,
+                "physical_range_mm": {
+                    "start": round(key_geom.start_mm, 2),
+                    "end": round(key_geom.end_mm, 2),
+                    "center": round(key_geom.center_mm, 2)
+                },
                 "led_indices": led_indices,
                 "led_count": len(led_indices),
+                "led_details": led_details,
                 "coverage_mm": round(coverage_amount, 2),
                 "key_width_mm": round(key_geom.width_mm, 2),
                 "overhang_left_mm": round(left_overhang, 2),
                 "overhang_right_mm": round(right_overhang, 2),
-                "symmetry_score": symmetry_score,
+                "symmetry_score": round(symmetry_score, 4),
                 "symmetry_label": symmetry_label,
-                "consistency_score": consistency_score,
+                "consistency_score": round(consistency_score, 4),
                 "consistency_label": consistency_label,
                 "overall_quality": self._calculate_overall_quality(
                     symmetry_score, consistency_score
                 ),
+                "neighbor_prev": neighbor_prev,
+                "neighbor_next": neighbor_next,
             }
 
             # Accumulate for averages
@@ -574,6 +650,11 @@ class PhysicalMappingAnalyzer:
                 "white_key_width": self.white_key_width,
                 "black_key_width": self.black_key_width,
                 "white_key_gap": self.white_key_gap,
+            },
+            "led_range": {
+                "start_led": start_led,
+                "end_led": end_led,
+                "total_leds_analyzed": end_led - start_led + 1
             },
         }
 

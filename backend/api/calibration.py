@@ -1644,8 +1644,8 @@ def get_physical_analysis():
             data = request.args.to_dict()
         
         # Extract parameters with defaults from settings or physical defaults
-        leds_per_meter = float(data.get('leds_per_meter',
-                                       settings_service.get_setting('calibration', 'led_physical_width') or 200))
+        leds_per_meter = int(float(data.get('leds_per_meter',
+                                            settings_service.get_setting('led', 'leds_per_meter') or 200)))
         led_physical_width = float(data.get('led_physical_width',
                                            settings_service.get_setting('calibration', 'led_physical_width') or 3.5))
         led_strip_offset = float(data.get('led_strip_offset',
@@ -1691,7 +1691,9 @@ def get_physical_analysis():
             }), 400
         
         key_led_mapping = mapping_result.get('key_led_mapping', {})
-        led_count = end_led - start_led + 1
+        
+        # Get total LED count (physical strip size, not just usable range)
+        total_led_count = settings_service.get_setting('led', 'led_count', 255)
         
         # Import physical analysis module
         from backend.config_led_mapping_physical import PhysicalMappingAnalyzer
@@ -1707,8 +1709,13 @@ def get_physical_analysis():
             white_key_gap=white_key_gap
         )
         
-        # Perform analysis
-        analysis_result = analyzer.analyze_mapping(key_led_mapping, led_count)
+        # Perform analysis (pass total LED count AND usable range)
+        analysis_result = analyzer.analyze_mapping(
+            key_led_mapping, 
+            total_led_count,
+            start_led=start_led,
+            end_led=end_led
+        )
         
         response = {
             'per_key_analysis': analysis_result['per_key_analysis'],
