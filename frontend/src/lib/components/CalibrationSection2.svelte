@@ -162,222 +162,97 @@
     <p>Define the mappable area of your LED strip by setting where the piano begins and ends.</p>
   </div>
 
-  <!-- Start and End LED Adjustment Section -->
+  <!-- LED Range Bar Visualization -->
   <div class="led-range-container">
-    <!-- Start LED (Set First LED) -->
-    <div class="led-adjustment-item">
-      <div class="adjustment-header">
-        <label for="start-led">Set First LED Index (0-20)</label>
-        <span class="led-value">{startLedValue}</span>
-      </div>
-      
-      <div class="slider-container">
-        <input
-          id="start-led"
-          type="range"
-          min="0"
-          max="20"
-          step="1"
-          value={startLedValue}
-          on:change={handleStartLedChange}
-          disabled={$calibrationUI.isLoading}
-        />
-        <div class="slider-labels">
-          <span>0</span>
-          <span>10</span>
-          <span>20</span>
-        </div>
-      </div>
-
-      <p class="adjustment-description">
-        Set this to the first LED Index at the beginning of your piano keyboard (LED numbering starts at 0). This defines the left boundary of the mappable LED area.
-      </p>
+    <div class="range-header">
+      <h4>Mappable LED Range</h4>
+      <p>Define the active portion of your LED strip for piano key mapping</p>
     </div>
 
-    <!-- End LED (Set Last LED) -->
-    <div class="led-adjustment-item">
-      <div class="adjustment-header">
-        <label for="end-led">Set Last LED Index ({ledCount - 20}-{ledCount - 1})</label>
-        <span class="led-value">{endLedValue}</span>
-      </div>
-      
-      <div class="slider-container">
-        <input
-          id="end-led"
-          type="range"
-          min={Math.max(0, ledCount - 20)}
-          max={Math.max(0, ledCount - 1)}
-          step="1"
-          value={endLedValue}
-          on:change={handleEndLedChange}
-          disabled={$calibrationUI.isLoading}
-        />
-        <div class="slider-labels">
-          <span>{Math.max(0, ledCount - 20)}</span>
-          <span>{Math.floor((Math.max(0, ledCount - 20) + Math.max(0, ledCount - 1)) / 2)}</span>
-          <span>{Math.max(0, ledCount - 1)}</span>
-        </div>
-      </div>
-
-      <p class="adjustment-description">
-        Set this to the last LED Index at the end of your piano keyboard (LED numbering starts at 0). Range: {ledCount - 20}–{ledCount - 1}. This defines the right boundary of the mappable LED area, leaving LEDs 0–{Math.min(19, ledCount - 1)} for overflow.
-      </p>
-    </div>
-
-    <!-- Mapping Range Info -->
-    <div class="mapping-info">
-      <div class="info-item">
-        <span class="info-label">Mappable LED Range:</span>
-        <span class="info-value">{startLedValue} — {endLedValue}</span>
-      </div>
-      <div class="info-item">
-        <span class="info-label">Total LEDs in Range:</span>
-        <span class="info-value">{Math.max(0, endLedValue - startLedValue + 1)}</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Per-Key Offsets Section -->
-  <div class="per-key-offsets-container">
-    <div class="offset-header">
-      <h4>Individual Key Offsets</h4>
-      <span class="count-badge">{$keyOffsetsList.length}</span>
-    </div>
-
-    {#if $keyOffsetsList.length > 0}
-      <div class="offsets-list">
-        {#each $keyOffsetsList as item (item.midiNote)}
-          <div class="offset-item">
-            {#if editingKeyNote === item.midiNote}
-              <!-- Edit mode -->
-              <div class="edit-mode">
-                <div class="edit-controls">
-                  <span class="note-label">{item.noteName}</span>
-                  <input
-                    type="range"
-                    min="-10"
-                    max="10"
-                    step="1"
-                    bind:value={editingKeyOffset}
-                    class="small-slider"
-                  />
-                  <span class="offset-display">{editingKeyOffset > 0 ? '+' : ''}{editingKeyOffset}</span>
-                </div>
-                <div class="edit-actions">
-                  <button
-                    class="btn btn-sm btn-primary"
-                    on:click={saveEditingKeyOffset}
-                    disabled={$calibrationUI.isLoading}
-                  >
-                    Save
-                  </button>
-                  <button
-                    class="btn btn-sm btn-ghost"
-                    on:click={cancelEditingKeyOffset}
-                    disabled={$calibrationUI.isLoading}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            {:else}
-              <!-- View mode -->
-              <div class="view-mode">
-                <div class="offset-info">
-                  <span class="note-name">{item.noteName}</span>
-                  <span class="note-midi">MIDI {item.midiNote}</span>
-                </div>
-                <div class="offset-value-display">
-                  <span class="value">{item.offset > 0 ? '+' : ''}{item.offset}</span>
-                </div>
-              </div>
-              <div class="item-actions">
-                <button
-                  class="btn btn-sm btn-icon"
-                  title="Edit offset"
-                  on:click={() => startEditingKeyOffset(item)}
-                  disabled={$calibrationUI.isLoading}
-                >
-                  ✎
-                </button>
-                <button
-                  class="btn btn-sm btn-icon btn-danger"
-                  title="Delete offset"
-                  on:click={() => handleDeleteKeyOffset(item.midiNote)}
-                  disabled={$calibrationUI.isLoading}
-                >
-                  🗑
-                </button>
-              </div>
-            {/if}
+    <div class="range-visualization">
+      <div class="range-display">
+        <div class="range-info-row">
+          <div class="range-input-pair">
+            <label for="start-led-input">First LED:</label>
+            <input
+              id="start-led-input"
+              type="number"
+              min="0"
+              max={ledCount - 1}
+              bind:value={startLedValue}
+              on:change={handleStartLedChange}
+              disabled={$calibrationUI.isLoading}
+              class="led-input"
+            />
           </div>
-        {/each}
-      </div>
-    {:else}
-      <div class="empty-state">
-        <p>No individual key offsets set yet.</p>
-        <p class="hint">Add offsets below to fine-tune specific keys</p>
-      </div>
-    {/if}
-
-    <!-- Add New Offset Form -->
-    <div class="add-offset-form">
-      {#if showAddForm}
-        <div class="form-container">
-          <div class="form-fields">
-            <div class="form-field">
-              <label for="new-midi-note">MIDI Note (0-127)</label>
+          <div class="range-bar-wrapper">
+            <div class="range-bar-track">
+              <div
+                class="range-bar-fill"
+                style="left: {(startLedValue / (ledCount - 1)) * 100}%; right: {100 - (endLedValue / (ledCount - 1)) * 100}%;"
+              ></div>
               <input
-                id="new-midi-note"
-                type="number"
-                min="0"
-                max="127"
-                placeholder="e.g., 60 for Middle C"
-                bind:value={newKeyMidiNote}
-                disabled={$calibrationUI.isLoading}
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="new-offset">Offset ({newKeyOffset > 0 ? '+' : ''}{newKeyOffset})</label>
-              <input
-                id="new-offset"
+                class="range-slider start"
                 type="range"
-                min="-10"
-                max="10"
+                min="0"
+                max={ledCount - 1}
                 step="1"
-                bind:value={newKeyOffset}
+                value={startLedValue}
+                on:change={handleStartLedChange}
+                disabled={$calibrationUI.isLoading}
+              />
+              <input
+                class="range-slider end"
+                type="range"
+                min="0"
+                max={ledCount - 1}
+                step="1"
+                value={endLedValue}
+                on:change={handleEndLedChange}
                 disabled={$calibrationUI.isLoading}
               />
             </div>
+            <div class="range-labels">
+              <span>0</span>
+              <span>{Math.floor((ledCount - 1) / 2)}</span>
+              <span>{ledCount - 1}</span>
+            </div>
           </div>
-
-          <div class="form-actions">
-            <button
-              class="btn btn-primary"
-              on:click={handleAddKeyOffset}
+          <div class="range-input-pair">
+            <label for="end-led-input">Last LED:</label>
+            <input
+              id="end-led-input"
+              type="number"
+              min="0"
+              max={ledCount - 1}
+              bind:value={endLedValue}
+              on:change={handleEndLedChange}
               disabled={$calibrationUI.isLoading}
-            >
-              Add Offset
-            </button>
-            <button
-              class="btn btn-ghost"
-              on:click={resetAddForm}
-              disabled={$calibrationUI.isLoading}
-            >
-              Cancel
-            </button>
+              class="led-input"
+            />
           </div>
         </div>
-      {:else}
-        <button
-          class="btn btn-add"
-          on:click={() => (showAddForm = true)}
-          disabled={$calibrationUI.isLoading}
-        >
-          + Add Key Offset
-        </button>
-      {/if}
+
+        <div class="range-stats">
+          <div class="stat-box">
+            <span class="stat-label">Active Range:</span>
+            <span class="stat-value">{startLedValue} – {endLedValue}</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Total LEDs:</span>
+            <span class="stat-value">{Math.max(0, endLedValue - startLedValue + 1)}</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Coverage:</span>
+            <span class="stat-value">{Math.round(((endLedValue - startLedValue + 1) / (ledCount)) * 100)}%</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="range-description">
+        Drag the sliders or enter values to set the first and last LED indices that will be mapped to piano keys.
+        Leaving LEDs at the start unmapped allows for visual overflow. <strong>First:</strong> {startLedValue}, <strong>Last:</strong> {endLedValue}
+      </p>
     </div>
   </div>
 </div>
@@ -429,17 +304,214 @@
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1rem;
   }
 
-  .led-adjustment-item {
+  .range-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .range-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .range-header p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #475569;
+  }
+
+  .range-visualization {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    padding: 1rem;
-    background: #ffffff;
+  }
+
+  .range-display {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .range-info-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .range-input-pair {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 0 0 auto;
+    min-width: 100px;
+  }
+
+  .range-input-pair label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .led-input {
+    padding: 0.5rem 0.75rem;
+    border: 2px solid #bfdbfe;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e40af;
+    background: white;
+    transition: border-color 0.2s ease;
+    width: 90px;
+  }
+
+  .led-input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .led-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .range-bar-wrapper {
+    flex: 1;
+    min-width: 250px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .range-bar-track {
+    position: relative;
+    height: 40px;
+    background: linear-gradient(to right, #e0e7ff, #fce7f3);
     border: 1px solid #cbd5e1;
     border-radius: 8px;
+    overflow: visible;
+  }
+
+  .range-bar-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: linear-gradient(to right, #3b82f6, #ec4899);
+    border-radius: 7px;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .range-slider {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    z-index: 5;
+    margin: 0;
+    padding: 0;
+  }
+
+  .range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 40px;
+    border-radius: 4px;
+    background: white;
+    border: 2px solid #2563eb;
+    cursor: pointer;
+    pointer-events: all;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+  }
+
+  .range-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  }
+
+  .range-slider::-moz-range-thumb {
+    width: 20px;
+    height: 40px;
+    border-radius: 4px;
+    background: white;
+    border: 2px solid #2563eb;
+    cursor: pointer;
+    pointer-events: all;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+  }
+
+  .range-slider::-moz-range-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  }
+
+  .range-slider.start::-webkit-slider-thumb {
+    z-index: 6;
+  }
+
+  .range-slider.end::-webkit-slider-thumb {
+    z-index: 5;
+  }
+
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #64748b;
+    padding: 0 2px;
+  }
+
+  .range-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .stat-box {
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .stat-label {
+    font-size: 0.8rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e40af;
+  }
+
+  .range-description {
+    font-size: 0.85rem;
+    color: #475569;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .led-adjustment-item {
+    display: none;
   }
 
   .adjustment-header {

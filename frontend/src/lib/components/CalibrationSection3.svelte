@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
-  import { calibrationState, calibrationUI, getKeyLedMappingWithRange } from '$lib/stores/calibration';
+  import { calibrationState, calibrationUI, getKeyLedMappingWithRange, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset } from '$lib/stores/calibration';
   import { onMount } from 'svelte';
 
   // Piano size specifications for different keyboard types
@@ -76,9 +76,9 @@
   };
 
   let parameterRanges: Record<string, ParameterRange> = {
-    white_key_width: { min: 20.0, max: 30.0, default: 23.5 },
+    white_key_width: { min: 18.5, max: 28.5, default: 23.5 },
     black_key_width: { min: 10.0, max: 20.0, default: 13.7 },
-    white_key_gap: { min: 0.5, max: 5.0, default: 1.0 },
+    white_key_gap: { min: 0.0, max: 3.0, default: 1.0 },
     led_physical_width: { min: 1.0, max: 10.0, default: 3.5 },
     overhang_threshold_mm: { min: 0.5, max: 5.0, default: 1.5 }
   };
@@ -155,6 +155,65 @@
     physicsParamsChanged = true;
   }
 
+  // Individual Key Offsets Management
+  let editingKeyNote: number | null = null;
+  let editingKeyOffset = 0;
+  let newKeyMidiNote = '';
+  let newKeyOffset = 0;
+  let showAddForm = false;
+
+  function startEditingKeyOffset(midiNote: number, offset: number) {
+    editingKeyNote = midiNote;
+    editingKeyOffset = offset;
+  }
+
+  function cancelEditingKeyOffset() {
+    editingKeyNote = null;
+    editingKeyOffset = 0;
+  }
+
+  async function saveEditingKeyOffset() {
+    if (editingKeyNote !== null) {
+      await setKeyOffset(editingKeyNote, editingKeyOffset);
+      cancelEditingKeyOffset();
+    }
+  }
+
+  async function handleDeleteKeyOffset(midiNote: number) {
+    if (confirm(`Delete offset for ${getMidiNoteName(midiNote)}?`)) {
+      await deleteKeyOffset(midiNote);
+    }
+  }
+
+  function resetAddForm() {
+    newKeyMidiNote = '';
+    newKeyOffset = 0;
+    showAddForm = false;
+  }
+
+  async function handleAddKeyOffset() {
+    const midiNote = parseInt(newKeyMidiNote, 10);
+    
+    if (!Number.isFinite(midiNote) || midiNote < 0 || midiNote > 127) {
+      calibrationUI.update(ui => ({ 
+        ...ui, 
+        error: 'Please enter a valid MIDI note (0-127)' 
+      }));
+      return;
+    }
+
+    try {
+      await setKeyOffset(midiNote, newKeyOffset);
+      resetAddForm();
+      calibrationUI.update(ui => ({ ...ui, success: `Offset added for ${getMidiNoteName(midiNote)}` }));
+      setTimeout(() => {
+        calibrationUI.update(ui => ({ ...ui, success: null }));
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to add key offset:', error);
+    }
+  }
+
   async function loadColorsFromSettings(): Promise<void> {
     try {
       const response = await fetch('/api/settings/calibration');
@@ -174,13 +233,6 @@
     } catch (error) {
       console.warn('[LED] Could not fetch colors from settings, using defaults:', error);
     }
-  }
-
-  function getMidiNoteName(midiNote: number): string {
-    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    const octave = Math.floor(midiNote / 12) - 1;
-    const noteIndex = midiNote % 12;
-    return `${NOTE_NAMES[noteIndex]}${octave}`;
   }
 
   function isBlackKey(midiNote: number): boolean {
@@ -862,6 +914,126 @@
     </div>
   {/if}
 
+  <!-- Individual Key Offsets -->
+  <div class="per-key-offsets-container">
+    <div class="offsets-header">
+      <h4>
+        <span class="offsets-title-icon">🔑</span>
+        Individual Key Offsets
+        {#if Object.keys($keyOffsetsList).length > 0}
+          <span class="badge">{Object.keys($keyOffsetsList).length}</span>
+        {/if}
+      </h4>
+      <button
+        class="btn-add-offset"
+        on:click={() => (showAddForm = !showAddForm)}
+        title="Add a new key offset"
+      >
+        {showAddForm ? '✕ Cancel' : '⊕ Add'}
+      </button>
+    </div>
+
+    {#if showAddForm}
+      <div class="add-offset-form">
+        <div class="form-group">
+          <label for="midi-note-input">MIDI Note (0-127):</label>
+          <input
+            id="midi-note-input"
+            type="number"
+            min="0"
+            max="127"
+            bind:value={newKeyMidiNote}
+            placeholder="e.g., 60 for Middle C"
+            class="offset-input"
+          />
+        </div>
+        <div class="form-group">
+          <label for="offset-value-input">Offset (ms):</label>
+          <input
+            id="offset-value-input"
+            type="number"
+            step="1"
+            bind:value={newKeyOffset}
+            placeholder="Time offset"
+            class="offset-input"
+          />
+        </div>
+        <button
+          class="btn-save-offset"
+          on:click={handleAddKeyOffset}
+          disabled={!newKeyMidiNote}
+        >
+          ✓ Add Offset
+        </button>
+      </div>
+    {/if}
+
+    {#if $keyOffsetsList.length > 0}
+      <div class="offsets-list">
+        {#each $keyOffsetsList as offsetItem (offsetItem.midiNote)}
+          {@const midiNote = offsetItem.midiNote}
+          {@const offset = offsetItem.offset}
+          {#if editingKeyNote === midiNote}
+            <div class="offset-item editing">
+              <div class="offset-info">
+                <span class="offset-note">{getMidiNoteName(midiNote)}</span>
+                <input
+                  type="number"
+                  step="1"
+                  bind:value={editingKeyOffset}
+                  class="offset-edit-input"
+                />
+              </div>
+              <div class="offset-actions">
+                <button
+                  class="btn-save"
+                  on:click={saveEditingKeyOffset}
+                  title="Save changes"
+                >
+                  ✓
+                </button>
+                <button
+                  class="btn-cancel"
+                  on:click={cancelEditingKeyOffset}
+                  title="Cancel editing"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          {:else}
+            <div class="offset-item">
+              <div class="offset-info">
+                <span class="offset-note">{getMidiNoteName(midiNote)}</span>
+                <span class="offset-value">{offset}ms</span>
+              </div>
+              <div class="offset-actions">
+                <button
+                  class="btn-edit"
+                  on:click={() => startEditingKeyOffset(midiNote, offset)}
+                  title="Edit offset"
+                >
+                  ✎
+                </button>
+                <button
+                  class="btn-delete"
+                  on:click={() => handleDeleteKeyOffset(midiNote)}
+                  title="Delete offset"
+                >
+                  🗑
+                </button>
+              </div>
+            </div>
+          {/if}
+        {/each}
+      </div>
+    {:else if !showAddForm}
+      <p class="empty-state">
+        No custom offsets configured. Add one to fine-tune timing for specific keys.
+      </p>
+    {/if}
+  </div>
+
   <!-- Info -->
   <div class="info-box">
     <p>
@@ -875,14 +1047,6 @@
     </p>
     <p>
       <strong>LED Range:</strong> {$calibrationState.start_led} — {$calibrationState.end_led}
-    </p>
-    <p>
-      <strong>Status:</strong>
-      {#if $calibrationState.enabled}
-        <span class="status-badge active">Calibration Active</span>
-      {:else}
-        <span class="status-badge inactive">Calibration Disabled</span>
-      {/if}
     </p>
   </div>
 </div>
@@ -1917,5 +2081,250 @@
     .btn-preview {
       width: 100%;
     }
+  }
+
+  /* Individual Key Offsets Styles */
+  .per-key-offsets-container {
+    background: linear-gradient(135deg, rgba(102, 187, 106, 0.05), rgba(76, 175, 80, 0.05));
+    border: 2px solid #a5d6a7;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+  }
+
+  .offsets-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .offsets-header h4 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #1b5e20;
+    font-size: 1.1rem;
+  }
+
+  .offsets-title-icon {
+    font-size: 1.3rem;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #2e7d32;
+    color: white;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .btn-add-offset {
+    background: #66bb6a;
+    border: 2px solid #43a047;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-add-offset:hover {
+    background: #43a047;
+    transform: translateY(-2px);
+  }
+
+  .add-offset-form {
+    background: white;
+    border: 1px solid #c8e6c9;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .form-group label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2e7d32;
+  }
+
+  .offset-input {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #81c784;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    background: white;
+    color: #1b5e20;
+  }
+
+  .offset-input:focus {
+    outline: none;
+    border-color: #2e7d32;
+    box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.1);
+  }
+
+  .btn-save-offset {
+    background: #2e7d32;
+    border: none;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-save-offset:hover:not(:disabled) {
+    background: #1b5e20;
+    transform: translateY(-2px);
+  }
+
+  .btn-save-offset:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .offsets-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .offset-item {
+    background: white;
+    border: 1px solid #c8e6c9;
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s ease;
+  }
+
+  .offset-item:hover {
+    border-color: #66bb6a;
+    box-shadow: 0 2px 8px rgba(102, 187, 106, 0.15);
+  }
+
+  .offset-item.editing {
+    background: #f1f8e9;
+    border-color: #2e7d32;
+  }
+
+  .offset-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+  }
+
+  .offset-note {
+    font-weight: 600;
+    color: #1b5e20;
+    min-width: 50px;
+  }
+
+  .offset-value {
+    color: #558b2f;
+    font-family: monospace;
+  }
+
+  .offset-edit-input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #2e7d32;
+    border-radius: 4px;
+    font-family: monospace;
+    color: #1b5e20;
+    background: white;
+    min-width: 80px;
+  }
+
+  .offset-edit-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+  }
+
+  .offset-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .btn-edit,
+  .btn-delete,
+  .btn-save,
+  .btn-cancel {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #c8e6c9;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+  }
+
+  .btn-edit {
+    color: #2e7d32;
+  }
+
+  .btn-edit:hover {
+    background: #f1f8e9;
+    border-color: #2e7d32;
+  }
+
+  .btn-delete {
+    color: #d32f2f;
+  }
+
+  .btn-delete:hover {
+    background: #ffebee;
+    border-color: #d32f2f;
+  }
+
+  .btn-save {
+    background: #2e7d32;
+    color: white;
+    border-color: #2e7d32;
+  }
+
+  .btn-save:hover {
+    background: #1b5e20;
+  }
+
+  .btn-cancel {
+    background: #ef5350;
+    color: white;
+    border-color: #ef5350;
+  }
+
+  .btn-cancel:hover {
+    background: #d32f2f;
+  }
+
+  .empty-state {
+    color: #558b2f;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 1rem;
+    margin: 0;
+    font-style: italic;
   }
 </style>

@@ -244,29 +244,35 @@
 <div class="piano-selector">
 	<div class="section">
 		<h3 class="section-title">Piano Size Configuration</h3>
-		<div class="size-grid">
-			{#each availableSizes as size}
-				<button
-					class="size-option"
-					class:selected={selectedSize === size.value}
-					class:disabled
-					on:click={() => handleSizeChange(size.value)}
-					{disabled}
-				>
-					<div class="size-label">{size.label}</div>
-					<div class="size-details">
+		<div class="size-selector-wrapper">
+			<label for="piano-size-select">Select Keyboard Size:</label>
+			<select
+				id="piano-size-select"
+				value={selectedSize}
+				on:change={(e) => handleSizeChange(e.currentTarget.value)}
+				{disabled}
+				class="piano-size-select"
+			>
+				{#each availableSizes as size}
+					<option value={size.value}>
+						{size.label}
 						{#if size.keys > 0}
-							<span class="key-count">{size.keys} keys</span>
-							<span class="octave-count">{size.octaves} octaves</span>
-							<span class="note-range">{size.startNote} - {size.endNote}</span>
-						{:else}
-							<span class="custom-label">Custom</span>
+							({size.keys} keys, {size.octaves} oct, {size.startNote}-{size.endNote})
 						{/if}
-					</div>
-					<div class="size-description">{size.description}</div>
-				</button>
-			{/each}
+					</option>
+				{/each}
+			</select>
 		</div>
+		{#if selectedSizeData && selectedSizeData.keys > 0}
+			<div class="size-info-display">
+				<p><strong>{selectedSizeData.label}:</strong> {selectedSizeData.description}</p>
+				<div class="size-specs">
+					<span class="spec">Keys: {selectedSizeData.keys}</span>
+					<span class="spec">Range: {selectedSizeData.startNote} - {selectedSizeData.endNote}</span>
+					<span class="spec">Octaves: {selectedSizeData.octaves}</span>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	{#if showMapping}
@@ -377,21 +383,77 @@
 	}
 
 	.size-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: 0.75rem;
+		display: none;
+	}
+
+	.size-selector-wrapper {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.size-selector-wrapper label {
+		font-weight: 600;
+		color: #333;
+		font-size: 0.95rem;
+	}
+
+	.piano-size-select {
+		padding: 0.6rem 0.75rem;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		font-size: 0.95rem;
+		background: white;
+		cursor: pointer;
+		transition: border-color 0.2s ease;
+	}
+
+	.piano-size-select:hover:not(:disabled) {
+		border-color: #007acc;
+	}
+
+	.piano-size-select:focus {
+		outline: none;
+		border-color: #007acc;
+		box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+	}
+
+	.piano-size-select:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.size-info-display {
+		background: #f5f5f5;
+		border-left: 3px solid #007acc;
+		padding: 0.75rem;
+		border-radius: 4px;
+		margin-top: 0.75rem;
+	}
+
+	.size-info-display p {
+		margin: 0 0 0.5rem 0;
+		font-size: 0.9rem;
+		color: #333;
+	}
+
+	.size-specs {
+		display: flex;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.size-specs .spec {
+		font-size: 0.85rem;
+		color: #666;
+		background: white;
+		padding: 0.25rem 0.5rem;
+		border-radius: 3px;
 	}
 
 	.size-option {
-		display: flex;
-		flex-direction: column;
-		padding: 0.75rem;
-		border: 2px solid #ddd;
-		border-radius: 6px;
-		background: white;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		text-align: left;
+		display: none;
 	}
 
 	.size-option:hover:not(.disabled) {

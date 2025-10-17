@@ -9,7 +9,6 @@
   import MidiDeviceSelector from '$lib/components/MidiDeviceSelector.svelte';
   import NetworkMidiConfig from '$lib/components/NetworkMidiConfig.svelte';
   import MidiConnectionStatus from '$lib/components/MidiConnectionStatus.svelte';
-  import CalibrationSection1 from '$lib/components/CalibrationSection1.svelte';
   import CalibrationSection2 from '$lib/components/CalibrationSection2.svelte';
   import CalibrationSection3 from '$lib/components/CalibrationSection3.svelte';
   import type { UsbMidiStatus, NetworkMidiStatus } from '$lib/types/midi';
@@ -883,7 +882,6 @@
 
         <div class="card-body">
           <div class="calibration-sections">
-            <CalibrationSection1 />
             <div data-section="calibration-2">
               <CalibrationSection2 />
             </div>
