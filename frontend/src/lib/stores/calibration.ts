@@ -433,10 +433,14 @@ class CalibrationService {
       const data = await response.json();
       
       // Convert string keys to numbers for the mapping
+      // IMPORTANT: The backend returns key INDICES (0-87), but we need to convert them to MIDI NOTES (21-108)
+      // for proper visualization and calibration logic
       const mapping: Record<number, number[]> = {};
       for (const [key, value] of Object.entries(data.mapping)) {
-        const midiNote = parseInt(key, 10);
-        if (Number.isFinite(midiNote)) {
+        const keyIndex = parseInt(key, 10);
+        if (Number.isFinite(keyIndex)) {
+          // Convert key index (0-87) to MIDI note (21-108) for 88-key piano
+          const midiNote = 21 + keyIndex;
           mapping[midiNote] = value as number[];
         }
       }
