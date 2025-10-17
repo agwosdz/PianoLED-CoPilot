@@ -319,41 +319,31 @@ class LEDEffectsManager:
                     relative_pos = (i - animation_start) / visible_led_count
                     
                     # Create a rainbow hue that sweeps across the strip
-                    # Hue sweeps from 0 to 360 degrees as we go left to right + animation step
-                    hue = ((relative_pos + step / sweep_steps) * 360) % 360
+                    # Hue normalized to 0.0-1.0 (0° to 360°)
+                    hue = ((relative_pos + step / sweep_steps) * 6) % 6
                     
-                    # Convert HSV to RGB for rainbow effect
-                    # Red (0°), Yellow (60°), Green (120°), Cyan (180°), Blue (240°), Magenta (300°)
-                    if hue < 60:
+                    # Simple HSV to RGB: S=1, V=1 (full saturation and value)
+                    c = 255  # chroma (max component)
+                    x_val = int(255 * (1 - abs(hue % 2 - 1)))  # second component
+                    
+                    if hue < 1:
                         # Red to Yellow
-                        r = 255
-                        g = int(255 * (hue / 60))
-                        b = 0
-                    elif hue < 120:
+                        r, g, b = c, x_val, 0
+                    elif hue < 2:
                         # Yellow to Green
-                        r = int(255 * (1 - (hue - 60) / 60))
-                        g = 255
-                        b = 0
-                    elif hue < 180:
+                        r, g, b = x_val, c, 0
+                    elif hue < 3:
                         # Green to Cyan
-                        r = 0
-                        g = 255
-                        b = int(255 * ((hue - 120) / 60))
-                    elif hue < 240:
+                        r, g, b = 0, c, x_val
+                    elif hue < 4:
                         # Cyan to Blue
-                        r = 0
-                        g = int(255 * (1 - (hue - 180) / 60))
-                        b = 255
-                    elif hue < 300:
+                        r, g, b = 0, x_val, c
+                    elif hue < 5:
                         # Blue to Magenta
-                        r = int(255 * ((hue - 240) / 60))
-                        g = 0
-                        b = 255
+                        r, g, b = x_val, 0, c
                     else:
                         # Magenta to Red
-                        r = 255
-                        g = 0
-                        b = int(255 * (1 - (hue - 300) / 60))
+                        r, g, b = c, 0, x_val
                     
                     self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
                 
