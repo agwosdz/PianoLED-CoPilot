@@ -691,17 +691,21 @@ class SettingsAPI {
     }
 
     async setSetting(category: string, key: string, value: any): Promise<void> {
+        // Normalize key from camelCase to snake_case for backend compatibility
+        // Frontend uses gpioPin, backend stores gpio_pin
+        const normalizedKey = this._normalizeKeyName(category, key);
+        
         // Validate the setting before sending
-        const validationResult = validateSetting(category, key, value);
+        const validationResult = validateSetting(category, normalizedKey, value);
         if (!validationResult.isValid) {
-            const errorMsg = `Invalid setting value for ${category}.${key}: ${validationResult.error}`;
+            const errorMsg = `Invalid setting value for ${category}.${normalizedKey}: ${validationResult.error}`;
             console.error(errorMsg);
             settingsError.set(errorMsg);
             throw new Error(errorMsg);
         }
 
         try {
-            const response = await fetch(`${this.baseUrl}/${category}/${key}`, {
+            const response = await fetch(`${this.baseUrl}/${category}/${normalizedKey}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -835,8 +839,16 @@ class SettingsAPI {
             if (!allowedCategories.has(cat)) continue;
             const props = allowedProps[cat];
             const filtered: any = {};
+            const api = this; // Capture 'this' for the normalization function
             for (const [k, v] of Object.entries(data || {})) {
-                if (props.has(k)) filtered[k] = v;
+                // Normalize key name before checking if it's allowed
+                const normalizedKey = api._normalizeKeyName(cat, k);
+                if (props.has(normalizedKey)) {
+                    filtered[normalizedKey] = v;
+                } else if (props.has(k)) {
+                    // Fallback to original key if it's already in the allowed set
+                    filtered[k] = v;
+                }
             }
             (sanitized as any)[cat] = filtered;
         }
@@ -1004,6 +1016,86 @@ class SettingsAPI {
             console.error('Failed to get settings schema:', error);
             throw error;
         }
+    }
+
+    /**
+     * Normalize key names from camelCase to snake_case for backend compatibility.
+     * The frontend may use camelCase (e.g., gpioPin) but backend expects snake_case (gpio_pin).
+     */
+    private _normalizeKeyName(category: string, key: string): string {
+        const keyAliases: Record<string, Record<string, string>> = {
+            'led': {
+                'gpioPin': 'gpio_pin',
+                'ledOrientation': 'led_orientation',
+                'ledCount': 'led_count',
+                'ledType': 'led_type',
+                'ledChannel': 'led_channel',
+                'gammaCorrection': 'gamma_correction',
+                'colorScheme': 'color_scheme',
+                'colorMode': 'color_mode',
+                'colorProfile': 'color_profile',
+                'colorTemperature': 'color_temperature',
+                'animationSpeed': 'animation_speed',
+                'ledsPerMeter': 'leds_per_meter',
+                'dataPin': 'data_pin',
+                'clockPin': 'clock_pin',
+                'stripType': 'strip_type',
+                'ledStripType': 'led_strip_type',
+                'reverseOrder': 'reverse_order',
+                'powerSupplyVoltage': 'power_supply_voltage',
+                'powerSupplyCurrent': 'power_supply_current',
+                'performanceMode': 'performance_mode',
+                'powerLimitingEnabled': 'power_limiting_enabled',
+                'maxPowerWatts': 'max_power_watts',
+                'thermalProtectionEnabled': 'thermal_protection_enabled',
+                'maxTemperatureCelsius': 'max_temperature_celsius',
+                'ditherEnabled': 'dither_enabled',
+                'updateRate': 'update_rate',
+                'whiteBalance': 'white_balance',
+                'mappingMode': 'mapping_mode',
+                'mappingBaseOffset': 'mapping_base_offset',
+                'maxLedCount': 'max_led_count',
+            },
+            'gpio': {
+                'gpioPin': 'gpio_pin',
+                'dataPin': 'data_pin',
+                'clockPin': 'clock_pin',
+                'debounceTime': 'debounce_time',
+                'dmaChannel': 'dma_channel',
+            },
+            'piano': {
+                'velocitySensitivity': 'velocity_sensitivity',
+                'startNote': 'start_note',
+                'endNote': 'end_note',
+                'keyMapping': 'key_mapping',
+                'keyMappingMode': 'key_mapping_mode',
+            },
+            'audio': {
+                'sampleRate': 'sample_rate',
+                'bufferSize': 'buffer_size',
+                'deviceId': 'device_id',
+            },
+            'hardware': {
+                'autoDetectMidi': 'auto_detect_midi',
+                'autoDetectGpio': 'auto_detect_gpio',
+                'autoDetectLed': 'auto_detect_led',
+                'midiDeviceId': 'midi_device_id',
+                'rtpMidiEnabled': 'rtpmidi_enabled',
+                'rtpMidiPort': 'rtpmidi_port',
+                'boardRevision': 'board_revision',
+            },
+            'system': {
+                'logLevel': 'log_level',
+                'autoSave': 'auto_save',
+                'backupSettings': 'backup_settings',
+            },
+            'user': {
+                // No aliases for user category typically
+            },
+        };
+
+        // Return the normalized key if it exists in aliases, otherwise return the original key
+        return keyAliases[category]?.[key] || key;
     }
 }
 
