@@ -604,7 +604,7 @@ def get_key_led_mapping():
             }), 400
         
         # Extract the base mapping (without offsets yet)
-        base_mapping = allocation_result.get('led_allocation_data', {})
+        base_mapping = allocation_result.get('key_led_mapping', {})
         logger.info(f"Base mapping generated with {len(base_mapping)} keys")
         
         # Apply calibration key offsets to the mapping
