@@ -180,7 +180,7 @@ class PhysicalKeyGeometry:
                 current_pos += white_key_width + white_key_gap
         
         # Step 2: Calculate EXPOSED ranges for white keys (accounting for black key cuts)
-        for white_pos in white_key_positions:
+        for white_idx, white_pos in enumerate(white_key_positions):
             key_idx = white_pos['key_idx']
             base_start = white_pos['base_start']
             base_end = white_pos['base_end']
@@ -193,8 +193,9 @@ class PhysicalKeyGeometry:
             # Get cut specifications for this note
             left_cut_type, right_cut_type = PhysicalKeyGeometry.WHITE_KEY_CUTS[note_name]
             
-            # Apply LEFT cut if this note has a black key to its left
-            if left_cut_type:
+            # Apply LEFT cut if this note has a black key to its left AND this isn't the first key
+            # (A0, the first key, has no black key to its left)
+            if left_cut_type and white_idx > 0:
                 cut_value = {
                     'A': PhysicalKeyGeometry.CUT_A,
                     'B': PhysicalKeyGeometry.CUT_B,
@@ -202,8 +203,9 @@ class PhysicalKeyGeometry:
                 }[left_cut_type]
                 exposed_start = base_start + cut_value
             
-            # Apply RIGHT cut if this note has a black key to its right
-            if right_cut_type:
+            # Apply RIGHT cut if this note has a black key to its right AND this isn't the last key
+            # (C8, the last key, has no black key to its right)
+            if right_cut_type and white_idx < len(white_key_positions) - 1:
                 cut_value = {
                     'A': PhysicalKeyGeometry.CUT_A,
                     'B': PhysicalKeyGeometry.CUT_B,
