@@ -657,13 +657,17 @@ def calculate_led_power_consumption(led_count, brightness=1.0, led_type="WS2812B
 def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", leds_per_key=None, mapping_base_offset=None, distribution_mode="proportional"):
     """Generate automatic key-to-LED mapping based on piano size and LED count
     
+    Uses calibration range (start_led to end_led) to compute LED-per-key distribution dynamically.
+    This ensures that the usable LED range is utilized optimally without waste.
+    
     Args:
         piano_size: Piano size (e.g., "88-key")
-        led_count: Total number of LEDs
+        led_count: Total number of LEDs available (or usable range size if mapping_base_offset used)
         led_orientation: LED orientation ("normal" or "reversed") - NOT applied here, 
                         physical reversal happens in LEDController._map_led_index()
         leds_per_key: Number of LEDs per key (overrides calculation if provided)
-        mapping_base_offset: Base offset for the entire mapping (default: 0)
+        mapping_base_offset: Base offset (start_led) for the entire mapping (default: 0).
+                           This represents the calibration range start point.
         distribution_mode: LED distribution mode ("proportional", "fixed", or "custom") - default: "proportional"
     
     Returns:
@@ -683,8 +687,10 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     if mapping_base_offset is None:
         mapping_base_offset = 0
     
-    # Adjust available LED count based on base offset
-    available_leds = led_count - mapping_base_offset
+    # Calculate available LED count:
+    # - If mapping_base_offset > 0, then led_count is the usable range size (end_led - start_led)
+    # - Otherwise, available_leds = led_count - mapping_base_offset
+    available_leds = led_count if mapping_base_offset > 0 else (led_count - mapping_base_offset)
     
     logger.info(f"Generating auto mapping for {piano_size} ({key_count} keys) "
                f"with {led_count} total LEDs, base_offset={mapping_base_offset}, "
