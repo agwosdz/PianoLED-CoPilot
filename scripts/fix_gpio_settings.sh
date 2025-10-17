@@ -1,11 +1,11 @@
 #!/bin/bash
 # Fix GPIO settings database corruption on Pi Zero 2 W
-# This script cleans up legacy camelCase keys and ensures correct GPIO pin value
+# This script cleans up legacy camelCase keys and ensures correct GPIO pin and LED configuration
 
 set -e
 
 echo "=========================================="
-echo "GPIO Settings Database Repair"
+echo "GPIO & LED Settings Database Repair"
 echo "=========================================="
 
 # Navigate to project directory
@@ -18,12 +18,12 @@ echo "✓ Backup created"
 
 # Check current state
 echo ""
-echo "[2/5] Current GPIO settings state:"
+echo "[2/5] Current LED and GPIO settings state:"
 sqlite3 backend/settings.db << EOF
 .headers on
 .mode column
 SELECT category, key, value FROM settings 
-WHERE category IN ('led', 'gpio') AND (key LIKE '%gpio%' OR key LIKE '%pin%') 
+WHERE category='led' AND (key LIKE '%gpio%' OR key LIKE '%pin%' OR key LIKE '%channel%' OR key='enabled') 
 ORDER BY category, key;
 EOF
 
@@ -40,20 +40,24 @@ echo "✓ Legacy keys removed"
 
 # Ensure correct GPIO pin value
 echo ""
-echo "[4/5] Setting gpio_pin to 19 (Pi Zero 2 W requirement)..."
+echo "[4/5] Setting GPIO and LED channel values (Pi Zero 2 W requirement)..."
 sqlite3 backend/settings.db << EOF
 UPDATE settings SET value='19' WHERE category='led' AND key='gpio_pin';
+UPDATE settings SET value='1' WHERE category='led' AND key='led_channel';
+UPDATE settings SET value='true' WHERE category='led' AND key='enabled';
 EOF
 echo "✓ GPIO pin set to 19"
+echo "✓ LED channel set to 1 (required for GPIO 19)"
+echo "✓ LED enabled set to true"
 
 # Show final state
 echo ""
-echo "[5/5] Final GPIO settings state:"
+echo "[5/5] Final LED and GPIO settings state:"
 sqlite3 backend/settings.db << EOF
 .headers on
 .mode column
 SELECT category, key, value FROM settings 
-WHERE category IN ('led', 'gpio') AND (key LIKE '%gpio%' OR key LIKE '%pin%') 
+WHERE category='led' AND (key LIKE '%gpio%' OR key LIKE '%pin%' OR key LIKE '%channel%' OR key='enabled') 
 ORDER BY category, key;
 EOF
 
