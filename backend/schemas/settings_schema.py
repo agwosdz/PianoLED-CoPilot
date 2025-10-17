@@ -157,6 +157,52 @@ class SettingsSchema:
                     }
                 }
             }
+        },
+        
+        'calibration': {
+            'type': 'object',
+            'required': [],
+            'properties': {
+                # Calibration range settings
+                'start_led': {'type': 'number', 'minimum': 0, 'maximum': 1000},
+                'end_led': {'type': 'number', 'minimum': 0, 'maximum': 1000},
+                
+                # Physical LED properties (from piano.py)
+                'led_physical_width': {'type': 'number', 'minimum': 1.0, 'maximum': 10.0},
+                'led_strip_offset': {'type': 'number', 'minimum': 0.0, 'maximum': 5.0},
+                'led_overhang_threshold': {'type': 'number', 'minimum': 0.5, 'maximum': 5.0},
+                
+                # Piano geometry (from piano.py)
+                'white_key_width': {'type': 'number', 'minimum': 20.0, 'maximum': 30.0},
+                'black_key_width': {'type': 'number', 'minimum': 10.0, 'maximum': 20.0},
+                'white_key_gap': {'type': 'number', 'minimum': 0.5, 'maximum': 5.0},
+                
+                # Physical analysis configuration
+                'use_physical_analysis': {'type': 'boolean'},
+                'physical_analysis_enabled': {'type': 'boolean'},
+                
+                # Calibration UI settings
+                'show_physical_metrics': {'type': 'boolean'},
+                'show_symmetry_scores': {'type': 'boolean'}
+            }
+        },
+        
+        'piano_geometry': {
+            'type': 'object',
+            'required': [],
+            'properties': {
+                # Piano key dimensions (from piano.py physical measurements)
+                'white_key_width': {'type': 'number', 'minimum': 20.0, 'maximum': 30.0},
+                'black_key_width': {'type': 'number', 'minimum': 10.0, 'maximum': 20.0},
+                'white_key_gap': {'type': 'number', 'minimum': 0.5, 'maximum': 5.0},
+                'white_key_height': {'type': 'number', 'minimum': 90.0, 'maximum': 120.0},
+                'black_key_height': {'type': 'number', 'minimum': 50.0, 'maximum': 70.0},
+                'black_key_depth': {'type': 'number', 'minimum': 15.0, 'maximum': 30.0},
+                
+                # Custom geometry name
+                'preset': {'type': 'string', 'enum': ['standard', 'compact', 'grand', 'custom']},
+                'custom_name': {'type': 'string', 'maxLength': 100}
+            }
         }
     }
 

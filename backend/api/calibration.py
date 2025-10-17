@@ -1602,3 +1602,153 @@ def get_advanced_mapping_allocation():
             'timestamp': datetime.now().isoformat()
         }), 500
 
+
+@calibration_bp.route('/physical-analysis', methods=['GET', 'POST'])
+def get_physical_analysis():
+    """
+    Get detailed physical geometry analysis of LED placement on piano keys.
+    
+    Uses sophisticated geometry calculations to analyze:
+    - Per-key LED alignment symmetry (0.0-1.0 score)
+    - LED coverage consistency across keys
+    - Physical overhang amounts (left/right)
+    - Overall placement quality per key
+    - System-wide quality metrics
+    
+    GET: Analyzes current settings
+    POST: Analyzes proposed settings without applying them
+    
+    Query parameters (GET) or JSON body (POST):
+        - leds_per_meter: LED strip density (default from settings, 200)
+        - led_physical_width: Physical width of each LED in mm (default 3.5)
+        - led_strip_offset: Offset of LED center from strip edge in mm (default 1.75)
+        - overhang_threshold: Minimum overhang to count LED (mm, default 1.5)
+        - white_key_width: Piano white key width in mm (default 23.5)
+        - black_key_width: Piano black key width in mm (default 13.7)
+        - white_key_gap: Gap between white keys in mm (default 1.0)
+        - start_led: First LED index (default from settings)
+        - end_led: Last LED index (default from settings)
+        - piano_size: Piano size (default "88-key")
+    
+    Returns comprehensive physical analysis object with per-key quality metrics.
+    """
+    logger.info("Physical analysis endpoint called")
+    
+    try:
+        settings_service = get_settings_service()
+        
+        # Get parameters
+        if request.method == 'POST':
+            data = request.get_json() or {}
+        else:
+            data = request.args.to_dict()
+        
+        # Extract parameters with defaults from settings or physical defaults
+        leds_per_meter = float(data.get('leds_per_meter',
+                                       settings_service.get_setting('calibration', 'led_physical_width') or 200))
+        led_physical_width = float(data.get('led_physical_width',
+                                           settings_service.get_setting('calibration', 'led_physical_width') or 3.5))
+        led_strip_offset = float(data.get('led_strip_offset',
+                                         settings_service.get_setting('calibration', 'led_strip_offset') or 1.75))
+        overhang_threshold = float(data.get('overhang_threshold',
+                                           settings_service.get_setting('calibration', 'led_overhang_threshold') or 1.5))
+        white_key_width = float(data.get('white_key_width',
+                                        settings_service.get_setting('calibration', 'white_key_width') or 23.5))
+        black_key_width = float(data.get('black_key_width',
+                                        settings_service.get_setting('calibration', 'black_key_width') or 13.7))
+        white_key_gap = float(data.get('white_key_gap',
+                                      settings_service.get_setting('calibration', 'white_key_gap') or 1.0))
+        
+        start_led = int(data.get('start_led',
+                                settings_service.get_setting('calibration', 'start_led') or 4))
+        end_led = int(data.get('end_led',
+                              settings_service.get_setting('calibration', 'end_led') or 249))
+        piano_size = data.get('piano_size', '88-key')
+        
+        logger.info(f"Physical analysis parameters: "
+                   f"leds_per_meter={leds_per_meter}, "
+                   f"led_physical_width={led_physical_width}, "
+                   f"range=[{start_led},{end_led}], "
+                   f"piano_size={piano_size}")
+        
+        # First get the current LED mapping
+        from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+        
+        mapping_result = calculate_per_key_led_allocation(
+            leds_per_meter=leds_per_meter,
+            start_led=start_led,
+            end_led=end_led,
+            piano_size=piano_size,
+            allow_led_sharing=True  # Use default sharing mode
+        )
+        
+        if not mapping_result.get('success'):
+            logger.error(f"Failed to generate mapping for analysis: {mapping_result.get('error')}")
+            return jsonify({
+                'error': 'Mapping Failed',
+                'message': 'Could not generate LED mapping for physical analysis',
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        key_led_mapping = mapping_result.get('key_led_mapping', {})
+        led_count = end_led - start_led + 1
+        
+        # Import physical analysis module
+        from backend.config_led_mapping_physical import PhysicalMappingAnalyzer
+        
+        # Create analyzer with the requested parameters
+        analyzer = PhysicalMappingAnalyzer(
+            led_density=leds_per_meter,
+            led_physical_width=led_physical_width,
+            led_strip_offset=led_strip_offset,
+            overhang_threshold_mm=overhang_threshold,
+            white_key_width=white_key_width,
+            black_key_width=black_key_width,
+            white_key_gap=white_key_gap
+        )
+        
+        # Perform analysis
+        analysis_result = analyzer.analyze_mapping(key_led_mapping, led_count)
+        
+        response = {
+            'per_key_analysis': analysis_result['per_key_analysis'],
+            'quality_metrics': analysis_result['quality_metrics'],
+            'overall_quality': analysis_result['overall_quality'],
+            'parameters_used': analysis_result['parameters_used'],
+            'mapping_info': {
+                'piano_size': piano_size,
+                'start_led': start_led,
+                'end_led': end_led,
+                'total_keys': 88,
+                'timestamp': datetime.now().isoformat()
+            }
+        }
+        
+        logger.info(f"Physical analysis complete: "
+                   f"overall_quality={analysis_result['overall_quality']}, "
+                   f"avg_symmetry={analysis_result['quality_metrics']['avg_symmetry']:.4f}")
+        
+        return jsonify(response), 200
+        
+    except ImportError as e:
+        logger.error(f"Failed to import physical analysis module: {e}")
+        return jsonify({
+            'error': 'Not Implemented',
+            'message': 'Physical analysis module not available',
+            'timestamp': datetime.now().isoformat()
+        }), 501
+    except (ValueError, TypeError) as e:
+        logger.error(f"Invalid parameter: {e}")
+        return jsonify({
+            'error': 'Bad Request',
+            'message': f'Invalid parameter: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 400
+    except Exception as e:
+        logger.error(f"Error during physical analysis: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to perform physical analysis: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 500
+

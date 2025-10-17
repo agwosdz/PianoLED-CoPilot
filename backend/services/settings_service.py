@@ -198,7 +198,28 @@ class SettingsService:
                 'black_key_color': {'type': 'object', 'default': {'r': 150, 'g': 0, 'b': 100}, 'description': 'RGB color for black keys in layout visualization'},
                 'distribution_mode': {'type': 'string', 'default': 'proportional', 'enum': ['proportional', 'fixed', 'custom'], 'description': 'LED distribution mode for auto mapping'},
                 'fixed_leds_per_key': {'type': 'number', 'default': 3, 'min': 1, 'max': 10, 'description': 'Number of LEDs per key for fixed distribution mode'},
-                'custom_distribution': {'type': 'object', 'default': {}, 'description': 'Custom distribution configuration {mode_name: config}'}
+                'custom_distribution': {'type': 'object', 'default': {}, 'description': 'Custom distribution configuration {mode_name: config}'},
+                # Physical geometry settings (from piano.py integration)
+                'led_physical_width': {'type': 'number', 'default': 3.5, 'min': 1.0, 'max': 10.0, 'description': 'Physical width of each LED in mm'},
+                'led_strip_offset': {'type': 'number', 'default': 1.75, 'min': 0.0, 'max': 5.0, 'description': 'Physical offset of LED center from strip edge in mm'},
+                'led_overhang_threshold': {'type': 'number', 'default': 1.5, 'min': 0.5, 'max': 5.0, 'description': 'Minimum overhang to count LED as assigned (in mm)'},
+                'white_key_width': {'type': 'number', 'default': 23.5, 'min': 20.0, 'max': 30.0, 'description': 'Width of white piano keys in mm'},
+                'black_key_width': {'type': 'number', 'default': 13.7, 'min': 10.0, 'max': 20.0, 'description': 'Width of black piano keys in mm'},
+                'white_key_gap': {'type': 'number', 'default': 1.0, 'min': 0.5, 'max': 5.0, 'description': 'Gap between white piano keys in mm'},
+                'use_physical_analysis': {'type': 'boolean', 'default': False, 'description': 'Enable physical geometry-based LED analysis'},
+                'physical_analysis_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable physical analysis endpoints and metrics'},
+                'show_physical_metrics': {'type': 'boolean', 'default': False, 'description': 'Show physical metrics in UI'},
+                'show_symmetry_scores': {'type': 'boolean', 'default': False, 'description': 'Show symmetry scores in UI'}
+            },
+            'piano_geometry': {
+                'white_key_width': {'type': 'number', 'default': 23.5, 'min': 20.0, 'max': 30.0, 'description': 'Standard white key width (mm)'},
+                'black_key_width': {'type': 'number', 'default': 13.7, 'min': 10.0, 'max': 20.0, 'description': 'Standard black key width (mm)'},
+                'white_key_gap': {'type': 'number', 'default': 1.0, 'min': 0.5, 'max': 5.0, 'description': 'Standard gap between white keys (mm)'},
+                'white_key_height': {'type': 'number', 'default': 107.0, 'min': 90.0, 'max': 120.0, 'description': 'Standard white key height (mm)'},
+                'black_key_height': {'type': 'number', 'default': 60.0, 'min': 50.0, 'max': 70.0, 'description': 'Standard black key height (mm)'},
+                'black_key_depth': {'type': 'number', 'default': 20.0, 'min': 15.0, 'max': 30.0, 'description': 'Standard black key depth (mm)'},
+                'preset': {'type': 'string', 'default': 'standard', 'enum': ['standard', 'compact', 'grand', 'custom'], 'description': 'Piano geometry preset'},
+                'custom_name': {'type': 'string', 'default': '', 'description': 'Custom geometry profile name'}
             },
             'hardware': {
                 'auto_detect_midi': {'type': 'boolean', 'default': False},
