@@ -14,7 +14,8 @@ from backend.config import (
     generate_auto_key_mapping,
     apply_calibration_offsets_to_mapping,
     validate_auto_mapping_config,
-    get_piano_specs
+    get_piano_specs,
+    calculate_physical_led_mapping
 )
 
 logger = get_logger(__name__)
@@ -1210,4 +1211,177 @@ def distribution_mode():
         return jsonify({
             'error': str(e),
             'message': 'Distribution mode operation failed'
+        }), 500
+
+
+@calibration_bp.route('/mapping-quality', methods=['GET', 'POST'])
+def get_mapping_quality_recommendations():
+    """
+    Get detailed LED mapping quality analysis and recommendations.
+    
+    Provides real-time feedback about mapping quality during calibration setup.
+    Uses the physical LED mapping algorithm to calculate actual coverage metrics.
+    
+    GET: Returns quality analysis for current settings
+    POST: Analyzes proposed settings without applying them
+    
+    GET/POST parameters:
+    - leds_per_meter (optional): LED strip density (60-200, default from settings)
+    - start_led (optional): First LED index (default from settings)
+    - end_led (optional): Last LED index (default from settings)
+    - piano_size (optional): Piano size (default from settings)
+    
+    Returns:
+        {
+            'quality_analysis': {
+                'quality_score': 0-100,
+                'quality_level': 'poor'/'ok'/'good'/'excellent',
+                'leds_per_key': float,
+                'coverage_ratio': float,
+                'warnings': [list of warnings],
+                'recommendations': [list of suggestions]
+            },
+            'hardware_info': {
+                'total_leds': int,
+                'usable_leds': int,
+                'start_led': int,
+                'end_led': int,
+                'led_spacing_mm': float
+            },
+            'piano_info': {
+                'piano_size': str,
+                'white_keys': int,
+                'piano_width_mm': float
+            },
+            'physical_analysis': {
+                'piano_coverage_ratio': float,
+                'oversaturation': bool,
+                'undersaturation': bool,
+                'ideal_leds': int
+            },
+            'timestamp': ISO timestamp
+        }
+    """
+    logger.info("Mapping quality recommendation endpoint called")
+    
+    try:
+        settings_service = get_settings_service()
+        
+        # Get current or proposed settings
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            leds_per_meter = data.get('leds_per_meter')
+            start_led = data.get('start_led')
+            end_led = data.get('end_led')
+            piano_size = data.get('piano_size')
+        else:
+            leds_per_meter = request.args.get('leds_per_meter')
+            start_led = request.args.get('start_led')
+            end_led = request.args.get('end_led')
+            piano_size = request.args.get('piano_size')
+        
+        # Fall back to current settings if not provided
+        if leds_per_meter is None:
+            leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 60)
+        else:
+            leds_per_meter = int(leds_per_meter)
+        
+        if start_led is None:
+            start_led = settings_service.get_setting('calibration', 'start_led', 0)
+        else:
+            start_led = int(start_led)
+        
+        if end_led is None:
+            total_led_count = settings_service.get_setting('led', 'led_count', 300)
+            end_led = settings_service.get_setting('calibration', 'end_led', total_led_count - 1)
+        else:
+            end_led = int(end_led)
+        
+        if piano_size is None:
+            piano_size = settings_service.get_setting('piano', 'size', '88-key')
+        
+        logger.info(f"Analyzing mapping quality: "
+                   f"leds_per_meter={leds_per_meter}, "
+                   f"range=[{start_led},{end_led}], "
+                   f"piano_size={piano_size}")
+        
+        # Call the physical LED mapping algorithm
+        mapping_result = calculate_physical_led_mapping(
+            leds_per_meter=leds_per_meter,
+            start_led=start_led,
+            end_led=end_led,
+            piano_size=piano_size
+        )
+        
+        if mapping_result.get('error'):
+            logger.error(f"Mapping calculation error: {mapping_result['error']}")
+            return jsonify({
+                'error': 'Calculation Error',
+                'message': mapping_result['error'],
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        # Extract quality information
+        quality_analysis = {
+            'quality_score': mapping_result.get('quality_score', 0),
+            'quality_level': mapping_result.get('quality_level', 'unknown'),
+            'leds_per_key': round(mapping_result.get('leds_per_key', 0), 2),
+            'coverage_ratio': round(mapping_result.get('coverage_ratio', 0), 2),
+            'warnings': mapping_result.get('warnings', []),
+            'recommendations': mapping_result.get('recommendations', [])
+        }
+        
+        hardware_info = {
+            'total_leds': mapping_result.get('total_led_count', 0),
+            'usable_leds': mapping_result.get('led_count_usable', 0),
+            'start_led': mapping_result.get('first_led', start_led),
+            'end_led': end_led,
+            'led_spacing_mm': round(mapping_result.get('led_spacing_mm', 0), 2)
+        }
+        
+        piano_info = {
+            'piano_size': piano_size,
+            'white_keys': mapping_result.get('white_key_count', 0),
+            'piano_width_mm': round(mapping_result.get('piano_width_mm', 0), 2)
+        }
+        
+        physical_analysis = {
+            'piano_coverage_ratio': round(mapping_result.get('coverage_ratio', 0), 2),
+            'oversaturation': mapping_result.get('coverage_ratio', 0) > 1.5,
+            'undersaturation': mapping_result.get('coverage_ratio', 0) < 0.5,
+            'ideal_leds': mapping_result.get('white_key_count', 0) * 3  # Approximate ideal
+        }
+        
+        response = {
+            'quality_analysis': quality_analysis,
+            'hardware_info': hardware_info,
+            'piano_info': piano_info,
+            'physical_analysis': physical_analysis,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Add detailed metadata if available
+        if 'metadata' in mapping_result:
+            response['metadata'] = mapping_result['metadata']
+        
+        logger.info(f"Quality analysis complete: "
+                   f"score={quality_analysis['quality_score']}, "
+                   f"level={quality_analysis['quality_level']}, "
+                   f"warnings={len(quality_analysis['warnings'])}")
+        
+        return jsonify(response), 200
+        
+    except ValueError as e:
+        logger.error(f"Invalid parameter value: {e}")
+        return jsonify({
+            'error': 'Bad Request',
+            'message': f'Invalid parameter: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 400
+    except Exception as e:
+        logger.error(f"Error calculating mapping quality: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to calculate mapping quality: {str(e)}',
+            'timestamp': datetime.now().isoformat()
         }), 500
