@@ -134,7 +134,8 @@ def calculate_per_key_led_allocation(
     # For no-sharing mode, pre-allocate all LEDs to keys based on position
     # to ensure strict partitioning (no LED shared between keys)
     if not allow_led_sharing:
-        # Calculate which LEDs belong to which key based on LED midpoints
+        # Calculate which LEDs belong to which key by assigning each LED to exactly one key
+        # based on which key's range the LED falls into
         led_to_key = {}
         
         for key_idx in range(total_keys):
@@ -144,22 +145,21 @@ def calculate_per_key_led_allocation(
             key_end_mm = key_center_mm + (key_width_mm / 2.0)
             
             # Convert piano position to LED coordinate space using scale_factor
-            # This maps piano coordinates (0-1273mm) to LED space
-            key_start_led_pos = key_start_mm / scale_factor if scale_factor > 0 else 0
-            key_end_led_pos = key_end_mm / scale_factor if scale_factor > 0 else 0
+            # scale_factor = led_coverage_mm / piano_width_mm (ratio of LED coverage to piano width)
+            # Piano positions (0-1273mm) map to LED space using this scale
+            key_start_led_pos = key_start_mm * scale_factor if scale_factor > 0 else 0
+            key_end_led_pos = key_end_mm * scale_factor if scale_factor > 0 else 0
             
-            # Assign each LED based on which key's range contains the LED's midpoint
-            for led_offset in range(start_led - start_led, end_led - start_led + 1):
+            # Find LED indices that fall within this key's range
+            # Using floor division to find first and last LEDs
+            first_led_offset = int(key_start_led_pos / led_spacing_mm) if led_spacing_mm > 0 else 0
+            last_led_offset = int(key_end_led_pos / led_spacing_mm) if led_spacing_mm > 0 else 0
+            
+            # Assign LEDs in this range to this key (only if not already assigned)
+            for led_offset in range(first_led_offset, last_led_offset + 1):
                 led_idx = start_led + led_offset
-                if led_idx not in led_to_key:  # Only assign if not already assigned
-                    # Calculate LED position in the same coordinate space as key positions
-                    # LED position relative to start_led, converted to coordinate space
-                    led_relative_offset = led_idx - start_led
-                    led_midpoint_pos = led_relative_offset * led_spacing_mm / scale_factor if scale_factor > 0 else 0
-                    
-                    # Check if this LED's midpoint falls within this key's range
-                    if key_start_led_pos <= led_midpoint_pos < key_end_led_pos:
-                        led_to_key[led_idx] = key_idx
+                if led_idx <= end_led and led_idx not in led_to_key:
+                    led_to_key[led_idx] = key_idx
         
         # Now build the key_led_mapping from the led_to_key assignment
         for led_idx, key_idx in led_to_key.items():
@@ -185,8 +185,8 @@ def calculate_per_key_led_allocation(
             key_end_mm = key_center_mm + (key_width_mm / 2.0)
             
             # Convert piano position to LED coordinate space
-            key_start_led_pos = key_start_mm / scale_factor if scale_factor > 0 else 0
-            key_end_led_pos = key_end_mm / scale_factor if scale_factor > 0 else 0
+            key_start_led_pos = key_start_mm * scale_factor if scale_factor > 0 else 0
+            key_end_led_pos = key_end_mm * scale_factor if scale_factor > 0 else 0
             
             # Convert to LED indices
             first_led = int(key_start_led_pos / led_spacing_mm) if led_spacing_mm > 0 else 0

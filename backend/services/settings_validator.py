@@ -23,7 +23,14 @@ class SettingsValidator:
             'orientation': 'led_orientation',
             'ledCount': 'led_count',
             'LED_COUNT': 'led_count',
-            'count': 'led_count'
+            'count': 'led_count',
+            'gpioPin': 'gpio_pin',  # Frontend uses camelCase, backend stores snake_case
+            'data_pin': 'gpio_pin',  # gpio.data_pin should map to led.gpio_pin for initialization
+        },
+        'gpio': {
+            'gpioPin': 'gpio_pin',
+            'dataPin': 'data_pin',
+            'clockPin': 'clock_pin',
         }
     }
 
