@@ -1100,40 +1100,48 @@ def turn_on_leds_batch():
 
 @calibration_bp.route('/distribution-mode', methods=['GET', 'POST'])
 def distribution_mode():
-    """Get or set LED distribution mode for auto mapping
+    """Get or set LED distribution mode for piano-based key mapping
     
     GET: Returns current distribution mode and available modes
-    POST: Sets new distribution mode (and optionally applies new mapping)
+    POST: Sets new distribution mode and optionally applies new mapping
+    
+    Available modes:
+    - "Piano Based (with overlap)": Allow LED sharing at boundaries (5-6 LEDs/key, smooth transitions)
+    - "Piano Based (no overlap)": Tight allocation without LED sharing (3-4 LEDs/key, individual control)
+    - "Custom": Reserved for future custom distribution patterns
     """
     try:
         settings_service = get_settings_service()
         
         if request.method == 'GET':
             # Return current distribution mode and options
-            current_mode = settings_service.get_setting('calibration', 'distribution_mode', 'proportional')
-            fixed_leds = settings_service.get_setting('calibration', 'fixed_leds_per_key', 3)
+            current_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
+            allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
             
             return jsonify({
                 'current_mode': current_mode,
-                'available_modes': ['proportional', 'fixed', 'custom'],
+                'available_modes': [
+                    'Piano Based (with overlap)',
+                    'Piano Based (no overlap)',
+                    'Custom'
+                ],
                 'mode_descriptions': {
-                    'proportional': 'Distribute LEDs evenly across all keys (default)',
-                    'fixed': 'Assign fixed number of LEDs per key',
-                    'custom': 'Use custom distribution configuration'
+                    'Piano Based (with overlap)': 'LEDs at key boundaries are shared for smooth transitions (5-6 LEDs per key)',
+                    'Piano Based (no overlap)': 'Tight allocation without LED sharing (3-4 LEDs per key)',
+                    'Custom': 'Use custom distribution configuration'
                 },
-                'fixed_leds_per_key': fixed_leds,
+                'allow_led_sharing': allow_led_sharing,
                 'timestamp': datetime.utcnow().isoformat()
             }), 200
         
         elif request.method == 'POST':
             # Set new distribution mode
             data = request.get_json() or {}
-            new_mode = data.get('mode', '').lower()
-            fixed_leds = data.get('fixed_leds_per_key')
+            new_mode = data.get('mode', '').strip()
             apply_mapping = data.get('apply_mapping', False)
             
             # Validate mode
-            valid_modes = ['proportional', 'fixed', 'custom']
+            valid_modes = ['Piano Based (with overlap)', 'Piano Based (no overlap)', 'Custom']
             if new_mode not in valid_modes:
                 return jsonify({
                     'error': f"Invalid distribution mode '{new_mode}'",
@@ -1141,67 +1149,65 @@ def distribution_mode():
                     'message': 'Distribution mode not changed'
                 }), 400
             
-            # Save distribution mode
-            settings_service.set_setting('calibration', 'distribution_mode', new_mode)
-            logger.info(f"Distribution mode changed to: {new_mode}")
+            # Map mode to allow_led_sharing parameter
+            if new_mode == 'Piano Based (with overlap)':
+                allow_led_sharing = True
+            elif new_mode == 'Piano Based (no overlap)':
+                allow_led_sharing = False
+            else:  # Custom
+                allow_led_sharing = True  # Default to with overlap for custom
             
-            # Handle fixed mode settings
-            if new_mode == 'fixed' and fixed_leds is not None:
-                try:
-                    fixed_leds = int(fixed_leds)
-                    if fixed_leds < 1 or fixed_leds > 10:
-                        return jsonify({
-                            'error': f"fixed_leds_per_key must be between 1 and 10, got {fixed_leds}",
-                            'message': 'Setting not applied'
-                        }), 400
-                    
-                    settings_service.set_setting('calibration', 'fixed_leds_per_key', fixed_leds)
-                    logger.info(f"Fixed LEDs per key set to: {fixed_leds}")
-                except (ValueError, TypeError):
-                    return jsonify({
-                        'error': f"fixed_leds_per_key must be an integer",
-                        'message': 'Setting not applied'
-                    }), 400
+            # Save distribution mode and LED sharing setting
+            settings_service.set_setting('calibration', 'distribution_mode', new_mode)
+            settings_service.set_setting('calibration', 'allow_led_sharing', allow_led_sharing)
+            logger.info(f"Distribution mode changed to: {new_mode} (allow_led_sharing={allow_led_sharing})")
             
             response = {
                 'message': f'Distribution mode changed to: {new_mode}',
                 'distribution_mode': new_mode,
+                'allow_led_sharing': allow_led_sharing,
                 'timestamp': datetime.utcnow().isoformat()
             }
             
             # If apply_mapping is true, regenerate the mapping with new mode
             if apply_mapping:
                 try:
+                    from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+                    
                     piano_size = settings_service.get_setting('piano', 'size', '88-key')
-                    led_count = settings_service.get_setting('led', 'led_count', 246)
-                    base_offset = settings_service.get_setting('calibration', 'mapping_base_offset', 0)
+                    start_led = settings_service.get_setting('calibration', 'start_led', 4)
+                    end_led = settings_service.get_setting('calibration', 'end_led', 249)
+                    leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 200)
                     
-                    # Get leds_per_key if in fixed mode
-                    leds_per_key = None
-                    if new_mode == 'fixed':
-                        leds_per_key = settings_service.get_setting('calibration', 'fixed_leds_per_key', 3)
-                    
-                    # Generate new mapping
-                    new_mapping = generate_auto_key_mapping(
-                        piano_size,
-                        led_count,
-                        leds_per_key=leds_per_key,
-                        mapping_base_offset=base_offset,
-                        distribution_mode=new_mode
+                    # Generate new mapping using advanced algorithm
+                    allocation_result = calculate_per_key_led_allocation(
+                        leds_per_meter=leds_per_meter,
+                        start_led=start_led,
+                        end_led=end_led,
+                        piano_size=piano_size,
+                        allow_led_sharing=allow_led_sharing
                     )
                     
-                    logger.info(f"New mapping generated with {len(new_mapping)} keys using {new_mode} mode")
-                    
-                    response['mapping_regenerated'] = True
-                    response['mapping_stats'] = {
-                        'total_keys_mapped': len(new_mapping),
-                        'piano_size': piano_size,
-                        'distribution_mode': new_mode,
-                        'base_offset': base_offset
-                    }
+                    if allocation_result.get('success'):
+                        stats = allocation_result.get('led_allocation_stats', {})
+                        logger.info(f"New mapping generated with {stats.get('total_key_count', 0)} keys using {new_mode} mode")
+                        
+                        response['mapping_regenerated'] = True
+                        response['mapping_stats'] = {
+                            'total_keys_mapped': stats.get('total_key_count', 0),
+                            'total_leds_used': stats.get('total_led_count', 0),
+                            'avg_leds_per_key': stats.get('avg_leds_per_key', 0),
+                            'distribution': stats.get('leds_per_key_distribution', {}),
+                            'piano_size': piano_size,
+                            'distribution_mode': new_mode,
+                            'allow_led_sharing': allow_led_sharing
+                        }
+                    else:
+                        logger.warning(f"Mapping generation returned success=false")
+                        response['warning'] = 'Mapping generation completed with warnings'
                     
                 except Exception as e:
-                    logger.error(f"Error regenerating mapping: {e}")
+                    logger.error(f"Error regenerating mapping: {e}", exc_info=True)
                     response['warning'] = f"Mapping regeneration failed: {str(e)}"
             
             return jsonify(response), 200

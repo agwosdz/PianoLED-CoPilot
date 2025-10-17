@@ -433,8 +433,12 @@
       
       if (response.ok) {
         const data = await response.json();
-        distributionMode = data.current_mode || 'proportional';
-        availableDistributionModes = data.available_modes || ['proportional', 'fixed', 'custom'];
+        distributionMode = data.current_mode || 'Piano Based (with overlap)';
+        availableDistributionModes = data.available_modes || [
+          'Piano Based (with overlap)',
+          'Piano Based (no overlap)',
+          'Custom'
+        ];
         console.log('[Distribution] Current mode:', distributionMode, 'Available:', availableDistributionModes);
       } else {
         console.warn('[Distribution] Failed to load distribution mode');
@@ -504,7 +508,7 @@
           class="mode-select"
         >
           {#each availableDistributionModes as mode}
-            <option value={mode}>{mode.charAt(0).toUpperCase() + mode.slice(1)}</option>
+            <option value={mode}>{mode}</option>
           {/each}
         </select>
       </div>
