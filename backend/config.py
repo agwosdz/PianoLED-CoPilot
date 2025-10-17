@@ -1210,7 +1210,7 @@ PIANO_WIDTHS_MM = {
     "49-key": 35 * WHITE_KEY_WIDTH_MM + 34 * KEY_GAP_MM,
     "61-key": 44 * WHITE_KEY_WIDTH_MM + 43 * KEY_GAP_MM,
     "76-key": 54 * WHITE_KEY_WIDTH_MM + 53 * KEY_GAP_MM,
-    "88-key": 52 * WHITE_KEY_WIDTH_MM + 51 * KEY_GAP_MM,
+    "88-key": 1225.0,  # 88 keys × 13.92mm per key (total piano width)
 }
 
 

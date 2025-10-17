@@ -1385,3 +1385,150 @@ def get_mapping_quality_recommendations():
             'message': f'Failed to calculate mapping quality: {str(e)}',
             'timestamp': datetime.now().isoformat()
         }), 500
+
+
+@calibration_bp.route('/advanced-mapping', methods=['GET', 'POST'])
+def get_advanced_mapping_allocation():
+    """
+    Get per-key LED allocation based on physical positioning.
+    
+    This endpoint supports TWO MODES:
+    1. WITH LED SHARING (default): Smooth transitions, 5-6 LEDs per key
+    2. WITHOUT LED SHARING: Tight allocation, 3-4 LEDs per key
+    
+    Query parameters (GET) or JSON body (POST):
+        - leds_per_meter: LED strip density (60, 72, 100, 120, 144, 160, 180, 200)
+        - start_led: First LED index (default from settings)
+        - end_led: Last LED index (default from settings)
+        - piano_size: Piano size (default "88-key")
+        - allow_led_sharing: bool, true for smooth transitions, false for tight allocation (default true)
+    
+    Returns:
+        {
+            "success": bool,
+            "error": None or error message,
+            "key_led_mapping": {
+                0: [4, 5, 6, 7],      # Key 0 (A0) gets LEDs
+                1: [7, 8, 9, 10],     # Key 1 (A#0) gets LEDs (with sharing: LED 7 shared with Key 0)
+                ...
+            },
+            "led_allocation_stats": {
+                "avg_leds_per_key": 3.78,
+                "min_leds_per_key": 3,
+                "max_leds_per_key": 4,
+                "total_key_count": 88,
+                "total_led_count": 246,
+                "leds_per_key_distribution": {
+                    3: 19,    # 19 keys get 3 LEDs
+                    4: 69     # 69 keys get 4 LEDs
+                }
+            },
+            "allow_led_sharing": bool (which mode was used),
+            "warnings": [...],
+            "improvements": [...],
+            "timestamp": "2025-10-17T..."
+        }
+    """
+    try:
+        settings_service = get_settings_service()
+        
+        # Get parameters
+        if request.method == 'POST':
+            data = request.get_json() or {}
+        else:
+            data = request.args.to_dict()
+        
+        # Extract parameters with defaults
+        leds_per_meter = int(data.get('leds_per_meter', 
+                                     settings_service.get_setting('led', 'leds_per_meter', 200)))
+        start_led = int(data.get('start_led',
+                                settings_service.get_setting('led', 'start_led', 4)))
+        end_led = int(data.get('end_led',
+                              settings_service.get_setting('led', 'end_led', 249)))
+        piano_size = data.get('piano_size', '88-key')
+        allow_led_sharing = data.get('allow_led_sharing', 'true').lower() == 'true'
+        
+        # Validate inputs
+        if not isinstance(leds_per_meter, int) or leds_per_meter <= 0:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'leds_per_meter must be a positive integer',
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        if not isinstance(start_led, int) or not isinstance(end_led, int):
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'start_led and end_led must be integers',
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        # Import the advanced mapping function
+        from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+        
+        # Calculate per-key allocation
+        allocation_result = calculate_per_key_led_allocation(
+            leds_per_meter=leds_per_meter,
+            start_led=start_led,
+            end_led=end_led,
+            piano_size=piano_size,
+            allow_led_sharing=allow_led_sharing
+        )
+        
+        if not allocation_result['success']:
+            logger.warning(f"Advanced mapping failed: {allocation_result.get('error', 'Unknown error')}")
+            return jsonify({
+                'error': 'Mapping Failed',
+                'message': allocation_result.get('error', 'Could not create advanced LED allocation'),
+                'warnings': allocation_result.get('warnings', []),
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        # Build response
+        response = {
+            'success': True,
+            'error': None,
+            'key_led_mapping': allocation_result['key_led_mapping'],
+            'led_allocation_stats': allocation_result['led_allocation_stats'],
+            'warnings': allocation_result.get('warnings', []),
+            'improvements': allocation_result.get('improvements', []),
+            'parameters': {
+                'leds_per_meter': leds_per_meter,
+                'start_led': start_led,
+                'end_led': end_led,
+                'piano_size': piano_size,
+                'led_count': end_led - start_led + 1
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        logger.info(f"Advanced mapping calculated: "
+                   f"leds_per_meter={leds_per_meter}, "
+                   f"avg_leds_per_key={allocation_result['led_allocation_stats']['avg_leds_per_key']:.2f}, "
+                   f"min={allocation_result['led_allocation_stats']['min_leds_per_key']}, "
+                   f"max={allocation_result['led_allocation_stats']['max_leds_per_key']}")
+        
+        return jsonify(response), 200
+        
+    except ImportError as e:
+        logger.error(f"Failed to import advanced mapping module: {e}")
+        return jsonify({
+            'error': 'Not Implemented',
+            'message': 'Advanced mapping module not available',
+            'timestamp': datetime.now().isoformat()
+        }), 501
+    except ValueError as e:
+        logger.error(f"Invalid parameter value: {e}")
+        return jsonify({
+            'error': 'Bad Request',
+            'message': f'Invalid parameter: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 400
+    except Exception as e:
+        logger.error(f"Error calculating advanced mapping: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': f'Failed to calculate advanced mapping: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
