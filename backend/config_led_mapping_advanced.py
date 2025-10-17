@@ -138,12 +138,13 @@ def calculate_per_key_led_allocation(
         led_to_key = {}
         
         for key_idx in range(total_keys):
-            # Calculate key center and span
+            # Calculate key center and span in piano coordinates
             key_center_mm = first_key_center_mm + (key_idx * key_width_mm)
             key_start_mm = key_center_mm - (key_width_mm / 2.0)
             key_end_mm = key_center_mm + (key_width_mm / 2.0)
             
-            # Convert piano position to LED coordinate space
+            # Convert piano position to LED coordinate space using scale_factor
+            # This maps piano coordinates (0-1273mm) to LED space
             key_start_led_pos = key_start_mm / scale_factor if scale_factor > 0 else 0
             key_end_led_pos = key_end_mm / scale_factor if scale_factor > 0 else 0
             
@@ -151,13 +152,13 @@ def calculate_per_key_led_allocation(
             for led_offset in range(start_led - start_led, end_led - start_led + 1):
                 led_idx = start_led + led_offset
                 if led_idx not in led_to_key:  # Only assign if not already assigned
-                    # Calculate LED midpoint in piano coordinate space
-                    # led_offset is relative (0 = start_led), but we need absolute LED position for the calculation
-                    led_midpoint_led_pos = led_idx  # Use absolute LED index, not relative offset
-                    led_midpoint_mm = led_midpoint_led_pos * led_spacing_mm
+                    # Calculate LED position in the same coordinate space as key positions
+                    # LED position relative to start_led, converted to coordinate space
+                    led_relative_offset = led_idx - start_led
+                    led_midpoint_pos = led_relative_offset * led_spacing_mm / scale_factor if scale_factor > 0 else 0
                     
                     # Check if this LED's midpoint falls within this key's range
-                    if key_start_mm <= led_midpoint_mm < key_end_mm:
+                    if key_start_led_pos <= led_midpoint_pos < key_end_led_pos:
                         led_to_key[led_idx] = key_idx
         
         # Now build the key_led_mapping from the led_to_key assignment
