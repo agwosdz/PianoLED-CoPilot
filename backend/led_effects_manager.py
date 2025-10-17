@@ -316,9 +316,8 @@ class LEDEffectsManager:
                 # Create smooth gradient that sweeps through like a musical scale
                 # Animate LEDs within the animation range (full strip for startup)
                 for i in range(animation_start, animation_end + 1):
-                    # Calculate position in the sweep cycle relative to visible range
-                    relative_pos = (i - animation_start) / visible_led_count
-                    wave_phase = (relative_pos + (step / sweep_steps)) * 2 * math.pi
+                    # Calculate position in the sweep cycle
+                    wave_phase = ((i / self.led_count) + (step / sweep_steps)) * 2 * math.pi
                     
                     # Use sine waves to create smooth, musical gradient
                     r = int(127.5 + 127.5 * math.sin(wave_phase))
