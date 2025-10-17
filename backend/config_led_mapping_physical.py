@@ -389,11 +389,13 @@ class LEDPhysicalPlacement:
             led = led_placements[led_idx]
             
             # Check if LED meets threshold criteria on both sides
-            # LED is included if:
-            #   led.start_mm <= exposed_start + overhang_threshold_mm (not too far left)
-            #   AND led.end_mm >= exposed_end - overhang_threshold_mm (not too far right)
-            if led.start_mm <= exposed_start + overhang_threshold_mm and \
-               led.end_mm >= exposed_end - overhang_threshold_mm:
+            # LED is included if overhang on BOTH sides doesn't exceed threshold:
+            #   (exposed_start - led.start_mm) <= overhang_threshold_mm (overhang on left)
+            #   AND (led.end_mm - exposed_end) <= overhang_threshold_mm (overhang on right)
+            left_overhang = exposed_start - led.start_mm
+            right_overhang = led.end_mm - exposed_end
+            
+            if left_overhang <= overhang_threshold_mm and right_overhang <= overhang_threshold_mm:
                 filtered_leds.append(led_idx)
 
         # If no LEDs pass filter, return zeros
