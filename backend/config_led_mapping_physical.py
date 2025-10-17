@@ -609,46 +609,54 @@ class PhysicalMappingAnalyzer:
         total_consistency = 0.0
         total_overhang_left = 0.0
         total_overhang_right = 0.0
-
         for key_idx in range(88):
             key_geom = key_geometries[key_idx]
-            led_indices = key_led_mapping.get(key_idx, [])
+            # Get absolute LED indices from mapping
+            abs_led_indices = key_led_mapping.get(key_idx, [])
+            # Convert to relative indices for calculations
+            rel_led_indices = [idx - start_led for idx in abs_led_indices if start_led <= idx <= end_led]
 
-            # Calculate metrics
+            # Calculate metrics using relative indices
             symmetry_score = self.symmetry.calculate_symmetry_score(
-                key_geom, led_indices, led_placements
+                key_geom, rel_led_indices, led_placements
             )
             symmetry_label = self.symmetry.get_symmetry_label(symmetry_score)
 
             consistency_score, consistency_label = (
-                self.symmetry.analyze_coverage_consistency(key_geom, led_indices, led_placements)
+                self.symmetry.analyze_coverage_consistency(key_geom, rel_led_indices, led_placements)
             )
 
             left_overhang, right_overhang = self.led_placement.calculate_overhang(
-                key_geom, led_indices, led_placements
+                key_geom, rel_led_indices, led_placements
             )
 
             coverage_amount = self.led_placement.calculate_coverage_amount(
-                key_geom, led_indices, led_placements
+                key_geom, rel_led_indices, led_placements
             )
 
             # Calculate LED gaps and detail information (matching piano.py output)
+            # Use absolute indices for output detail
             led_details = []
-            if led_indices:
-                for i, led_idx in enumerate(led_indices):
-                    if led_idx in led_placements:
-                        led_placement = led_placements[led_idx]
+            if abs_led_indices:
+                for i, abs_idx in enumerate(abs_led_indices):
+                    # Convert to relative for lookup
+                    rel_idx = abs_idx - start_led
+                    if rel_idx in led_placements:
+                        led_placement = led_placements[rel_idx]
                         led_detail = {
-                            "led_index": led_idx,
+                            "led_index": abs_idx,  # Output absolute index
                             "center_mm": round(led_placement.center_mm, 2),
                             "start_mm": round(led_placement.start_mm, 2),
                             "end_mm": round(led_placement.end_mm, 2),
                         }
                         # Add gap info from previous LED
-                        if i > 0 and led_indices[i-1] in led_placements:
-                            prev_led = led_placements[led_indices[i-1]]
-                            gap = led_placement.start_mm - prev_led.end_mm
-                            led_detail["gap_from_previous_mm"] = round(gap, 2)
+                        if i > 0:
+                            prev_abs_idx = abs_led_indices[i-1]
+                            prev_rel_idx = prev_abs_idx - start_led
+                            if prev_rel_idx in led_placements:
+                                prev_led = led_placements[prev_rel_idx]
+                                gap = led_placement.start_mm - prev_led.end_mm
+                                led_detail["gap_from_previous_mm"] = round(gap, 2)
                         led_details.append(led_detail)
 
             # Neighbor analysis
@@ -657,32 +665,32 @@ class PhysicalMappingAnalyzer:
             
             # Analyze with previous key
             if key_idx > 0:
-                prev_indices = set(key_led_mapping.get(key_idx - 1, []))
-                curr_indices = set(led_indices)
-                shared = prev_indices.intersection(curr_indices)
+                prev_abs_indices = set(key_led_mapping.get(key_idx - 1, []))
+                curr_abs_indices = set(abs_led_indices)
+                shared = prev_abs_indices.intersection(curr_abs_indices)
                 neighbor_prev = {
                     "key_index": key_idx - 1,
                     "shared_leds": sorted(list(shared)),
                     "consecutive": False
                 }
                 # Check if consecutive
-                if prev_indices and curr_indices:
-                    if max(prev_indices) + 1 == min(curr_indices):
+                if prev_abs_indices and curr_abs_indices:
+                    if max(prev_abs_indices) + 1 == min(curr_abs_indices):
                         neighbor_prev["consecutive"] = True
 
             # Analyze with next key
             if key_idx < 87:
-                curr_indices = set(led_indices)
-                next_indices = set(key_led_mapping.get(key_idx + 1, []))
-                shared = curr_indices.intersection(next_indices)
+                curr_abs_indices = set(abs_led_indices)
+                next_abs_indices = set(key_led_mapping.get(key_idx + 1, []))
+                shared = curr_abs_indices.intersection(next_abs_indices)
                 neighbor_next = {
                     "key_index": key_idx + 1,
                     "shared_leds": sorted(list(shared)),
                     "consecutive": False
                 }
                 # Check if consecutive
-                if curr_indices and next_indices:
-                    if max(curr_indices) + 1 == min(next_indices):
+                if curr_abs_indices and next_abs_indices:
+                    if max(curr_abs_indices) + 1 == min(next_abs_indices):
                         neighbor_next["consecutive"] = True
 
             # Build analysis record
@@ -699,8 +707,8 @@ class PhysicalMappingAnalyzer:
                     "end": round(getattr(key_geom, '_exposed_end', key_geom.end_mm), 2),
                     "center": round(getattr(key_geom, '_exposed_center', key_geom.center_mm), 2)
                 },
-                "led_indices": led_indices,
-                "led_count": len(led_indices),
+                "led_indices": abs_led_indices,  # Output absolute indices
+                "led_count": len(abs_led_indices),
                 "led_details": led_details,
                 "coverage_mm": round(coverage_amount, 2),
                 "key_width_mm": round(key_geom.width_mm, 2),
