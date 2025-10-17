@@ -742,12 +742,14 @@ class SettingsService:
     
     def _get_data_type(self, value: Any) -> str:
         """Get the data type string for a value."""
-        if isinstance(value, str):
+        # CRITICAL: Check bool BEFORE int/float because bool is a subclass of int in Python
+        # This prevents booleans from being stored with data_type='number'
+        if isinstance(value, bool):
+            return 'boolean'
+        elif isinstance(value, str):
             return 'string'
         elif isinstance(value, (int, float)):
             return 'number'
-        elif isinstance(value, bool):
-            return 'boolean'
         elif isinstance(value, list):
             return 'array'
         else:
