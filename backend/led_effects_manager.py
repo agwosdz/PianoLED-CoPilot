@@ -289,12 +289,13 @@ class LEDEffectsManager:
                     
                     # Only light LEDs within the animation range
                     if animation_start <= i <= animation_end and distance_from_wave < cascade_width:
-                        # Bright blue gradient for the cascade
+                        # Bright cyan-to-blue gradient for the cascade
                         brightness = 1.0 - (distance_from_wave / cascade_width)
                         
-                        # Pure blue cascade
-                        r = int(0)
-                        g = int(0)
+                        # Gradient: Bright cyan -> blue
+                        hue_factor = distance_from_wave / cascade_width
+                        r = int(0 * brightness)
+                        g = int(255 * brightness * (1 - hue_factor * 0.5))
                         b = int(255 * brightness)
                         
                         self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
