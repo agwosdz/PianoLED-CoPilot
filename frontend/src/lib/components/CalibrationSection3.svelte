@@ -132,6 +132,11 @@
           await updateLedMapping();
           pianoKeys = generatePianoKeys();
           console.log('[Physics] Mapping regenerated with new parameters');
+        } else {
+          // Even without regenerating mapping, refresh the visual representation
+          // to reflect parameter changes in the piano key display
+          pianoKeys = generatePianoKeys();
+          console.log('[Physics] Visual representation refreshed');
         }
         console.log('[Physics] Parameters saved successfully');
       } else {

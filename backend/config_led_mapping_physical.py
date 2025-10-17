@@ -390,12 +390,13 @@ class LEDPhysicalPlacement:
             
             # Check if LED meets threshold criteria on both sides
             # LED is included if overhang on BOTH sides doesn't exceed threshold:
-            #   (exposed_start - led.start_mm) <= overhang_threshold_mm (overhang on left)
-            #   AND (led.end_mm - exposed_end) <= overhang_threshold_mm (overhang on right)
-            left_overhang = exposed_start - led.start_mm
-            right_overhang = led.end_mm - exposed_end
+            #   abs(exposed_start - led.start_mm) <= overhang_threshold_mm (overhang on left)
+            #   AND abs(led.end_mm - exposed_end) <= overhang_threshold_mm (overhang on right)
+            # Negative values (LED inset from edge) are acceptable; positive values (LED extends beyond edge) count as overhang
+            left_overhang = exposed_start - led.start_mm  # Positive = LED extends left beyond exposed edge
+            right_overhang = led.end_mm - exposed_end    # Positive = LED extends right beyond exposed edge
             
-            if left_overhang <= overhang_threshold_mm and right_overhang <= overhang_threshold_mm:
+            if abs(left_overhang) <= overhang_threshold_mm and abs(right_overhang) <= overhang_threshold_mm:
                 filtered_leds.append(led_idx)
 
         # If no LEDs pass filter, return zeros
