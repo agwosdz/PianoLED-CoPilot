@@ -273,7 +273,7 @@ class LEDPhysicalPlacement:
         self,
         led_density: float = 200.0,  # LEDs per meter
         led_physical_width: float = 3.5,  # mm
-        led_strip_offset: float = 1.75,  # mm (half width, offset from start)
+        led_strip_offset: Optional[float] = None,  # mm (defaults to led_physical_width / 2)
     ):
         """
         Initialize LED physical placement calculator.
@@ -282,37 +282,51 @@ class LEDPhysicalPlacement:
             led_density: Number of LEDs per meter
             led_physical_width: Physical width of each LED in mm
             led_strip_offset: Physical offset of LED center from strip edge in mm
+                            (defaults to led_physical_width / 2)
         """
         self.led_density = led_density
         self.led_spacing_mm = 1000.0 / led_density
         self.led_physical_width = led_physical_width
-        self.led_strip_offset = led_strip_offset
+        # Default offset is half the LED width (center of LED)
+        self.led_strip_offset = led_strip_offset if led_strip_offset is not None else (led_physical_width / 2)
 
     def calculate_led_placements(
         self,
         led_count: int,
         strip_start_mm: float = 0.0,
+        start_led: int = 0,
+        end_led: Optional[int] = None,
     ) -> Dict[int, LEDPlacement]:
         """
-        Calculate physical placement of all LEDs on the strip.
+        Calculate physical placement of LEDs in a usable range.
+
+        Uses relative indices (0 to range_size-1) for positioning calculation,
+        then maps back to actual LED indices for the dictionary keys.
 
         Args:
-            led_count: Total number of LEDs on strip
+            led_count: Total number of LEDs on strip (for validation)
             strip_start_mm: Physical start position of LED strip in mm
+            start_led: First LED index in usable range (default 0)
+            end_led: Last LED index in usable range (default led_count-1)
 
         Returns:
-            Dictionary mapping led_index to LEDPlacement
+            Dictionary mapping actual led_index to LEDPlacement
         """
+        if end_led is None:
+            end_led = led_count - 1
+
         placements = {}
 
-        for led_idx in range(led_count):
-            # Position of LED center
-            led_center = strip_start_mm + (led_idx * self.led_spacing_mm) + self.led_strip_offset
+        # Calculate placements for usable range using relative indices
+        for relative_idx in range(start_led, end_led + 1):
+            # Position of LED center using relative index for spacing
+            # This ensures LEDs 0 to range_size-1 have correct spacing
+            led_center = strip_start_mm + (relative_idx * self.led_spacing_mm) + self.led_strip_offset
             led_start = led_center - (self.led_physical_width / 2)
             led_end = led_center + (self.led_physical_width / 2)
 
-            placements[led_idx] = LEDPlacement(
-                led_index=led_idx,
+            placements[relative_idx] = LEDPlacement(
+                led_index=relative_idx,
                 start_mm=led_start,
                 end_mm=led_end,
                 center_mm=led_center,
@@ -567,15 +581,14 @@ class PhysicalMappingAnalyzer:
             white_key_gap=self.white_key_gap,
         )
 
-        # Calculate LED placements for ALL LEDs (so we have position info for all)
-        all_led_placements = self.led_placement.calculate_led_placements(led_count)
-        
-        # Filter to only usable range for analysis
-        led_placements = {
-            idx: placement 
-            for idx, placement in all_led_placements.items() 
-            if start_led <= idx <= end_led
-        }
+        # Calculate LED placements for usable range only
+        # Using relative indices (0 to range_size-1) ensures correct spacing formula
+        led_placements = self.led_placement.calculate_led_placements(
+            led_count=led_count,
+            strip_start_mm=0.0,
+            start_led=start_led,
+            end_led=end_led,
+        )
 
         # Analyze each key
         per_key_analysis = {}
