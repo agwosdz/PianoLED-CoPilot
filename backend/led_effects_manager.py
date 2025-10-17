@@ -312,40 +312,22 @@ class LEDEffectsManager:
                 for i in range(self.led_count):
                     self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
-                # Create smooth rainbow gradient that sweeps through
-                # Animate LEDs within the animation range
+                # Create smooth gradient that sweeps through like a musical scale
+                # Animate LEDs within the animation range (full strip for startup)
                 for i in range(animation_start, animation_end + 1):
                     # Calculate position in the sweep cycle relative to visible range
                     relative_pos = (i - animation_start) / visible_led_count
+                    wave_phase = (relative_pos + (step / sweep_steps)) * 2 * math.pi
                     
-                    # Create a rainbow hue that sweeps across the strip
-                    # Hue normalized to 0.0-1.0 (0° to 360°)
-                    hue = ((relative_pos + step / sweep_steps) * 6) % 6
-                    
-                    # Simple HSV to RGB: S=1, V=1 (full saturation and value)
-                    c = 255  # chroma (max component)
-                    x_val = int(255 * (1 - abs(hue % 2 - 1)))  # second component
-                    
-                    if hue < 1:
-                        # Red to Yellow
-                        r, g, b = c, x_val, 0
-                    elif hue < 2:
-                        # Yellow to Green
-                        r, g, b = x_val, c, 0
-                    elif hue < 3:
-                        # Green to Cyan
-                        r, g, b = 0, c, x_val
-                    elif hue < 4:
-                        # Cyan to Blue
-                        r, g, b = 0, x_val, c
-                    elif hue < 5:
-                        # Blue to Magenta
-                        r, g, b = x_val, 0, c
-                    else:
-                        # Magenta to Red
-                        r, g, b = c, 0, x_val
+                    # Use sine waves to create smooth, musical gradient
+                    r = int(127.5 + 127.5 * math.sin(wave_phase))
+                    g = int(127.5 + 127.5 * math.sin(wave_phase + 2 * math.pi / 3))
+                    b = int(127.5 + 127.5 * math.sin(wave_phase + 4 * math.pi / 3))
                     
                     self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
+                
+                self.led_controller.show()
+                time.sleep(sweep_delay)
                 
                 self.led_controller.show()
                 time.sleep(sweep_delay)
