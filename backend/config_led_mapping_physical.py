@@ -84,7 +84,7 @@ class PhysicalKeyGeometry:
     
     # Cut amounts for white keys (where black keys sit)
     CUT_A = 2.2
-    CUT_B = BLACK_KEY_WIDTH - CUT_A  # 11.5
+    CUT_B = BLACK_KEY_WIDTH - CUT_A - WHITE_KEY_GAP  # 10.5
     CUT_C = BLACK_KEY_WIDTH / 2  # 6.85
     
     # White key cut pattern by note name
@@ -229,20 +229,30 @@ class PhysicalKeyGeometry:
             geometries[key_idx]._exposed_center = (exposed_start + exposed_end) / 2
         
         # Step 3: Calculate BLACK key positions (between white keys)
-        # Black key start = exposed range end from previous white key + black gap (1.0mm)
+        # Black key start = exposed range end from previous white key + gap (1.0mm)
         # Black key end = black key start + black key width
-        white_key_idx = 0
+        # For black keys: physical_range = exposed_range (no cuts apply to black keys)
+        
         for key_idx in range(88):
             key_type, _ = PhysicalKeyGeometry._get_key_info(key_idx)
             
             if key_type == 'B':
-                # Black key positioned between two white keys
-                if white_key_idx < len(white_key_positions) and white_key_idx + 1 < len(white_key_positions):
-                    prev_white_info = white_key_positions[white_key_idx]
-                    prev_white_geo = geometries[prev_white_info['key_idx']]
+                # Find which white keys this black key sits between
+                # Count how many white keys come before this black key
+                white_key_count = 0
+                for i in range(key_idx):
+                    k_type, _ = PhysicalKeyGeometry._get_key_info(i)
+                    if k_type == 'W':
+                        white_key_count += 1
+                
+                # The black key sits between white_key_count-1 and white_key_count
+                # But we need the exposed_end of the previous white key
+                if white_key_count > 0 and white_key_count - 1 < len(white_key_positions):
+                    prev_white_geo = geometries[white_key_positions[white_key_count - 1]['key_idx']]
                     
-                    # Black key start = previous white key's exposed end + black gap (1.0mm)
-                    black_start = prev_white_geo._exposed_end + 1.0
+                    # Black key positioning
+                    # start = exposed_end of previous white key + gap
+                    black_start = prev_white_geo._exposed_end + white_key_gap
                     black_end = black_start + black_key_width
                     
                     geometries[key_idx] = KeyGeometry(
@@ -259,9 +269,6 @@ class PhysicalKeyGeometry:
                     geometries[key_idx]._exposed_start = black_start
                     geometries[key_idx]._exposed_end = black_end
                     geometries[key_idx]._exposed_center = (black_start + black_end) / 2
-            else:
-                # Track white key index for black key calculations
-                white_key_idx += 1
         
         return geometries
 
