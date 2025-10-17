@@ -35,13 +35,9 @@ app.config.setdefault('MAX_CONTENT_LENGTH', 1 * 1024 * 1024)
 # Enable CORS for all routes
 CORS(app)
 
-# Use eventlet async mode for WebSocket support (most compatible with production)
-try:
-    import eventlet
-    socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet', ping_timeout=60, ping_interval=25)
-except ImportError:
-    # Fallback to threading if eventlet not available
-    socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading', ping_timeout=60, ping_interval=25)
+# Use threading mode for WebSocket support (more stable than eventlet with Python 3.13)
+# Note: eventlet has compatibility issues with Python 3.13's SSL and some Raspberry Pi configurations
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading', ping_timeout=60, ping_interval=25)
 
 from backend.led_controller import LEDController
 from backend.led_effects_manager import LEDEffectsManager
