@@ -857,7 +857,7 @@ class SettingsService:
             led_count = int(self._get_default_value('led', 'led_count', 0))
 
         return {
-            'enabled': self.get_setting('led', 'enabled', self._get_default_value('led', 'enabled', False)),
+            'enabled': self.get_setting('led', 'enabled', self._get_default_value('led', 'enabled', True)),
             'led_count': led_count,
             'orientation': self.get_setting('led', 'led_orientation', self._get_default_value('led', 'led_orientation', 'normal')),
             'brightness': self.get_setting('led', 'brightness', self._get_default_value('led', 'brightness', 0.5)),
