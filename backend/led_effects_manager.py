@@ -289,13 +289,12 @@ class LEDEffectsManager:
                     
                     # Only light LEDs within the animation range
                     if animation_start <= i <= animation_end and distance_from_wave < cascade_width:
-                        # Bright cyan-to-blue gradient for the cascade
+                        # Bright blue gradient for the cascade
                         brightness = 1.0 - (distance_from_wave / cascade_width)
                         
-                        # Gradient: Bright cyan -> blue
-                        hue_factor = distance_from_wave / cascade_width
-                        r = int(0 * brightness)
-                        g = int(255 * brightness * (1 - hue_factor * 0.5))
+                        # Pure blue cascade
+                        r = int(0)
+                        g = int(0)
                         b = int(255 * brightness)
                         
                         self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
@@ -313,17 +312,48 @@ class LEDEffectsManager:
                 for i in range(self.led_count):
                     self.led_controller.turn_on_led(i, (0, 0, 0), auto_show=False)
                 
-                # Create smooth gradient that sweeps through like a musical scale
+                # Create smooth rainbow gradient that sweeps through
                 # Animate LEDs within the animation range
                 for i in range(animation_start, animation_end + 1):
                     # Calculate position in the sweep cycle relative to visible range
                     relative_pos = (i - animation_start) / visible_led_count
-                    wave_phase = (relative_pos + (step / sweep_steps)) * 2 * math.pi
                     
-                    # Use sine waves to create smooth, musical gradient
-                    r = int(127.5 + 127.5 * math.sin(wave_phase))
-                    g = int(127.5 + 127.5 * math.sin(wave_phase + 2 * math.pi / 3))
-                    b = int(127.5 + 127.5 * math.sin(wave_phase + 4 * math.pi / 3))
+                    # Create a rainbow hue that sweeps across the strip
+                    # Hue sweeps from 0 to 360 degrees as we go left to right + animation step
+                    hue = ((relative_pos + step / sweep_steps) * 360) % 360
+                    
+                    # Convert HSV to RGB for rainbow effect
+                    # Red (0°), Yellow (60°), Green (120°), Cyan (180°), Blue (240°), Magenta (300°)
+                    if hue < 60:
+                        # Red to Yellow
+                        r = 255
+                        g = int(255 * (hue / 60))
+                        b = 0
+                    elif hue < 120:
+                        # Yellow to Green
+                        r = int(255 * (1 - (hue - 60) / 60))
+                        g = 255
+                        b = 0
+                    elif hue < 180:
+                        # Green to Cyan
+                        r = 0
+                        g = 255
+                        b = int(255 * ((hue - 120) / 60))
+                    elif hue < 240:
+                        # Cyan to Blue
+                        r = 0
+                        g = int(255 * (1 - (hue - 180) / 60))
+                        b = 255
+                    elif hue < 300:
+                        # Blue to Magenta
+                        r = int(255 * ((hue - 240) / 60))
+                        g = 0
+                        b = 255
+                    else:
+                        # Magenta to Red
+                        r = 255
+                        g = 0
+                        b = int(255 * (1 - (hue - 300) / 60))
                     
                     self.led_controller.turn_on_led(i, (r, g, b), auto_show=False)
                 
