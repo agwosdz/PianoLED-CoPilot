@@ -1722,6 +1722,7 @@ def get_physical_analysis():
             'quality_metrics': analysis_result['quality_metrics'],
             'overall_quality': analysis_result['overall_quality'],
             'parameters_used': analysis_result['parameters_used'],
+            'led_range': analysis_result['led_range'],
             'mapping_info': {
                 'piano_size': piano_size,
                 'start_led': start_led,

@@ -64,10 +64,14 @@ class PhysicalKeyGeometry:
     """
     Calculates exact physical geometry of piano keys and LED placements.
     
+    This implementation exactly mirrors piano.py's geometry calculations,
+    including white key cuts (where black keys sit) and exposed top ranges.
+    
     Uses standard piano dimensions:
     - White keys: 23.5mm wide
     - Black keys: 13.7mm wide, positioned between white keys
     - Key gap: 1.0mm spacing between white keys
+    - White key cuts: Different amounts cut from each white key depending on black key position
     """
 
     # Standard piano dimensions (millimeters)
@@ -76,19 +80,62 @@ class PhysicalKeyGeometry:
     WHITE_KEY_GAP = 1.0
     WHITE_KEY_HEIGHT = 107.0
     BLACK_KEY_HEIGHT = 60.0
-    BLACK_KEY_DEPTH = 20.0  # Offset from white key surface
+    BLACK_KEY_DEPTH = 20.0
+    
+    # Cut amounts for white keys (where black keys sit)
+    CUT_A = 2.2
+    CUT_B = BLACK_KEY_WIDTH - CUT_A  # 11.5
+    CUT_C = BLACK_KEY_WIDTH / 2  # 6.85
+    
+    # White key cut pattern by note name
+    # Format: {'note': [left_cut_type, right_cut_type], ...}
+    # None = no cut, 'A' = 2.2mm, 'B' = 11.5mm, 'C' = 6.85mm
+    WHITE_KEY_CUTS = {
+        'C': [None, 'B'],
+        'D': ['A', 'A'],
+        'E': ['B', None],
+        'F': [None, 'B'],
+        'G': ['A', 'C'],
+        'A': ['C', 'A'],
+        'B': ['B', None]
+    }
 
-    # Total 88 keys: 52 white, 36 black
-    # Black keys at positions: 1,2,4,5,6,8,9,11,12,13, ... (repeating pattern except first/last)
-    BLACK_KEY_INDICES = [
-        1, 2, 4, 5, 6, 8, 9, 11, 12, 13,
-        15, 16, 18, 19, 20, 22, 23, 25, 26, 27,
-        29, 30, 32, 33, 34, 36, 37, 39, 40, 41,
-        43, 44, 46, 47, 48, 50, 51, 53, 54, 55,
-        57, 58, 60, 61, 62, 64, 65, 67, 68, 69,
-        71, 72, 74, 75, 76, 78, 79, 81, 82, 83,
-        85, 86
+    # Piano note sequence (repeating pattern)
+    NOTE_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+    
+    # KEY_MAP: type and note name for each of 88 keys
+    KEY_MAP = [
+        ('W', 'A'), ('B', 'A'), ('W', 'B'),
+        ('W', 'C'), ('B', 'C'), ('W', 'D'), ('B', 'D'), ('W', 'E'), ('W', 'F'),
+        ('B', 'F'), ('W', 'G'), ('B', 'G'),
+        # This pattern repeats for octaves 1-7
     ]
+    
+    @staticmethod
+    def _get_key_info(key_idx: int) -> Tuple[str, str]:
+        """Get key type and note name for a key index (0-87)."""
+        # This is the exact 88-key pattern from piano.py's KEY_MAP
+        key_pattern = [
+            ('W', 'A'), ('B', 'A'), ('W', 'B'),
+            ('W', 'C'), ('B', 'C'), ('W', 'D'), ('B', 'D'), ('W', 'E'), ('W', 'F'),
+            ('B', 'F'), ('W', 'G'), ('B', 'G'),
+        ]
+        # Pattern repeats for 7 octaves
+        pattern_len = len(key_pattern)
+        octave = key_idx // pattern_len
+        pos_in_octave = key_idx % pattern_len
+        
+        # For the last octave (84-87), we only have A, B, C8
+        if key_idx >= 84:
+            final_keys = [
+                (84, ('W', 'A')), (85, ('B', 'A')), (86, ('W', 'B')),
+                (87, ('W', 'C')),
+            ]
+            for idx, info in final_keys:
+                if key_idx == idx:
+                    return info
+        
+        return key_pattern[pos_in_octave]
 
     @staticmethod
     def calculate_all_key_geometries(
@@ -97,7 +144,12 @@ class PhysicalKeyGeometry:
         white_key_gap: float = WHITE_KEY_GAP,
     ) -> Dict[int, KeyGeometry]:
         """
-        Calculate exact geometry for all 88 piano keys.
+        Calculate exact geometry for all 88 piano keys, including exposed top ranges.
+        
+        This exactly mirrors the piano.py algorithm which:
+        1. Calculates base positions for all white keys
+        2. Calculates exposed (visible) ranges accounting for black key cuts
+        3. Calculates black key positions between white keys
 
         Args:
             white_key_width: Width of white keys in mm
@@ -105,77 +157,121 @@ class PhysicalKeyGeometry:
             white_key_gap: Gap between white keys in mm
 
         Returns:
-            Dictionary mapping key_index to KeyGeometry
+            Dictionary mapping key_index to KeyGeometry with exposed ranges
         """
         geometries = {}
-        current_pos = 0.0  # Position in mm from piano start
-
-        white_key_count = 0
+        
+        # Step 1: Calculate BASE positions for all 88 keys
+        white_positions = []  # Track white key positions
+        current_pos = 0.0
+        
         for key_idx in range(88):
-            is_black = key_idx in PhysicalKeyGeometry.BLACK_KEY_INDICES
-
-            if is_black:
-                # Black key is positioned between two white keys
-                # Center it at a specific offset relative to the gap
-                white_idx = white_key_count if key_idx > 0 else 0
-
-                # Position of left white key boundary
-                left_white_start = white_idx * (white_key_width + white_key_gap)
-                left_white_end = left_white_start + white_key_width
-
-                # Position of right white key boundary
-                right_white_start = (white_idx + 1) * (white_key_width + white_key_gap)
-
-                # Black key center is between the white keys
-                black_center = (left_white_end + right_white_start) / 2
-                black_start = black_center - (black_key_width / 2)
-                black_end = black_center + (black_key_width / 2)
-
-                geometries[key_idx] = KeyGeometry(
-                    key_index=key_idx,
-                    key_type=KeyType.BLACK,
-                    start_mm=black_start,
-                    end_mm=black_end,
-                    center_mm=black_center,
-                    width_mm=black_key_width,
-                    height_mm=PhysicalKeyGeometry.BLACK_KEY_HEIGHT,
-                    depth_mm=PhysicalKeyGeometry.BLACK_KEY_DEPTH,
-                    between_white_keys=(white_idx, white_idx + 1)
-                )
+            key_type, note_name = PhysicalKeyGeometry._get_key_info(key_idx)
+            
+            if key_type == 'W':
+                # White key: store base position
+                base_start = current_pos
+                base_end = current_pos + white_key_width
+                white_positions.append({
+                    'key_idx': key_idx,
+                    'base_start': base_start,
+                    'base_end': base_end,
+                    'note': note_name
+                })
+                current_pos += white_key_width + white_key_gap
+        
+        # Step 2: Calculate EXPOSED ranges for white keys (accounting for cuts)
+        for white_pos in white_positions:
+            key_idx = white_pos['key_idx']
+            base_start = white_pos['base_start']
+            base_end = white_pos['base_end']
+            note_name = white_pos['note']
+            
+            # Start with full base range
+            exposed_start = base_start
+            exposed_end = base_end
+            
+            # Apply left cut (previous key's right black key)
+            if key_idx > 0:
+                prev_key_type, _ = PhysicalKeyGeometry._get_key_info(key_idx - 1)
+                if prev_key_type == 'B':
+                    # Previous key is black, apply left cut
+                    cut_spec = PhysicalKeyGeometry.WHITE_KEY_CUTS[note_name][0]
+                    if cut_spec:
+                        cut_value = {
+                            'A': PhysicalKeyGeometry.CUT_A,
+                            'B': PhysicalKeyGeometry.CUT_B,
+                            'C': PhysicalKeyGeometry.CUT_C
+                        }[cut_spec]
+                        exposed_start = base_start + cut_value
+            
+            # Apply right cut (next key's left black key)
+            if key_idx < 87:
+                next_key_type, _ = PhysicalKeyGeometry._get_key_info(key_idx + 1)
+                if next_key_type == 'B':
+                    # Next key is black, apply right cut
+                    cut_spec = PhysicalKeyGeometry.WHITE_KEY_CUTS[note_name][1]
+                    if cut_spec:
+                        cut_value = {
+                            'A': PhysicalKeyGeometry.CUT_A,
+                            'B': PhysicalKeyGeometry.CUT_B,
+                            'C': PhysicalKeyGeometry.CUT_C
+                        }[cut_spec]
+                        exposed_end = base_end - cut_value
+            
+            geometries[key_idx] = KeyGeometry(
+                key_index=key_idx,
+                key_type=KeyType.WHITE,
+                start_mm=base_start,
+                end_mm=base_end,
+                center_mm=(base_start + base_end) / 2,
+                width_mm=white_key_width,
+                height_mm=PhysicalKeyGeometry.WHITE_KEY_HEIGHT,
+                depth_mm=None
+            )
+            # Store exposed range in a way we can access later
+            geometries[key_idx]._exposed_start = exposed_start
+            geometries[key_idx]._exposed_end = exposed_end
+            geometries[key_idx]._exposed_center = (exposed_start + exposed_end) / 2
+        
+        # Step 3: Calculate BLACK key positions (between white keys)
+        white_key_idx = 0
+        for key_idx in range(88):
+            key_type, _ = PhysicalKeyGeometry._get_key_info(key_idx)
+            
+            if key_type == 'B':
+                # Black key: positioned between white_key_idx and white_key_idx+1
+                if white_key_idx < len(white_positions) and white_key_idx + 1 < len(white_positions):
+                    prev_white = white_positions[white_key_idx]
+                    next_white = white_positions[white_key_idx + 1]
+                    
+                    # Black key top surface: between exposed ends/starts
+                    exposed_start = prev_white['base_start'] + PhysicalKeyGeometry.CUT_A if white_key_idx > 0 else prev_white['base_start']
+                    exposed_end_prev = prev_white['base_end'] - PhysicalKeyGeometry.CUT_B
+                    exposed_start_next = next_white['base_start'] + PhysicalKeyGeometry.CUT_A
+                    
+                    # Black key spans from end of previous white key cut to start of next white key cut
+                    black_exposed_start = exposed_end_prev
+                    black_exposed_end = exposed_start_next
+                    
+                    geometries[key_idx] = KeyGeometry(
+                        key_index=key_idx,
+                        key_type=KeyType.BLACK,
+                        start_mm=black_exposed_start,
+                        end_mm=black_exposed_end,
+                        center_mm=(black_exposed_start + black_exposed_end) / 2,
+                        width_mm=black_key_width,
+                        height_mm=PhysicalKeyGeometry.BLACK_KEY_HEIGHT,
+                        depth_mm=PhysicalKeyGeometry.BLACK_KEY_DEPTH
+                    )
+                    # For black keys, exposed range IS the full range (no cuts)
+                    geometries[key_idx]._exposed_start = black_exposed_start
+                    geometries[key_idx]._exposed_end = black_exposed_end
+                    geometries[key_idx]._exposed_center = (black_exposed_start + black_exposed_end) / 2
             else:
-                # White key
-                white_start = white_key_count * (white_key_width + white_key_gap)
-                white_end = white_start + white_key_width
-                white_center = (white_start + white_end) / 2
-
-                geometries[key_idx] = KeyGeometry(
-                    key_index=key_idx,
-                    key_type=KeyType.WHITE,
-                    start_mm=white_start,
-                    end_mm=white_end,
-                    center_mm=white_center,
-                    width_mm=white_key_width,
-                    height_mm=PhysicalKeyGeometry.WHITE_KEY_HEIGHT,
-                    depth_mm=None,
-                    between_white_keys=None
-                )
-                white_key_count += 1
-
+                white_key_idx += 1
+        
         return geometries
-
-    @staticmethod
-    def get_black_key_neighbors(key_idx: int) -> Tuple[Optional[int], Optional[int]]:
-        """Get the white keys neighboring a black key."""
-        if key_idx not in PhysicalKeyGeometry.BLACK_KEY_INDICES:
-            return None, None
-
-        # Count how many white keys come before this key
-        white_count = 0
-        for idx in range(key_idx):
-            if idx not in PhysicalKeyGeometry.BLACK_KEY_INDICES:
-                white_count += 1
-
-        return white_count, white_count + 1
 
 
 class LEDPhysicalPlacement:
@@ -589,10 +685,15 @@ class PhysicalMappingAnalyzer:
             per_key_analysis[key_idx] = {
                 "key_number": key_idx + 1,
                 "key_type": key_geom.key_type.value,
-                "physical_range_mm": {
+                "physical_front_range_mm": {
                     "start": round(key_geom.start_mm, 2),
                     "end": round(key_geom.end_mm, 2),
                     "center": round(key_geom.center_mm, 2)
+                },
+                "exposed_top_range_mm": {
+                    "start": round(getattr(key_geom, '_exposed_start', key_geom.start_mm), 2),
+                    "end": round(getattr(key_geom, '_exposed_end', key_geom.end_mm), 2),
+                    "center": round(getattr(key_geom, '_exposed_center', key_geom.center_mm), 2)
                 },
                 "led_indices": led_indices,
                 "led_count": len(led_indices),
