@@ -584,11 +584,13 @@ class PhysicalMappingAnalyzer:
 
         # Calculate LED placements for usable range only
         # Using relative indices (0 to range_size-1) ensures correct spacing formula
+        # We calculate with indices starting at 0 for proper spacing calculation
+        usable_led_count = (end_led - start_led) + 1
         led_placements = self.led_placement.calculate_led_placements(
-            led_count=led_count,
+            led_count=usable_led_count,  # Number of LEDs in usable range
             strip_start_mm=0.0,
-            start_led=start_led,
-            end_led=end_led,
+            start_led=0,  # Start from relative 0
+            end_led=usable_led_count - 1,  # End at relative count-1
         )
 
         # Analyze each key
