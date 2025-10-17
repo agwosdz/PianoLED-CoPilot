@@ -327,6 +327,8 @@ class SettingsService:
             ('led', 'ledCount'): ('led', 'led_count'),
             ('led', 'LED_COUNT'): ('led', 'led_count'),
             ('led', 'count'): ('led', 'led_count'),
+            ('led', 'gpioPin'): ('led', 'gpio_pin'),  # Frontend sends camelCase, clean it up
+            ('gpio', 'gpioPin'): ('gpio', 'gpio_pin'),
         }
 
         try:
