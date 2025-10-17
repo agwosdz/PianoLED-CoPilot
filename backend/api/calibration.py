@@ -562,65 +562,61 @@ def import_calibration():
 
 @calibration_bp.route('/key-led-mapping', methods=['GET'])
 def get_key_led_mapping():
-    """Get the key-to-LED mapping with calibration offsets applied"""
+    """Get the key-to-LED mapping with calibration offsets applied, respecting distribution mode"""
     logger.info("GET /key-led-mapping endpoint called")
     
     try:
         settings_service = get_settings_service()
         
         # Get piano settings
-        piano_size = settings_service.get_setting('piano', 'size', 88)
+        piano_size = settings_service.get_setting('piano', 'size', '88-key')
         led_count = settings_service.get_setting('led', 'led_count', 300)
-        led_orientation = settings_service.get_setting('led', 'led_orientation', 'normal')
-        mapping_base_offset = settings_service.get_setting('led', 'mapping_base_offset', 0)
-        leds_per_key = settings_service.get_setting('led', 'leds_per_key', None)
         
         # Get calibration settings (LED range)
-        start_led = settings_service.get_setting('calibration', 'start_led', 0)
-        end_led = settings_service.get_setting('calibration', 'end_led', led_count - 1)
+        start_led = settings_service.get_setting('calibration', 'start_led', 4)
+        end_led = settings_service.get_setting('calibration', 'end_led', 249)
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
         
-        # Calculate available LED count based on the configured range
-        # This ensures the mapping is distributed across the available range only
-        available_led_range = end_led - start_led + 1
+        # Get distribution mode settings
+        leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 200)
+        allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
+        distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
         
-        logger.info(f"Generating mapping: piano_size={piano_size}, "
-                   f"total_leds={led_count}, led_range=[{start_led}, {end_led}] (available={available_led_range}), "
-                   f"mapping_base_offset={mapping_base_offset}")
+        logger.info(f"Generating mapping with distribution mode '{distribution_mode}' (allow_led_sharing={allow_led_sharing}), "
+                   f"LEDs: {start_led}-{end_led}, piano_size={piano_size}")
         
-        # Generate the base auto key-to-LED mapping using the available range
-        # The mapping will use indices from 0 to available_led_range-1, which we then offset by start_led
-        auto_mapping = generate_auto_key_mapping(
+        # Use the advanced algorithm that respects distribution mode
+        from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+        
+        allocation_result = calculate_per_key_led_allocation(
+            leds_per_meter=leds_per_meter,
+            start_led=start_led,
+            end_led=end_led,
             piano_size=piano_size,
-            led_count=available_led_range,  # Use only the available range
-            led_orientation=led_orientation,
-            leds_per_key=leds_per_key,
-            mapping_base_offset=0  # Base offset applied after range adjustment
+            allow_led_sharing=allow_led_sharing
         )
         
-        # If start_led > 0, shift all indices in the mapping by start_led
-        if start_led > 0:
-            shifted_mapping = {}
-            for midi_note, led_indices in auto_mapping.items():
-                if isinstance(led_indices, list):
-                    shifted_mapping[midi_note] = [idx + start_led for idx in led_indices]
-                else:
-                    shifted_mapping[midi_note] = led_indices + start_led
-            auto_mapping = shifted_mapping
-            logger.info(f"Shifted mapping indices by start_led offset of {start_led}")
+        if not allocation_result.get('success'):
+            logger.warning(f"LED allocation returned success=false: {allocation_result}")
+            return jsonify({
+                'error': 'Mapping generation failed',
+                'message': allocation_result.get('message', 'Unknown error')
+            }), 400
         
-        logger.info(f"Applying key offsets: start_led={start_led}, end_led={end_led}, key_offsets count={len(key_offsets)}")
+        # Extract the base mapping (without offsets yet)
+        base_mapping = allocation_result.get('led_allocation_data', {})
+        logger.info(f"Base mapping generated with {len(base_mapping)} keys")
         
-        # Apply calibration offsets to the mapping
+        # Apply calibration key offsets to the mapping
         final_mapping = apply_calibration_offsets_to_mapping(
-            mapping=auto_mapping,
+            mapping=base_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=key_offsets,
-            led_count=led_count  # Pass total LED count for validation
+            led_count=led_count
         )
         
-        logger.info(f"Successfully generated mapping with {len(final_mapping)} keys mapped")
+        logger.info(f"Successfully generated mapping with {len(final_mapping)} keys (distribution_mode='{distribution_mode}')")
         
         return jsonify({
             'mapping': final_mapping,
@@ -629,6 +625,8 @@ def get_key_led_mapping():
             'start_led': start_led,
             'end_led': end_led,
             'key_offsets_count': len(key_offsets),
+            'distribution_mode': distribution_mode,
+            'allow_led_sharing': allow_led_sharing,
             'timestamp': datetime.now().isoformat()
         }), 200
         

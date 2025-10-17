@@ -450,6 +450,8 @@
 
   async function changeDistributionMode(newMode: string): Promise<void> {
     try {
+      console.log('[Distribution] Changing mode to:', newMode);
+      
       const response = await fetch('/api/calibration/distribution-mode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -460,10 +462,15 @@
         const result = await response.json();
         distributionMode = newMode;
         console.log('[Distribution] Mode changed to:', newMode);
-        // Refresh mapping after mode change
+        console.log('[Distribution] Mapping stats:', result.mapping_stats);
+        
+        // Immediately update LED mapping to reflect new distribution
         await updateLedMapping();
-        // Reload validation results
-        await loadValidationResults();
+        
+        // Update piano key visualization
+        pianoKeys = generatePianoKeys();
+        
+        console.log('[Distribution] Visualization updated with new distribution');
       } else {
         console.warn('[Distribution] Failed to change distribution mode');
       }
@@ -477,8 +484,8 @@
     await loadColorsFromSettings();
     updatePianoSize();
     await loadDistributionMode();
-    await loadValidationResults();
-    await loadMappingInfo();
+    // Mapping is now auto-updated when distribution mode changes
+    // No need to load validation/mapping info on mount
   });
 </script>
 
@@ -490,15 +497,7 @@
 
   <div class="visualization-container">
     <div class="visualization-controls">
-      <button
-        class={`btn-show-layout ${layoutVisualizationActive ? 'active' : ''}`}
-        on:click={toggleLayoutVisualization}
-        title={layoutVisualizationActive ? 'Turn off layout visualization' : 'Show layout with all white/black keys mapped to LEDs'}
-      >
-        {layoutVisualizationActive ? '✓ Layout Visible' : '🎹 Show Layout'}
-      </button>
-
-      <!-- Distribution Mode Selector -->
+      <!-- Distribution Mode Selector (PRIMARY CONTROL) -->
       <div class="distribution-mode-selector">
         <label for="dist-mode">Distribution Mode:</label>
         <select
@@ -506,6 +505,7 @@
           value={distributionMode}
           on:change={(e) => changeDistributionMode(e.currentTarget.value)}
           class="mode-select"
+          title="Select how LEDs are distributed across piano keys"
         >
           {#each availableDistributionModes as mode}
             <option value={mode}>{mode}</option>
@@ -513,23 +513,13 @@
         </select>
       </div>
 
-      <!-- Validation and Mapping Info Buttons -->
+      <!-- Layout Visualization Button -->
       <button
-        class="btn-info"
-        on:click={loadValidationResults}
-        disabled={isLoadingValidation}
-        title="Load validation results for current mapping"
+        class={`btn-show-layout ${layoutVisualizationActive ? 'active' : ''}`}
+        on:click={toggleLayoutVisualization}
+        title={layoutVisualizationActive ? 'Turn off layout visualization' : 'Show layout with all white/black keys mapped to LEDs'}
       >
-        {isLoadingValidation ? '⏳ Validating...' : '✓ Validate Mapping'}
-      </button>
-      
-      <button
-        class="btn-info"
-        on:click={loadMappingInfo}
-        disabled={isLoadingMappingInfo}
-        title="Load mapping statistics"
-      >
-        {isLoadingMappingInfo ? '⏳ Loading...' : '📊 Mapping Info'}
+        {layoutVisualizationActive ? '✓ Layout Visible' : '🎹 Show Layout'}
       </button>
     </div>
     
@@ -610,107 +600,6 @@
       </div>
     {/if}
   </div>
-
-  <!-- Validation Results Panel -->
-  {#if showValidationPanel && validationResults}
-    <div class="validation-panel">
-      <div class="panel-header">
-        <h4>Validation Results</h4>
-        <button class="btn-close" on:click={() => (showValidationPanel = false)}>×</button>
-      </div>
-      <div class="panel-content">
-        {#if validationResults.warnings && validationResults.warnings.length > 0}
-          <div class="warnings-section">
-            <h5>⚠️ Warnings:</h5>
-            <ul>
-              {#each validationResults.warnings as warning}
-                <li>{warning}</li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-        
-        {#if validationResults.recommendations && validationResults.recommendations.length > 0}
-          <div class="recommendations-section">
-            <h5>💡 Recommendations:</h5>
-            <ul>
-              {#each validationResults.recommendations as rec}
-                <li>{rec}</li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-        
-        {#if validationResults.statistics}
-          <div class="stats-section">
-            <h5>📈 Statistics:</h5>
-            <div class="stats-grid">
-              {#each Object.entries(validationResults.statistics) as [key, value]}
-                <div class="stat-item">
-                  <span class="stat-label">{key.replace(/_/g, ' ')}:</span>
-                  <span class="stat-value">{value}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Mapping Info Panel -->
-  {#if showMappingInfo && mappingInfo}
-    <div class="mapping-info-panel">
-      <div class="panel-header">
-        <h4>Mapping Information</h4>
-        <button class="btn-close" on:click={() => (showMappingInfo = false)}>×</button>
-      </div>
-      <div class="panel-content">
-        {#if mappingInfo.statistics}
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">Total Keys Mapped:</span>
-              <span class="info-value">{mappingInfo.statistics.total_keys_mapped}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Piano Size:</span>
-              <span class="info-value">{mappingInfo.statistics.piano_size}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">LED Count:</span>
-              <span class="info-value">{mappingInfo.statistics.led_count}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Distribution Mode:</span>
-              <span class="info-value">{mappingInfo.statistics.distribution_mode}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Base Offset:</span>
-              <span class="info-value">{mappingInfo.statistics.base_offset || 0}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Efficiency:</span>
-              <span class="info-value">{((mappingInfo.statistics.total_keys_mapped / (mappingInfo.statistics.piano_size || 88)) * 100).toFixed(1)}%</span>
-            </div>
-          </div>
-        {/if}
-        
-        {#if mappingInfo.distribution_breakdown}
-          <div class="distribution-section">
-            <h5>LED Distribution Breakdown:</h5>
-            <div class="distribution-items">
-              {#each Object.entries(mappingInfo.distribution_breakdown) as [ledCount, keyCount]}
-                <div class="distribution-item">
-                  <span class="dist-label">{ledCount} LEDs:</span>
-                  <span class="dist-value">{keyCount} keys</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
 
   <!-- Legend -->
   <div class="legend">
