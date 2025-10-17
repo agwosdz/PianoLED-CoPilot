@@ -375,7 +375,10 @@ class LEDPhysicalPlacement:
         led_placements: Dict[int, LEDPlacement],
     ) -> Tuple[float, float]:
         """
-        Calculate how much LED coverage overhangs beyond key edges.
+        Calculate how much LED coverage overhangs beyond key exposed edges.
+        
+        Uses exposed_start and exposed_end (the visible playing surface)
+        rather than the full key range which includes cuts for black keys.
 
         Args:
             key_geometry: Geometry of the key
@@ -388,12 +391,16 @@ class LEDPhysicalPlacement:
         if not led_indices:
             return 0.0, 0.0
 
+        # Get exposed range from key geometry
+        exposed_start = getattr(key_geometry, '_exposed_start', key_geometry.start_mm)
+        exposed_end = getattr(key_geometry, '_exposed_end', key_geometry.end_mm)
+
         # Get min and max LED positions
         led_start = min(led_placements[idx].start_mm for idx in led_indices)
         led_end = max(led_placements[idx].end_mm for idx in led_indices)
 
-        left_overhang = max(0, key_geometry.start_mm - led_start)
-        right_overhang = max(0, led_end - key_geometry.end_mm)
+        left_overhang = max(0, exposed_start - led_start)
+        right_overhang = max(0, led_end - exposed_end)
 
         return left_overhang, right_overhang
 
@@ -403,15 +410,24 @@ class LEDPhysicalPlacement:
         led_indices: List[int],
         led_placements: Dict[int, LEDPlacement],
     ) -> float:
-        """Calculate how much of the key is covered by LEDs (in mm)."""
+        """
+        Calculate how much of the key exposed surface is covered by LEDs (in mm).
+        
+        Uses exposed_start and exposed_end (the visible playing surface)
+        rather than the full key range which includes cuts for black keys.
+        """
         if not led_indices:
             return 0.0
+
+        # Get exposed range from key geometry
+        exposed_start = getattr(key_geometry, '_exposed_start', key_geometry.start_mm)
+        exposed_end = getattr(key_geometry, '_exposed_end', key_geometry.end_mm)
 
         total_coverage = 0.0
         for led_idx in led_indices:
             led = led_placements[led_idx]
-            overlap_start = max(key_geometry.start_mm, led.start_mm)
-            overlap_end = min(key_geometry.end_mm, led.end_mm)
+            overlap_start = max(exposed_start, led.start_mm)
+            overlap_end = min(exposed_end, led.end_mm)
             total_coverage += max(0, overlap_end - overlap_start)
 
         return total_coverage
@@ -431,8 +447,10 @@ class SymmetryAnalysis:
         """
         Calculate symmetry score for LED placement on a key (0.0 to 1.0).
 
-        1.0 = perfectly centered
+        1.0 = perfectly centered relative to exposed surface
         0.0 = completely off-center
+        
+        Uses exposed center and width for comparison, not the full key range.
 
         Args:
             key_geometry: Geometry of the key
@@ -445,20 +463,26 @@ class SymmetryAnalysis:
         if not led_indices:
             return 0.0
 
+        # Get exposed range (visible playing surface)
+        exposed_start = getattr(key_geometry, '_exposed_start', key_geometry.start_mm)
+        exposed_end = getattr(key_geometry, '_exposed_end', key_geometry.end_mm)
+        exposed_center = (exposed_start + exposed_end) / 2
+        exposed_width = exposed_end - exposed_start
+
         # Calculate center of LED assignment
         led_positions = [led_placements[idx].center_mm for idx in led_indices]
         led_center = sum(led_positions) / len(led_positions)
 
-        # Calculate deviation from key center
-        deviation = abs(led_center - key_geometry.center_mm)
-        key_half_width = key_geometry.width_mm / 2
+        # Calculate deviation from exposed center
+        deviation = abs(led_center - exposed_center)
+        exposed_half_width = exposed_width / 2
 
         # Normalize to 0-1 score
         # 0 deviation = 1.0, full width deviation = 0.0
-        if deviation >= key_half_width:
+        if deviation >= exposed_half_width:
             symmetry = 0.0
         else:
-            symmetry = 1.0 - (deviation / key_half_width)
+            symmetry = 1.0 - (deviation / exposed_half_width)
 
         return round(symmetry, 4)
 
