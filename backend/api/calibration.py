@@ -1172,6 +1172,7 @@ def distribution_mode():
     Available modes:
     - "Piano Based (with overlap)": Allow LED sharing at boundaries (5-6 LEDs/key, smooth transitions)
     - "Piano Based (no overlap)": Tight allocation without LED sharing (3-4 LEDs/key, individual control)
+    - "Physics-Based LED Detection": Uses physical geometry to detect LED-to-key overlap (adaptive, threshold-based)
     - "Custom": Reserved for future custom distribution patterns
     """
     try:
@@ -1181,20 +1182,24 @@ def distribution_mode():
             # Return current distribution mode and options
             current_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
             allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
+            overhang_threshold = settings_service.get_setting('calibration', 'overhang_threshold_mm', 1.5)
             
             return jsonify({
                 'current_mode': current_mode,
                 'available_modes': [
                     'Piano Based (with overlap)',
                     'Piano Based (no overlap)',
+                    'Physics-Based LED Detection',
                     'Custom'
                 ],
                 'mode_descriptions': {
                     'Piano Based (with overlap)': 'LEDs at key boundaries are shared for smooth transitions (5-6 LEDs per key)',
                     'Piano Based (no overlap)': 'Tight allocation without LED sharing (3-4 LEDs per key)',
+                    'Physics-Based LED Detection': 'Uses physical geometry and overhang thresholds for adaptive allocation (best accuracy)',
                     'Custom': 'Use custom distribution configuration'
                 },
                 'allow_led_sharing': allow_led_sharing,
+                'overhang_threshold_mm': overhang_threshold,
                 'timestamp': datetime.utcnow().isoformat()
             }), 200
         
@@ -1203,9 +1208,10 @@ def distribution_mode():
             data = request.get_json() or {}
             new_mode = data.get('mode', '').strip()
             apply_mapping = data.get('apply_mapping', False)
+            overhang_threshold = data.get('overhang_threshold_mm', 1.5)
             
             # Validate mode
-            valid_modes = ['Piano Based (with overlap)', 'Piano Based (no overlap)', 'Custom']
+            valid_modes = ['Piano Based (with overlap)', 'Piano Based (no overlap)', 'Physics-Based LED Detection', 'Custom']
             if new_mode not in valid_modes:
                 return jsonify({
                     'error': f"Invalid distribution mode '{new_mode}'",
@@ -1213,44 +1219,74 @@ def distribution_mode():
                     'message': 'Distribution mode not changed'
                 }), 400
             
-            # Map mode to allow_led_sharing parameter
+            # Map mode to parameters
             if new_mode == 'Piano Based (with overlap)':
                 allow_led_sharing = True
+                use_physics_based = False
             elif new_mode == 'Piano Based (no overlap)':
                 allow_led_sharing = False
+                use_physics_based = False
+            elif new_mode == 'Physics-Based LED Detection':
+                allow_led_sharing = False  # Physics-based doesn't share
+                use_physics_based = True
             else:  # Custom
                 allow_led_sharing = True  # Default to with overlap for custom
+                use_physics_based = False
             
-            # Save distribution mode and LED sharing setting
+            # Save distribution mode and settings
             settings_service.set_setting('calibration', 'distribution_mode', new_mode)
             settings_service.set_setting('calibration', 'allow_led_sharing', allow_led_sharing)
-            logger.info(f"Distribution mode changed to: {new_mode} (allow_led_sharing={allow_led_sharing})")
+            if new_mode == 'Physics-Based LED Detection':
+                settings_service.set_setting('calibration', 'overhang_threshold_mm', overhang_threshold)
+            logger.info(f"Distribution mode changed to: {new_mode} (allow_led_sharing={allow_led_sharing}, "
+                       f"physics_based={use_physics_based}, threshold={overhang_threshold}mm)")
             
             response = {
                 'message': f'Distribution mode changed to: {new_mode}',
                 'distribution_mode': new_mode,
                 'allow_led_sharing': allow_led_sharing,
+                'overhang_threshold_mm': overhang_threshold if use_physics_based else None,
                 'timestamp': datetime.utcnow().isoformat()
             }
             
             # If apply_mapping is true, regenerate the mapping with new mode
             if apply_mapping:
                 try:
-                    from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
-                    
-                    piano_size = settings_service.get_setting('piano', 'size', '88-key')
-                    start_led = settings_service.get_setting('calibration', 'start_led', 4)
-                    end_led = settings_service.get_setting('calibration', 'end_led', 249)
-                    leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 200)
-                    
-                    # Generate new mapping using advanced algorithm
-                    allocation_result = calculate_per_key_led_allocation(
-                        leds_per_meter=leds_per_meter,
-                        start_led=start_led,
-                        end_led=end_led,
-                        piano_size=piano_size,
-                        allow_led_sharing=allow_led_sharing
-                    )
+                    if use_physics_based:
+                        # Use physics-based allocation
+                        from backend.services.physics_led_allocation import PhysicsBasedAllocationService
+                        
+                        start_led = settings_service.get_setting('calibration', 'start_led', 4)
+                        end_led = settings_service.get_setting('calibration', 'end_led', 249)
+                        led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
+                        led_width = settings_service.get_setting('led', 'physical_width_mm', 3.5)
+                        
+                        service = PhysicsBasedAllocationService(
+                            led_density=led_density,
+                            led_physical_width=led_width,
+                            overhang_threshold_mm=overhang_threshold
+                        )
+                        
+                        allocation_result = service.allocate_leds(
+                            start_led=start_led,
+                            end_led=end_led
+                        )
+                    else:
+                        # Use traditional Piano Based algorithm
+                        from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+                        
+                        piano_size = settings_service.get_setting('piano', 'size', '88-key')
+                        start_led = settings_service.get_setting('calibration', 'start_led', 4)
+                        end_led = settings_service.get_setting('calibration', 'end_led', 249)
+                        leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 200)
+                        
+                        allocation_result = calculate_per_key_led_allocation(
+                            leds_per_meter=leds_per_meter,
+                            start_led=start_led,
+                            end_led=end_led,
+                            piano_size=piano_size,
+                            allow_led_sharing=allow_led_sharing
+                        )
                     
                     if allocation_result.get('success'):
                         stats = allocation_result.get('led_allocation_stats', {})
@@ -1262,13 +1298,17 @@ def distribution_mode():
                             'total_leds_used': stats.get('total_led_count', 0),
                             'avg_leds_per_key': stats.get('avg_leds_per_key', 0),
                             'distribution': stats.get('leds_per_key_distribution', {}),
-                            'piano_size': piano_size,
                             'distribution_mode': new_mode,
                             'allow_led_sharing': allow_led_sharing
                         }
+                        
+                        # Add physics-specific stats if applicable
+                        if use_physics_based and 'quality_metrics' in allocation_result:
+                            response['mapping_stats']['quality_metrics'] = allocation_result['quality_metrics']
+                            response['mapping_stats']['overall_quality'] = allocation_result['overall_quality']
                     else:
                         logger.warning(f"Mapping generation returned success=false")
-                        response['warning'] = 'Mapping generation completed with warnings'
+                        response['warning'] = f"Mapping generation: {allocation_result.get('message', 'unknown issue')}"
                     
                 except Exception as e:
                     logger.error(f"Error regenerating mapping: {e}", exc_info=True)
