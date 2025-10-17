@@ -8,6 +8,7 @@ import os
 import json
 import logging
 from pathlib import Path
+from typing import Dict, Any, Optional, List
 from backend.logging_config import get_logger
 
 # Configure logging
@@ -1181,6 +1182,306 @@ def apply_performance_mode(config, mode_name):
     config.update(mode_settings)
     config["performance_mode"] = mode_name
     return config
+
+
+# ============================================================================
+# Piano Geometry & Physical-Distance-Based LED Mapping
+# ============================================================================
+
+# Physical constants for piano measurements (in mm)
+WHITE_KEY_WIDTH_MM = 23.5  # Standard acoustic piano white key width
+BLACK_KEY_WIDTH_MM = 13.5  # Standard acoustic piano black key width
+KEY_GAP_MM = 1.0           # Gap between keys at the base
+
+# Pre-calculated white key counts for each piano size
+WHITE_KEY_COUNTS = {
+    "25-key": 18,   # C3-C5
+    "37-key": 27,   # C2-C5
+    "49-key": 35,   # C2-C6
+    "61-key": 44,   # C2-C7
+    "76-key": 54,   # E1-G7
+    "88-key": 52,   # A0-C8
+}
+
+# Pre-calculated total piano widths (mm) including gaps
+PIANO_WIDTHS_MM = {
+    "25-key": 18 * WHITE_KEY_WIDTH_MM + 17 * KEY_GAP_MM,
+    "37-key": 27 * WHITE_KEY_WIDTH_MM + 26 * KEY_GAP_MM,
+    "49-key": 35 * WHITE_KEY_WIDTH_MM + 34 * KEY_GAP_MM,
+    "61-key": 44 * WHITE_KEY_WIDTH_MM + 43 * KEY_GAP_MM,
+    "76-key": 54 * WHITE_KEY_WIDTH_MM + 53 * KEY_GAP_MM,
+    "88-key": 52 * WHITE_KEY_WIDTH_MM + 51 * KEY_GAP_MM,
+}
+
+
+def count_white_keys_for_piano(piano_size: str) -> int:
+    """
+    Get the number of white keys for a given piano size.
+    
+    Args:
+        piano_size: Piano size (e.g., "88-key")
+    
+    Returns:
+        Number of white keys, or 0 for unknown sizes
+    """
+    return WHITE_KEY_COUNTS.get(piano_size, 0)
+
+
+def get_piano_width_mm(piano_size: str) -> float:
+    """
+    Get the physical width of the piano in millimeters (white keys + gaps).
+    
+    Args:
+        piano_size: Piano size (e.g., "88-key")
+    
+    Returns:
+        Width in mm, or 0 for unknown sizes
+    """
+    return PIANO_WIDTHS_MM.get(piano_size, 0)
+
+
+def calculate_physical_led_mapping(
+    leds_per_meter: int,
+    start_led: int,
+    end_led: int,
+    piano_size: str,
+    distribution_mode: str = "proportional"
+) -> Dict[str, Any]:
+    """
+    Calculate LED-to-key mapping parameters based on physical geometry.
+    
+    This algorithm maps physical distances:
+    - LED strip position (based on leds_per_meter and physical LED indices)
+    - Piano key positions (based on standard white key widths and gaps)
+    
+    By correlating these physical distances, we determine:
+    - Which LEDs should light up for which keys
+    - How many LEDs per key makes physical sense
+    - Quality metrics and warnings about the configuration
+    
+    Args:
+        leds_per_meter: LED strip density (60, 72, 100, 120, 144, 160, 180, 200)
+        start_led: Physical LED index where piano starts
+        end_led: Physical LED index where piano ends
+        piano_size: Piano size (e.g., "88-key")
+        distribution_mode: "proportional", "fixed", or "custom"
+    
+    Returns:
+        dict with:
+            - first_led: Logical offset for mapping (= start_led)
+            - led_count_usable: Number of LEDs in the range
+            - leds_per_key: Calculated LEDs per white key (float)
+            - leds_per_key_int: Integer LEDs per key (for fixed mode)
+            - white_key_count: Number of white keys on this piano
+            - piano_width_mm: Physical width of piano in mm
+            - led_spacing_mm: Distance between LEDs in mm
+            - led_coverage_mm: Total distance covered by LED range
+            - quality_score: 0-100 rating of the configuration
+            - quality_level: "poor", "ok", "good", "excellent"
+            - warnings: List of warning messages
+            - recommendations: List of suggestions
+            - metadata: Detailed metrics
+    """
+    from backend.logging_config import get_logger
+    logger = get_logger(__name__)
+    
+    result = {
+        "error": None,
+        "first_led": start_led,
+        "led_count_usable": 0,
+        "leds_per_key": 0.0,
+        "leds_per_key_int": 0,
+        "white_key_count": 0,
+        "piano_width_mm": 0,
+        "led_spacing_mm": 0,
+        "led_coverage_mm": 0,
+        "quality_score": 0,
+        "quality_level": "unknown",
+        "warnings": [],
+        "recommendations": [],
+        "metadata": {}
+    }
+    
+    # Step 1: Validate inputs
+    if leds_per_meter not in [60, 72, 100, 120, 144, 160, 180, 200]:
+        result["error"] = f"Invalid leds_per_meter: {leds_per_meter}. Must be one of [60, 72, 100, 120, 144, 160, 180, 200]"
+        result["warnings"].append(result["error"])
+        return result
+    
+    if start_led < 0 or end_led < 0:
+        result["error"] = "start_led and end_led must be non-negative"
+        result["warnings"].append(result["error"])
+        return result
+    
+    if end_led < start_led:
+        result["error"] = f"end_led ({end_led}) must be >= start_led ({start_led})"
+        result["warnings"].append(result["error"])
+        return result
+    
+    # Step 2: Get piano specs
+    white_key_count = count_white_keys_for_piano(piano_size)
+    piano_width_mm = get_piano_width_mm(piano_size)
+    
+    if white_key_count == 0:
+        result["error"] = f"Unknown piano size: {piano_size}"
+        result["warnings"].append(result["error"])
+        return result
+    
+    # Step 3: Calculate physical LED range and spacing
+    physical_led_range = end_led - start_led + 1
+    led_spacing_mm = 1000.0 / leds_per_meter  # mm between LEDs
+    led_coverage_mm = (physical_led_range - 1) * led_spacing_mm if physical_led_range > 1 else 0
+    
+    # Step 4: Calculate distance per white key
+    distance_per_white_key = piano_width_mm / white_key_count
+    
+    # Step 5: Calculate LEDs per white key (physical geometry based)
+    if led_spacing_mm > 0:
+        leds_per_white_key_physical = distance_per_white_key / led_spacing_mm
+    else:
+        leds_per_white_key_physical = 0
+    
+    # Also calculate proportional distribution (simpler)
+    leds_per_white_key_proportional = physical_led_range / white_key_count if white_key_count > 0 else 0
+    
+    # Use proportional as the primary metric (consistent with existing code)
+    leds_per_white_key = leds_per_white_key_proportional
+    leds_per_white_key_int = max(1, int(leds_per_white_key))
+    
+    # Step 6: Calculate quality score
+    quality_score = _calculate_led_mapping_quality(
+        leds_per_white_key,
+        physical_led_range,
+        white_key_count,
+        piano_width_mm,
+        led_coverage_mm
+    )
+    
+    # Step 7: Determine quality level and warnings
+    if quality_score >= 90:
+        quality_level = "excellent"
+    elif quality_score >= 70:
+        quality_level = "good"
+    elif quality_score >= 50:
+        quality_level = "ok"
+    else:
+        quality_level = "poor"
+    
+    # Generate warnings and recommendations
+    warnings = []
+    recommendations = []
+    
+    if leds_per_white_key < 1.0:
+        warnings.append(f"Undersaturated: Only {leds_per_white_key:.2f} LEDs per white key ({white_key_count} keys, {physical_led_range} LEDs)")
+        recommendations.append(f"Try using more LEDs from the strip or a denser LED strip (increase leds_per_meter)")
+        recommendations.append(f"Or reduce the piano size to map fewer keys")
+    elif leds_per_white_key < 2.0:
+        warnings.append(f"Low coverage: {leds_per_white_key:.2f} LEDs per white key - effects may appear sparse")
+    elif leds_per_white_key > 5.0:
+        warnings.append(f"Oversaturated: {leds_per_white_key:.2f} LEDs per white key - many unused LEDs")
+        recommendations.append(f"Consider using a less dense LED strip (lower leds_per_meter) or a larger piano")
+    
+    # Coverage ratio analysis
+    coverage_ratio = led_coverage_mm / piano_width_mm if piano_width_mm > 0 else 0
+    if coverage_ratio < 0.9:
+        warnings.append(f"LED strip coverage ({led_coverage_mm:.1f}mm) is less than piano width ({piano_width_mm:.1f}mm). Coverage ratio: {coverage_ratio:.2f}")
+        recommendations.append(f"Extend the calibration range to use more LEDs")
+    elif coverage_ratio > 1.5:
+        warnings.append(f"LED strip coverage ({led_coverage_mm:.1f}mm) significantly exceeds piano width ({piano_width_mm:.1f}mm). Coverage ratio: {coverage_ratio:.2f}")
+    
+    # Step 8: Build result
+    result = {
+        "error": None,
+        "first_led": start_led,
+        "led_count_usable": physical_led_range,
+        "leds_per_key": leds_per_white_key,
+        "leds_per_key_int": leds_per_white_key_int,
+        "white_key_count": white_key_count,
+        "piano_width_mm": piano_width_mm,
+        "led_spacing_mm": led_spacing_mm,
+        "led_coverage_mm": led_coverage_mm,
+        "quality_score": quality_score,
+        "quality_level": quality_level,
+        "warnings": warnings,
+        "recommendations": recommendations,
+        "metadata": {
+            "leds_per_meter": leds_per_meter,
+            "start_led": start_led,
+            "end_led": end_led,
+            "piano_size": piano_size,
+            "distribution_mode": distribution_mode,
+            "physical_led_range": physical_led_range,
+            "leds_per_white_key_physical": leds_per_white_key_physical,
+            "leds_per_white_key_proportional": leds_per_white_key_proportional,
+            "distance_per_white_key_mm": distance_per_white_key,
+            "coverage_ratio": coverage_ratio,
+            "piano_width_m": piano_width_mm / 1000.0,
+            "led_coverage_m": led_coverage_mm / 1000.0,
+        }
+    }
+    
+    logger.info(f"Physical LED mapping calculated: {piano_size} with {leds_per_meter} LEDs/m, "
+               f"LEDs {start_led}-{end_led} ({physical_led_range} total), "
+               f"{leds_per_white_key:.2f} LEDs/key, quality={quality_level} ({quality_score}/100)")
+    
+    return result
+
+
+def _calculate_led_mapping_quality(
+    leds_per_key: float,
+    physical_led_range: int,
+    white_key_count: int,
+    piano_width_mm: float,
+    led_coverage_mm: float
+) -> int:
+    """
+    Calculate a quality score (0-100) for the LED mapping configuration.
+    
+    Considers:
+    - Adequacy of LEDs per key
+    - Coverage of the piano width
+    - Utilization efficiency
+    """
+    score = 100
+    
+    # Factor 1: LEDs per key adequacy (target: 2-4 LEDs per key)
+    if leds_per_key < 1.0:
+        score -= 50  # Critically low
+    elif leds_per_key < 2.0:
+        score -= 20  # Low
+    elif leds_per_key <= 4.0:
+        score -= 0   # Ideal range
+    elif leds_per_key <= 6.0:
+        score -= 5   # Slightly high
+    else:
+        score -= 15  # Very high
+    
+    # Factor 2: Coverage ratio (target: 0.95-1.05)
+    coverage_ratio = led_coverage_mm / piano_width_mm if piano_width_mm > 0 else 0
+    if coverage_ratio < 0.8:
+        score -= 25
+    elif coverage_ratio < 0.95:
+        score -= 10
+    elif coverage_ratio <= 1.05:
+        score -= 0   # Perfect
+    elif coverage_ratio <= 1.2:
+        score -= 5
+    else:
+        score -= 15
+    
+    # Factor 3: Efficiency (how many keys can be mapped with available LEDs)
+    mappable_keys = physical_led_range / leds_per_key if leds_per_key > 0 else 0
+    efficiency = mappable_keys / white_key_count if white_key_count > 0 else 0
+    if efficiency < 0.5:
+        score -= 30
+    elif efficiency < 1.0:
+        score -= 10
+    elif efficiency <= 1.1:
+        score -= 0   # Good
+    else:
+        score -= 5
+    
+    return max(0, min(100, score))
 
 
 def validate_auto_mapping_config(piano_size, led_count, leds_per_key=None, base_offset=0):
