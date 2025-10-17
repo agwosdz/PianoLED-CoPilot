@@ -344,102 +344,88 @@ class LEDPhysicalPlacement:
 
         return placements
 
-    def find_overlapping_leds(
+    def analyze_led_coverage(
         self,
         key_geometry: KeyGeometry,
+        led_indices: List[int],
         led_placements: Dict[int, LEDPlacement],
         overhang_threshold_mm: float = 1.5,
-    ) -> List[int]:
+    ) -> Dict[str, Any]:
         """
-        Find all LEDs that physically overlap with a key.
-
-        Uses configurable overhang threshold to determine significant overlap.
+        Comprehensive analysis of LED coverage on a key using exposed surface.
+        
+        Single function that:
+        1. Filters LEDs to include only those meeting overhang threshold on both sides
+        2. Calculates how much LEDs extend beyond key exposed edges (left/right overhang)
+        3. Calculates actual coverage amount on the exposed surface
+        4. Returns all metrics in one call
+        
+        Uses exposed_start and exposed_end (the visible playing surface)
+        rather than the full key range which includes cuts for black keys.
 
         Args:
             key_geometry: Geometry of the key
+            led_indices: List of LED indices to analyze
             led_placements: Dictionary of all LED placements
             overhang_threshold_mm: Minimum overhang to count LED as assigned
 
         Returns:
-            List of LED indices that overlap with the key
+            Dictionary with keys:
+                - filtered_leds: List of LED indices meeting threshold criteria
+                - coverage_amount_mm: Total coverage on exposed surface
+                - overhang_left_mm: LED extension beyond left exposed edge
+                - overhang_right_mm: LED extension beyond right exposed edge
         """
-        overlapping = []
-
-        for led_idx, led_placement in led_placements.items():
-            # Calculate overlap between key and LED
-            overlap_start = max(key_geometry.start_mm, led_placement.start_mm)
-            overlap_end = min(key_geometry.end_mm, led_placement.end_mm)
-            overlap_amount = max(0, overlap_end - overlap_start)
-
-            # Check if overlap meets threshold
-            if overlap_amount >= overhang_threshold_mm:
-                overlapping.append(led_idx)
-
-        return overlapping
-
-    def calculate_overhang(
-        self,
-        key_geometry: KeyGeometry,
-        led_indices: List[int],
-        led_placements: Dict[int, LEDPlacement],
-    ) -> Tuple[float, float]:
-        """
-        Calculate how much LED coverage overhangs beyond key exposed edges.
-        
-        Uses exposed_start and exposed_end (the visible playing surface)
-        rather than the full key range which includes cuts for black keys.
-
-        Args:
-            key_geometry: Geometry of the key
-            led_indices: List of LED indices assigned to this key
-            led_placements: Dictionary of all LED placements
-
-        Returns:
-            Tuple of (left_overhang_mm, right_overhang_mm)
-        """
-        if not led_indices:
-            return 0.0, 0.0
-
         # Get exposed range from key geometry
         exposed_start = getattr(key_geometry, '_exposed_start', key_geometry.start_mm)
         exposed_end = getattr(key_geometry, '_exposed_end', key_geometry.end_mm)
 
-        # Get min and max LED positions
-        led_start = min(led_placements[idx].start_mm for idx in led_indices)
-        led_end = max(led_placements[idx].end_mm for idx in led_indices)
+        # Filter LEDs: include only if not too far beyond overhang threshold on EITHER side
+        filtered_leds = []
+        for led_idx in led_indices:
+            if led_idx not in led_placements:
+                continue
+            
+            led = led_placements[led_idx]
+            
+            # Check if LED meets threshold criteria on both sides
+            # LED is included if:
+            #   led.start_mm <= exposed_start + overhang_threshold_mm (not too far left)
+            #   AND led.end_mm >= exposed_end - overhang_threshold_mm (not too far right)
+            if led.start_mm <= exposed_start + overhang_threshold_mm and \
+               led.end_mm >= exposed_end - overhang_threshold_mm:
+                filtered_leds.append(led_idx)
 
+        # If no LEDs pass filter, return zeros
+        if not filtered_leds:
+            return {
+                "filtered_leds": [],
+                "coverage_amount_mm": 0.0,
+                "overhang_left_mm": 0.0,
+                "overhang_right_mm": 0.0,
+            }
+
+        # Calculate overhang (how much LEDs extend beyond exposed edges)
+        led_start = min(led_placements[idx].start_mm for idx in filtered_leds)
+        led_end = max(led_placements[idx].end_mm for idx in filtered_leds)
+        
         left_overhang = max(0, exposed_start - led_start)
         right_overhang = max(0, led_end - exposed_end)
 
-        return left_overhang, right_overhang
-
-    def calculate_coverage_amount(
-        self,
-        key_geometry: KeyGeometry,
-        led_indices: List[int],
-        led_placements: Dict[int, LEDPlacement],
-    ) -> float:
-        """
-        Calculate how much of the key exposed surface is covered by LEDs (in mm).
-        
-        Uses exposed_start and exposed_end (the visible playing surface)
-        rather than the full key range which includes cuts for black keys.
-        """
-        if not led_indices:
-            return 0.0
-
-        # Get exposed range from key geometry
-        exposed_start = getattr(key_geometry, '_exposed_start', key_geometry.start_mm)
-        exposed_end = getattr(key_geometry, '_exposed_end', key_geometry.end_mm)
-
+        # Calculate coverage amount (actual coverage on exposed surface)
         total_coverage = 0.0
-        for led_idx in led_indices:
+        for led_idx in filtered_leds:
             led = led_placements[led_idx]
             overlap_start = max(exposed_start, led.start_mm)
             overlap_end = min(exposed_end, led.end_mm)
             total_coverage += max(0, overlap_end - overlap_start)
 
-        return total_coverage
+        return {
+            "filtered_leds": filtered_leds,
+            "coverage_amount_mm": round(total_coverage, 2),
+            "overhang_left_mm": round(left_overhang, 2),
+            "overhang_right_mm": round(right_overhang, 2),
+        }
 
 
 class SymmetryAnalysis:
@@ -661,21 +647,24 @@ class PhysicalMappingAnalyzer:
                 self.symmetry.analyze_coverage_consistency(key_geom, rel_led_indices, led_placements)
             )
 
-            left_overhang, right_overhang = self.led_placement.calculate_overhang(
-                key_geom, rel_led_indices, led_placements
+            # Comprehensive coverage analysis (filters, overhang, coverage in one call)
+            coverage_result = self.led_placement.analyze_led_coverage(
+                key_geom, rel_led_indices, led_placements, 
+                overhang_threshold_mm=self.overhang_threshold_mm
             )
-
-            coverage_amount = self.led_placement.calculate_coverage_amount(
-                key_geom, rel_led_indices, led_placements
-            )
+            
+            filtered_led_indices = coverage_result["filtered_leds"]
+            coverage_amount = coverage_result["coverage_amount_mm"]
+            left_overhang = coverage_result["overhang_left_mm"]
+            right_overhang = coverage_result["overhang_right_mm"]
 
             # Calculate LED gaps and detail information (matching piano.py output)
-            # Use absolute indices for output detail
+            # Use filtered relative indices for output detail
             led_details = []
-            if abs_led_indices:
-                for i, abs_idx in enumerate(abs_led_indices):
-                    # Convert to relative for lookup
-                    rel_idx = abs_idx - start_led
+            if filtered_led_indices:
+                for i, rel_idx in enumerate(filtered_led_indices):
+                    # Convert back to absolute for output
+                    abs_idx = rel_idx + start_led
                     if rel_idx in led_placements:
                         led_placement = led_placements[rel_idx]
                         led_detail = {
@@ -686,8 +675,7 @@ class PhysicalMappingAnalyzer:
                         }
                         # Add gap info from previous LED
                         if i > 0:
-                            prev_abs_idx = abs_led_indices[i-1]
-                            prev_rel_idx = prev_abs_idx - start_led
+                            prev_rel_idx = filtered_led_indices[i-1]
                             if prev_rel_idx in led_placements:
                                 prev_led = led_placements[prev_rel_idx]
                                 gap = led_placement.start_mm - prev_led.end_mm
@@ -742,8 +730,8 @@ class PhysicalMappingAnalyzer:
                     "end": round(getattr(key_geom, '_exposed_end', key_geom.end_mm), 2),
                     "center": round(getattr(key_geom, '_exposed_center', key_geom.center_mm), 2)
                 },
-                "led_indices": abs_led_indices,  # Output absolute indices
-                "led_count": len(abs_led_indices),
+                "led_indices": [idx + start_led for idx in filtered_led_indices],  # Convert back to absolute
+                "led_count": len(filtered_led_indices),
                 "led_details": led_details,
                 "coverage_mm": round(coverage_amount, 2),
                 "key_width_mm": round(key_geom.width_mm, 2),
