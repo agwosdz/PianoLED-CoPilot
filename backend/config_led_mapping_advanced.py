@@ -152,8 +152,9 @@ def calculate_per_key_led_allocation(
                 led_idx = start_led + led_offset
                 if led_idx not in led_to_key:  # Only assign if not already assigned
                     # Calculate LED midpoint in piano coordinate space
-                    led_midpoint_led_pos = led_offset
-                    led_midpoint_mm = led_midpoint_led_pos * led_spacing_mm * scale_factor
+                    # led_offset is relative (0 = start_led), but we need absolute LED position for the calculation
+                    led_midpoint_led_pos = led_idx  # Use absolute LED index, not relative offset
+                    led_midpoint_mm = led_midpoint_led_pos * led_spacing_mm
                     
                     # Check if this LED's midpoint falls within this key's range
                     if key_start_mm <= led_midpoint_mm < key_end_mm:
