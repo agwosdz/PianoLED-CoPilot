@@ -85,70 +85,51 @@ class PhysicsBasedAllocationService:
             logger.info(f"Starting physics-based LED allocation (LEDs {start_led}-{end_led}, "
                        f"threshold={self.overhang_threshold_mm}mm)")
             
-            # Build initial mapping: each key gets all LEDs that overlap it
-            # (without filtering yet)
             led_count = 255  # Total LEDs on strip
-            initial_mapping = {}
-            
-            # Get physical geometry for all 88 keys
             key_geometries = self.analyzer.key_geometry.calculate_all_key_geometries()
             
-            # Calculate LED placements
-            usable_led_count = (end_led - start_led) + 1
-            led_placements = self.analyzer.led_placement.calculate_led_placements(
-                led_count=usable_led_count,
-                strip_start_mm=0.0,
-                start_led=0,  # Use relative indices
-                end_led=usable_led_count - 1,
+            # STEP 1: Generate initial mapping to detect coverage gap
+            logger.info("STEP 1: Generating initial mapping to calculate coverage...")
+            initial_mapping, initial_max_led = self._generate_mapping(
+                key_geometries, start_led, end_led
             )
             
-            # For each key, find overlapping LEDs
-            for key_idx in range(88):
-                key_geom = key_geometries[key_idx]
-                
-                # Find all LEDs that have ANY overlap with this key
-                overlapping_leds = []
-                for rel_idx, led_placement in led_placements.items():
-                    # Convert to absolute index for storage
-                    abs_idx = rel_idx + start_led
-                    
-                    # Check for overlap between key exposed surface and LED
-                    key_start = getattr(key_geom, '_exposed_start', key_geom.start_mm)
-                    key_end = getattr(key_geom, '_exposed_end', key_geom.end_mm)
-                    
-                    led_start = led_placement.start_mm
-                    led_end = led_placement.end_mm
-                    
-                    # Calculate overlap
-                    overlap_start = max(key_start, led_start)
-                    overlap_end = min(key_end, led_end)
-                    overlap = max(0, overlap_end - overlap_start)
-                    
-                    # Include if there's any overlap
-                    if overlap > 0:
-                        overlapping_leds.append(abs_idx)
-                
-                initial_mapping[key_idx] = overlapping_leds
+            # STEP 2: Calculate pitch adjustment based on detected coverage gap
+            logger.info("STEP 2: Analyzing coverage gap and calculating pitch adjustment...")
+            coverage_gap = end_led - initial_max_led
+            logger.info(f"Coverage gap: max_led={initial_max_led}, end_led={end_led}, gap={coverage_gap}")
             
-            # Now apply filtering based on overhang threshold
-            # This uses the consolidated analyze_led_coverage function
-            final_mapping = {}
+            from backend.services.led_pitch_auto_calibration import auto_calibrate_pitch
             
-            for key_idx in range(88):
-                key_geom = key_geometries[key_idx]
-                rel_indices = [idx - start_led for idx in initial_mapping[key_idx]]
+            piano_start_mm = key_geometries[0].start_mm
+            piano_end_mm = key_geometries[87].end_mm
+            theoretical_pitch = self.analyzer.led_placement.led_spacing_mm
+            
+            calibrated_pitch, was_adjusted, pitch_info = auto_calibrate_pitch(
+                theoretical_pitch_mm=theoretical_pitch,
+                piano_start_mm=piano_start_mm,
+                piano_end_mm=piano_end_mm,
+                start_led=start_led,
+                actual_end_led=end_led,
+            )
+            
+            # STEP 3: If pitch was adjusted, regenerate mapping with new pitch
+            if was_adjusted:
+                logger.info(f"Pitch adjusted: {theoretical_pitch:.4f}mm → {calibrated_pitch:.4f}mm "
+                           f"({pitch_info.get('reason', 'coverage')})")
                 
-                # Use the physics analyzer to get filtered LEDs
-                coverage_result = self.analyzer.led_placement.analyze_led_coverage(
-                    key_geom,
-                    rel_indices,
-                    led_placements,
-                    overhang_threshold_mm=self.overhang_threshold_mm
+                # Update analyzer with calibrated pitch
+                self.analyzer.led_placement.led_spacing_mm = calibrated_pitch
+                
+                # Regenerate mapping with adjusted pitch
+                logger.info("STEP 3: Regenerating mapping with adjusted pitch...")
+                final_mapping, final_max_led = self._generate_mapping(
+                    key_geometries, start_led, end_led
                 )
-                
-                # Convert filtered relative indices back to absolute
-                filtered_abs = [idx + start_led for idx in coverage_result["filtered_leds"]]
-                final_mapping[key_idx] = filtered_abs
+                logger.info(f"New mapping coverage: max_led={final_max_led}")
+            else:
+                logger.info("No pitch adjustment needed, using initial mapping")
+                final_mapping = initial_mapping
             
             # Get complete analysis
             analysis = self.analyzer.analyze_mapping(
@@ -192,6 +173,85 @@ class PhysicsBasedAllocationService:
                 'error': str(e),
                 'message': 'Failed to allocate LEDs using physics-based detection',
             }
+    
+    def _generate_mapping(self, key_geometries: Dict, start_led: int, end_led: int) -> tuple:
+        """
+        Generate LED mapping and detect maximum LED coverage.
+        
+        Returns:
+            Tuple of (mapping_dict, max_led_assigned)
+        """
+        # Calculate LED placements with current pitch
+        usable_led_count = (end_led - start_led) + 1
+        led_placements = self.analyzer.led_placement.calculate_led_placements(
+            led_count=usable_led_count,
+            strip_start_mm=0.0,
+            start_led=0,
+            end_led=usable_led_count - 1,
+        )
+        
+        # Build initial mapping: find overlapping LEDs for each key
+        initial_mapping = {}
+        for key_idx in range(88):
+            key_geom = key_geometries[key_idx]
+            overlapping_leds = []
+            
+            for rel_idx, led_placement in led_placements.items():
+                abs_idx = rel_idx + start_led
+                
+                # Check overlap between key and LED
+                key_start = getattr(key_geom, '_exposed_start', key_geom.start_mm)
+                key_end = getattr(key_geom, '_exposed_end', key_geom.end_mm)
+                
+                led_start = led_placement.start_mm
+                led_end = led_placement.end_mm
+                
+                overlap_start = max(key_start, led_start)
+                overlap_end = min(key_end, led_end)
+                overlap = max(0, overlap_end - overlap_start)
+                
+                if overlap > 0:
+                    overlapping_leds.append(abs_idx)
+            
+            initial_mapping[key_idx] = overlapping_leds
+        
+        # Apply overhang filtering
+        final_mapping = {}
+        for key_idx in range(88):
+            key_geom = key_geometries[key_idx]
+            rel_indices = [idx - start_led for idx in initial_mapping[key_idx]]
+            
+            coverage_result = self.analyzer.led_placement.analyze_led_coverage(
+                key_geom,
+                rel_indices,
+                led_placements,
+                overhang_threshold_mm=self.overhang_threshold_mm
+            )
+            
+            filtered_abs = [idx + start_led for idx in coverage_result["filtered_leds"]]
+            final_mapping[key_idx] = filtered_abs
+        
+        # Ensure full LED range coverage by extending last key
+        max_led_assigned = 0
+        for leds in final_mapping.values():
+            if leds:
+                max_led_assigned = max(max_led_assigned, max(leds))
+        
+        if max_led_assigned < end_led:
+            # Find last key with LEDs and extend it
+            for key_idx in range(87, -1, -1):
+                if final_mapping[key_idx]:
+                    current_leds = final_mapping[key_idx]
+                    max_current = max(current_leds) if current_leds else start_led
+                    
+                    if max_current < end_led:
+                        extended_leds = list(current_leds) + list(range(max_current + 1, end_led + 1))
+                        final_mapping[key_idx] = extended_leds
+                        max_led_assigned = end_led
+                        logger.debug(f"Extended key {key_idx} to reach end_led {end_led}")
+                    break
+        
+        return final_mapping, max_led_assigned
     
     @staticmethod
     def _calculate_stats(mapping: Dict[int, List[int]], start_led: int, end_led: int) -> Dict:
