@@ -661,8 +661,8 @@ def get_key_led_mapping():
             led_physical_width = settings_service.get_setting('calibration', 'led_physical_width', 3.5)
             led_strip_offset = settings_service.get_setting('calibration', 'led_strip_offset', None)
             overhang_threshold = settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5)
-            white_key_width = settings_service.get_setting('calibration', 'white_key_width', 23.5)
-            black_key_width = settings_service.get_setting('calibration', 'black_key_width', 13.7)
+            white_key_width = settings_service.get_setting('calibration', 'white_key_width', 22.0)
+            black_key_width = settings_service.get_setting('calibration', 'black_key_width', 12.0)
             white_key_gap = settings_service.get_setting('calibration', 'white_key_gap', 1.0)
             
             logger.info(f"Physics-based allocation parameters: "
@@ -1753,9 +1753,9 @@ def get_physical_analysis():
         overhang_threshold = float(data.get('overhang_threshold',
                                            settings_service.get_setting('calibration', 'led_overhang_threshold') or 1.5))
         white_key_width = float(data.get('white_key_width',
-                                        settings_service.get_setting('calibration', 'white_key_width') or 23.5))
+                                        settings_service.get_setting('calibration', 'white_key_width') or 22.0))
         black_key_width = float(data.get('black_key_width',
-                                        settings_service.get_setting('calibration', 'black_key_width') or 13.7))
+                                        settings_service.get_setting('calibration', 'black_key_width') or 12.0))
         white_key_gap = float(data.get('white_key_gap',
                                       settings_service.get_setting('calibration', 'white_key_gap') or 1.0))
         
@@ -1794,6 +1794,38 @@ def get_physical_analysis():
         
         # Get total LED count (physical strip size, not just usable range)
         total_led_count = settings_service.get_setting('led', 'led_count', 255)
+        
+        # Get current distribution mode
+        distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
+        
+        # If using physics-based mode, regenerate mapping with physics-based allocation
+        if distribution_mode == 'Physics-Based LED Detection':
+            logger.info("Physical analysis using Physics-Based LED Detection mode")
+            from backend.services.physics_led_allocation import PhysicsBasedAllocationService
+            
+            service = PhysicsBasedAllocationService(
+                led_density=leds_per_meter,
+                led_physical_width=led_physical_width,
+                led_strip_offset=led_strip_offset,
+                overhang_threshold_mm=overhang_threshold
+            )
+            
+            # Apply geometry parameters
+            service.analyzer.white_key_width = white_key_width
+            service.analyzer.black_key_width = black_key_width
+            service.analyzer.white_key_gap = white_key_gap
+            
+            physics_result = service.allocate_leds(
+                start_led=start_led,
+                end_led=end_led
+            )
+            
+            if physics_result.get('success'):
+                key_led_mapping = physics_result.get('key_led_mapping', {})
+                logger.info("Physics-based mapping generated for analysis")
+            else:
+                logger.warning("Physics-based allocation failed, falling back to piano-based")
+
         
         # Import physical analysis module
         from backend.config_led_mapping_physical import PhysicalMappingAnalyzer
@@ -1883,15 +1915,15 @@ def get_set_physics_parameters():
             # Return current physics parameters
             return jsonify({
                 'physics_parameters': {
-                    'white_key_width': settings_service.get_setting('calibration', 'white_key_width', 23.5),
-                    'black_key_width': settings_service.get_setting('calibration', 'black_key_width', 13.7),
+                    'white_key_width': settings_service.get_setting('calibration', 'white_key_width', 22.0),
+                    'black_key_width': settings_service.get_setting('calibration', 'black_key_width', 12.0),
                     'white_key_gap': settings_service.get_setting('calibration', 'white_key_gap', 1.0),
                     'led_physical_width': settings_service.get_setting('calibration', 'led_physical_width', 3.5),
                     'overhang_threshold_mm': settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5),
                 },
                 'parameter_ranges': {
-                    'white_key_width': {'min': 18.5, 'max': 28.5, 'default': 23.5},
-                    'black_key_width': {'min': 10.0, 'max': 20.0, 'default': 13.7},
+                    'white_key_width': {'min': 18.5, 'max': 28.5, 'default': 22.0},
+                    'black_key_width': {'min': 10.0, 'max': 20.0, 'default': 12.0},
                     'white_key_gap': {'min': 0.0, 'max': 3.0, 'default': 1.0},
                     'led_physical_width': {'min': 1.0, 'max': 10.0, 'default': 3.5},
                     'overhang_threshold_mm': {'min': 0.5, 'max': 5.0, 'default': 1.5},
@@ -1953,8 +1985,8 @@ def get_set_physics_parameters():
                         led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
                         led_width = params_to_save.get('led_physical_width', settings_service.get_setting('calibration', 'led_physical_width', 3.5))
                         overhang_threshold = params_to_save.get('led_overhang_threshold', settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5))
-                        white_key_width = params_to_save.get('white_key_width', settings_service.get_setting('calibration', 'white_key_width', 23.5))
-                        black_key_width = params_to_save.get('black_key_width', settings_service.get_setting('calibration', 'black_key_width', 13.7))
+                        white_key_width = params_to_save.get('white_key_width', settings_service.get_setting('calibration', 'white_key_width', 22.0))
+                        black_key_width = params_to_save.get('black_key_width', settings_service.get_setting('calibration', 'black_key_width', 12.0))
                         white_key_gap = params_to_save.get('white_key_gap', settings_service.get_setting('calibration', 'white_key_gap', 1.0))
                         
                         service = PhysicsBasedAllocationService(

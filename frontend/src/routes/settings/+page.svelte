@@ -52,6 +52,7 @@
   let patternResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   const patternOptions = [
+    { value: 'startup_animation', label: 'Startup Animation' },
     { value: 'rainbow', label: 'Rainbow Cycle' },
     { value: 'chase', label: 'Color Chase' },
     { value: 'fade', label: 'Smooth Fade' },
@@ -359,6 +360,34 @@
     clearPatternResetTimer();
 
     try {
+      // Handle startup animation separately (doesn't use the sequence endpoint)
+      if (selectedPattern === 'startup_animation') {
+        const response = await fetch('/api/led-startup-animation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: true })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Startup animation request failed (${response.status})`);
+        }
+
+        showMessage('Started Startup Animation', 'success');
+        isPatternRunning = true;
+        
+        // Startup animation is typically 5-10 seconds, but let's use a reasonable default
+        const animationDuration = 8000; // 8 seconds
+        patternResetTimer = setTimeout(() => {
+          isPatternRunning = false;
+          activeTestId = null;
+          patternResetTimer = null;
+          showMessage('Startup Animation finished', 'info');
+        }, animationDuration);
+        
+        return;
+      }
+
+      // Handle other pattern tests
       const response = await fetch('/api/hardware-test/led/sequence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

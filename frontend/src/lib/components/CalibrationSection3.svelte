@@ -68,16 +68,16 @@
   }
 
   let physicsParameters: PhysicsParameters = {
-    white_key_width: 23.5,
-    black_key_width: 13.7,
+    white_key_width: 22.0,
+    black_key_width: 12.0,
     white_key_gap: 1.0,
     led_physical_width: 3.5,
     overhang_threshold_mm: 1.5
   };
 
   let parameterRanges: Record<string, ParameterRange> = {
-    white_key_width: { min: 18.5, max: 28.5, default: 23.5 },
-    black_key_width: { min: 10.0, max: 20.0, default: 13.7 },
+    white_key_width: { min: 18.5, max: 28.5, default: 22.0 },
+    black_key_width: { min: 10.0, max: 20.0, default: 12.0 },
     white_key_gap: { min: 0.0, max: 3.0, default: 1.0 },
     led_physical_width: { min: 1.0, max: 10.0, default: 3.5 },
     overhang_threshold_mm: { min: 0.5, max: 5.0, default: 1.5 }
@@ -151,8 +151,8 @@
 
   function resetPhysicsParameters(): void {
     physicsParameters = {
-      white_key_width: 23.5,
-      black_key_width: 13.7,
+      white_key_width: 22.0,
+      black_key_width: 12.0,
       white_key_gap: 1.0,
       led_physical_width: 3.5,
       overhang_threshold_mm: 1.5

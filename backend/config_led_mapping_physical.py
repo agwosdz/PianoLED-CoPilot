@@ -68,15 +68,15 @@ class PhysicalKeyGeometry:
     including white key cuts (where black keys sit) and exposed top ranges.
     
     Uses standard piano dimensions:
-    - White keys: 23.5mm wide
-    - Black keys: 13.7mm wide, positioned between white keys
+    - White keys: 22.0mm wide
+    - Black keys: 12.0mm wide, positioned between white keys
     - Key gap: 1.0mm spacing between white keys
     - White key cuts: Different amounts cut from each white key depending on black key position
     """
 
     # Standard piano dimensions (millimeters)
-    WHITE_KEY_WIDTH = 23.5
-    BLACK_KEY_WIDTH = 13.7
+    WHITE_KEY_WIDTH = 22.0
+    BLACK_KEY_WIDTH = 12.0
     WHITE_KEY_GAP = 1.0
     WHITE_KEY_HEIGHT = 107.0
     BLACK_KEY_HEIGHT = 60.0
@@ -84,8 +84,8 @@ class PhysicalKeyGeometry:
     
     # Cut amounts for white keys (where black keys sit)
     CUT_A = 2.2
-    CUT_B = BLACK_KEY_WIDTH - CUT_A - WHITE_KEY_GAP  # 10.5
-    CUT_C = BLACK_KEY_WIDTH / 2  # 6.85
+    CUT_B = BLACK_KEY_WIDTH - CUT_A - WHITE_KEY_GAP  # 8.8
+    CUT_C = BLACK_KEY_WIDTH / 2  # 6.0
     
     # White key cut pattern by note name
     # Format: {'note': [left_cut_type, right_cut_type], ...}
@@ -555,8 +555,8 @@ class PhysicalMappingAnalyzer:
         led_physical_width: float = 3.5,
         led_strip_offset: Optional[float] = None,
         overhang_threshold_mm: float = 1.5,
-        white_key_width: float = 23.5,
-        black_key_width: float = 13.7,
+        white_key_width: float = 22.0,
+        black_key_width: float = 12.0,
         white_key_gap: float = 1.0,
     ):
         """Initialize the complete analyzer with all parameters."""

@@ -5,15 +5,15 @@ import math
 # --- Define LED Strip Constants ---
 LED_DENSITY = 200
 LED_SPACING = 1000 / LED_DENSITY
-DEFAULT_LED_PHYSICAL_WIDTH = 3.5
+DEFAULT_LED_PHYSICAL_WIDTH = 3.5 #3.5 Defaiult physical width of WS2812B LED in mm
 DEFAULT_LED_STRIP_OFFSET = DEFAULT_LED_PHYSICAL_WIDTH / 2
-DEFAULT_LED_OVERHANG_THRESHOLD = 1.5 
+DEFAULT_LED_OVERHANG_THRESHOLD = 1.5 # 1.5 mm default overhang threshold
 
 # --- Define Physical Constants ---
-WHITE_KEY_WIDTH = 23.5
-WHITE_KEY_GAP = 1.0
+WHITE_KEY_WIDTH = 22.0 #23.5 mm width of a standard white piano key
+WHITE_KEY_GAP = 1.0 #1.0 mm gap between white keys
 WHITE_KEY_PITCH = WHITE_KEY_WIDTH + WHITE_KEY_GAP
-BLACK_KEY_WIDTH = 13.7
+BLACK_KEY_WIDTH = 12.0 #13.7 mm width of a standard black piano key
 cut_A = 2.2
 cut_B = BLACK_KEY_WIDTH - cut_A
 cut_C = BLACK_KEY_WIDTH / 2
