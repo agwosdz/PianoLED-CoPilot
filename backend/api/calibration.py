@@ -657,14 +657,28 @@ def get_key_led_mapping():
             from backend.services.physics_led_allocation import PhysicsBasedAllocationService
             
             led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
-            led_width = settings_service.get_setting('led', 'physical_width_mm', 3.5)
-            overhang_threshold = settings_service.get_setting('calibration', 'overhang_threshold_mm', 1.5)
+            led_width = settings_service.get_setting('calibration', 'led_physical_width', 3.5)
+            overhang_threshold = settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5)
             
             service = PhysicsBasedAllocationService(
                 led_density=led_density,
                 led_physical_width=led_width,
                 overhang_threshold_mm=overhang_threshold
             )
+            
+            # Apply geometry parameters from settings
+            white_key_width = settings_service.get_setting('calibration', 'white_key_width', 23.5)
+            black_key_width = settings_service.get_setting('calibration', 'black_key_width', 13.7)
+            white_key_gap = settings_service.get_setting('calibration', 'white_key_gap', 1.0)
+            
+            service.analyzer.white_key_width = white_key_width
+            service.analyzer.black_key_width = black_key_width
+            service.analyzer.white_key_gap = white_key_gap
+            
+            logger.info(f"Physics-based allocation with geometry: "
+                       f"white_key={white_key_width}mm, black_key={black_key_width}mm, "
+                       f"gap={white_key_gap}mm, led_width={led_width}mm, "
+                       f"overhang={overhang_threshold}mm, density={led_density} LEDs/m")
             
             allocation_result = service.allocate_leds(
                 start_led=start_led,

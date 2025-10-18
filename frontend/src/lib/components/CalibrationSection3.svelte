@@ -329,15 +329,24 @@
     }
   }
 
+  // Track previous LED range to detect changes
+  let prevStartLed: number | undefined = undefined;
+  let prevEndLed: number | undefined = undefined;
+
   // Update when settings or calibration changes
   $: if ($settings && $calibrationState) {
     updatePianoSize();
     loadColorsFromSettings();
   }
 
-  // Refresh LED mapping when LED range selection changes
+  // Refresh LED mapping when LED range selection changes (detects actual changes, not initial load)
   $: if ($calibrationState?.start_led !== undefined && $calibrationState?.end_led !== undefined) {
-    updateLedMapping();
+    if (prevStartLed !== $calibrationState.start_led || prevEndLed !== $calibrationState.end_led) {
+      prevStartLed = $calibrationState.start_led;
+      prevEndLed = $calibrationState.end_led;
+      console.log(`[CalibrationSection3] LED range changed: ${prevStartLed}-${prevEndLed}, refreshing mapping...`);
+      updateLedMapping();
+    }
   }
 
   async function lightUpLedRange(ledIndices: number[]): Promise<void> {
