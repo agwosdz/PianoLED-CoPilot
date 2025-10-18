@@ -656,29 +656,31 @@ def get_key_led_mapping():
             # Use physics-based allocation
             from backend.services.physics_led_allocation import PhysicsBasedAllocationService
             
+            # Read ALL physics parameters from settings
             led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
-            led_width = settings_service.get_setting('calibration', 'led_physical_width', 3.5)
+            led_physical_width = settings_service.get_setting('calibration', 'led_physical_width', 3.5)
+            led_strip_offset = settings_service.get_setting('calibration', 'led_strip_offset', None)
             overhang_threshold = settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5)
-            
-            service = PhysicsBasedAllocationService(
-                led_density=led_density,
-                led_physical_width=led_width,
-                overhang_threshold_mm=overhang_threshold
-            )
-            
-            # Apply geometry parameters from settings
             white_key_width = settings_service.get_setting('calibration', 'white_key_width', 23.5)
             black_key_width = settings_service.get_setting('calibration', 'black_key_width', 13.7)
             white_key_gap = settings_service.get_setting('calibration', 'white_key_gap', 1.0)
             
+            logger.info(f"Physics-based allocation parameters: "
+                       f"density={led_density} LEDs/m, led_width={led_physical_width}mm, "
+                       f"overhang={overhang_threshold}mm, "
+                       f"white_key={white_key_width}mm, black_key={black_key_width}mm, gap={white_key_gap}mm")
+            
+            service = PhysicsBasedAllocationService(
+                led_density=led_density,
+                led_physical_width=led_physical_width,
+                led_strip_offset=led_strip_offset,
+                overhang_threshold_mm=overhang_threshold
+            )
+            
+            # Apply geometry parameters to analyzer to ensure they're used for calculations
             service.analyzer.white_key_width = white_key_width
             service.analyzer.black_key_width = black_key_width
             service.analyzer.white_key_gap = white_key_gap
-            
-            logger.info(f"Physics-based allocation with geometry: "
-                       f"white_key={white_key_width}mm, black_key={black_key_width}mm, "
-                       f"gap={white_key_gap}mm, led_width={led_width}mm, "
-                       f"overhang={overhang_threshold}mm, density={led_density} LEDs/m")
             
             allocation_result = service.allocate_leds(
                 start_led=start_led,
