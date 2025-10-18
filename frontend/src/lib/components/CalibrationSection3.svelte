@@ -130,6 +130,8 @@
         const result = await response.json();
         physicsParamsChanged = false;
         
+        console.log('[Physics] Response received:', result);
+        
         // Always update LED mapping to reflect parameter changes in the visualization
         await updateLedMapping();
         pianoKeys = generatePianoKeys();
@@ -137,11 +139,17 @@
         // Capture pitch calibration info if available
         if (result.pitch_calibration_info) {
           pitchCalibrationInfo = result.pitch_calibration_info;
-          console.log('[Physics] Pitch calibration info:', pitchCalibrationInfo);
+          console.log('[Physics] Pitch calibration info captured:', pitchCalibrationInfo);
+          console.log('[Physics] Pitch was adjusted:', pitchCalibrationInfo.was_adjusted);
+        } else {
+          console.log('[Physics] No pitch_calibration_info in response');
+          pitchCalibrationInfo = null;
         }
         console.log('[Physics] Parameters saved and visualization updated');
       } else {
-        console.error('[Physics] Failed to save parameters');
+        console.error('[Physics] Failed to save parameters, status:', response.status);
+        const errorData = await response.json().catch(() => null);
+        console.error('[Physics] Error response:', errorData);
       }
     } catch (error) {
       console.error('[Physics] Error saving parameters:', error);
@@ -896,32 +904,46 @@
           </div>
         {/each}
 
-        {#if pitchCalibrationInfo && pitchCalibrationInfo.was_adjusted}
-          <div class="parameter-control pitch-adjustment-box">
-            <label>Pitch Adjustment Status</label>
-            <div class="pitch-adjustment-content">
-              <div class="pitch-status-indicator">
-                <span class="status-badge adjusted">Adjusted</span>
-              </div>
-              <div class="pitch-details">
-                <div class="pitch-detail-item">
-                  <span class="detail-label">Theoretical:</span>
-                  <span class="detail-value">{pitchCalibrationInfo.theoretical_pitch_mm?.toFixed(4)} mm</span>
+        {#if pitchCalibrationInfo}
+          {#if pitchCalibrationInfo.was_adjusted}
+            <div class="parameter-control pitch-adjustment-box">
+              <label>Pitch Adjustment Status</label>
+              <div class="pitch-adjustment-content">
+                <div class="pitch-status-indicator">
+                  <span class="status-badge adjusted">Adjusted</span>
                 </div>
-                <div class="pitch-detail-item">
-                  <span class="detail-label">Calibrated:</span>
-                  <span class="detail-value">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
+                <div class="pitch-details">
+                  <div class="pitch-detail-item">
+                    <span class="detail-label">Theoretical:</span>
+                    <span class="detail-value">{pitchCalibrationInfo.theoretical_pitch_mm?.toFixed(4)} mm</span>
+                  </div>
+                  <div class="pitch-detail-item">
+                    <span class="detail-label">Calibrated:</span>
+                    <span class="detail-value">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
+                  </div>
+                  <div class="pitch-detail-item">
+                    <span class="detail-label">Difference:</span>
+                    <span class="detail-value">{pitchCalibrationInfo.difference_mm?.toFixed(4)} mm ({pitchCalibrationInfo.difference_percent?.toFixed(2)}%)</span>
+                  </div>
                 </div>
-                <div class="pitch-detail-item">
-                  <span class="detail-label">Difference:</span>
-                  <span class="detail-value">{pitchCalibrationInfo.difference_mm?.toFixed(4)} mm ({pitchCalibrationInfo.difference_percent?.toFixed(2)}%)</span>
+                <div class="pitch-reason">
+                  <p>{pitchCalibrationInfo.reason}</p>
                 </div>
-              </div>
-              <div class="pitch-reason">
-                <p>{pitchCalibrationInfo.reason}</p>
               </div>
             </div>
-          </div>
+          {:else}
+            <div class="parameter-control pitch-adjustment-box pitch-not-adjusted">
+              <label>Pitch Calibration</label>
+              <div class="pitch-adjustment-content">
+                <div class="pitch-status-indicator">
+                  <span class="status-badge not-adjusted">No Adjustment Needed</span>
+                </div>
+                <div class="pitch-reason">
+                  <p>{pitchCalibrationInfo.reason}</p>
+                </div>
+              </div>
+            </div>
+          {/if}
         {/if}
       </div>
 
@@ -2004,10 +2026,19 @@
     opacity: 0.95;
   }
 
+  .pitch-adjustment-box.pitch-not-adjusted {
+    background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+    border: 2px solid #9ca3af;
+  }
+
   .pitch-adjustment-box label {
     font-weight: 700;
     color: #92400e;
     font-size: 0.95rem;
+  }
+
+  .pitch-adjustment-box.pitch-not-adjusted label {
+    color: #374151;
   }
 
   .pitch-adjustment-content {
@@ -2040,6 +2071,12 @@
     border: 1px solid #fbbf24;
   }
 
+  .status-badge.not-adjusted {
+    background: #d1d5db;
+    color: #374151;
+    border: 1px solid #9ca3af;
+  }
+
   .pitch-details {
     display: flex;
     flex-direction: column;
@@ -2070,6 +2107,10 @@
     font-size: 0.8rem;
     color: #664d03;
     font-style: italic;
+  }
+
+  .pitch-adjustment-box.pitch-not-adjusted .pitch-reason {
+    color: #4b5563;
   }
 
   .pitch-reason p {
