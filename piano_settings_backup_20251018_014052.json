@@ -1,0 +1,210 @@
+{
+    "exported_at": "2025-10-18T01:40:52.474659",
+    "settings": {
+        "a11y": {
+            "highContrast": false,
+            "keyboardNavigation": true,
+            "largeText": false,
+            "screenReaderOptimized": false
+        },
+        "audio": {
+            "bufferSize": 1024,
+            "buffer_size": 1024,
+            "enabled": false,
+            "gain": 1.0,
+            "inputDevice": "default",
+            "input_device": "default",
+            "latency": 50,
+            "latencyMs": 50,
+            "sampleRate": 44100,
+            "sample_rate": 44100,
+            "volume": 50
+        },
+        "calibration": {
+            "allow_led_sharing": false,
+            "black_key_color": {
+                "b": 100,
+                "g": 0,
+                "r": 150
+            },
+            "black_key_width": 12.0,
+            "calibration_enabled": false,
+            "calibration_mode": "none",
+            "custom_distribution": {},
+            "distribution_mode": "Physics-Based LED Detection",
+            "end_led": 250,
+            "fixed_leds_per_key": 3,
+            "global_offset": 0,
+            "key_offsets": {
+                "30": 1,
+                "39": -1,
+                "42": 1,
+                "48": 1,
+                "49": -1,
+                "53": 1,
+                "65": 1,
+                "66": -1,
+                "68": 1,
+                "72": 1,
+                "75": -1,
+                "81": 1,
+                "89": 1,
+                "90": -1,
+                "91": 1,
+                "92": -1,
+                "94": 1
+            },
+            "last_calibration": "2025-10-18T01:40:12.032722",
+            "led_overhang_threshold": 2.0,
+            "led_physical_width": 3.5,
+            "led_strip_offset": 1.75,
+            "led_weld_offsets": {},
+            "overhang_threshold_mm": 1.5,
+            "physical_analysis_enabled": false,
+            "show_physical_metrics": false,
+            "show_symmetry_scores": false,
+            "start_led": 4,
+            "use_physical_analysis": false,
+            "white_key_color": {
+                "b": 150,
+                "g": 100,
+                "r": 0
+            },
+            "white_key_gap": 1.0,
+            "white_key_width": 22.0
+        },
+        "gpio": {
+            "clock_pin": 19,
+            "data_pin": 18,
+            "debounce_time": 50,
+            "enabled": false,
+            "pins": []
+        },
+        "hardware": {
+            "auto_detect_gpio": true,
+            "auto_detect_led": true,
+            "auto_detect_midi": true,
+            "midi_device_id": "",
+            "rtpmidi_enabled": false,
+            "rtpmidi_port": 5004
+        },
+        "help": {
+            "completedTours": [],
+            "showHints": true,
+            "showOnboarding": true,
+            "skippedTours": [],
+            "tourCompleted": false
+        },
+        "history": {
+            "autosaveInterval": 30000,
+            "maxHistorySize": 50,
+            "persistHistory": true
+        },
+        "led": {
+            "animationSpeed": 1.0,
+            "animation_speed": 1.0,
+            "brightness": 0.8,
+            "clock_pin": 19,
+            "colorScheme": "rainbow",
+            "color_mode": "velocity",
+            "color_profile": "Standard RGB",
+            "color_scheme": "rainbow",
+            "color_temperature": 6500,
+            "data_pin": 19,
+            "dither_enabled": false,
+            "enabled": true,
+            "gammaCorrection": 2.2,
+            "gamma_correction": 2.2,
+            "gpio_pin": 19,
+            "ledType": "WS2812B",
+            "led_channel": 1,
+            "led_count": 255,
+            "led_orientation": "normal",
+            "led_strip_type": "WS2811_STRIP_GRB",
+            "led_type": "WS2812B",
+            "leds_per_key": null,
+            "leds_per_meter": 200,
+            "mapping_base_offset": 0,
+            "mapping_mode": "auto",
+            "max_led_count": 300,
+            "max_power_watts": 50,
+            "max_temperature_celsius": 70,
+            "performance_mode": "Balanced",
+            "power_limiting_enabled": true,
+            "power_supply_current": 10.0,
+            "power_supply_voltage": 5.0,
+            "reverse_order": false,
+            "strip_type": "WS2812B",
+            "thermal_protection_enabled": true,
+            "update_rate": 30,
+            "white_balance": {
+                "b": 1.0,
+                "g": 1.0,
+                "r": 1.0
+            }
+        },
+        "piano": {
+            "channel": 1,
+            "enabled": false,
+            "end_note": "C8",
+            "key_mapping": {},
+            "key_mapping_mode": "chromatic",
+            "keys": 88,
+            "octave": 4,
+            "octaves": 7.25,
+            "size": "88-key",
+            "start_note": "A0",
+            "velocity_sensitivity": 64
+        },
+        "piano_geometry": {
+            "black_key_depth": 20.0,
+            "black_key_height": 60.0,
+            "black_key_width": 13.7,
+            "custom_name": "",
+            "preset": "standard",
+            "white_key_gap": 1.0,
+            "white_key_height": 107.0,
+            "white_key_width": 23.5
+        },
+        "system": {
+            "autoSave": true,
+            "auto_save": true,
+            "backup_settings": true,
+            "debug": false,
+            "debugMode": false,
+            "logLevel": "INFO",
+            "log_level": "info",
+            "performanceMode": "balanced",
+            "performance_mode": "balanced",
+            "theme": "dark"
+        },
+        "ui": {
+            "animation_speed": "normal",
+            "reduced_motion": false,
+            "show_tooltips": true,
+            "theme": "auto",
+            "tooltip_delay": 300
+        },
+        "upload": {
+            "auto_upload": false,
+            "confirm_before_reset": true,
+            "last_uploaded_file": "",
+            "remember_last_directory": true,
+            "show_file_preview": true
+        },
+        "user": {
+            "email": "",
+            "favoriteSchemes": [],
+            "favorite_schemes": [],
+            "lastUsedDevice": "",
+            "last_used_device": "",
+            "name": "User",
+            "navigationCollapsed": false,
+            "navigation_collapsed": false,
+            "preferences": {},
+            "recentConfigs": [],
+            "recent_configs": []
+        }
+    },
+    "version": "1.0"
+}
