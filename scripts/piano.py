@@ -137,65 +137,102 @@ def run_single_key_analysis(all_geometries: list, key_number: int, led_width: fl
     if not 1 <= key_number <= 88:
         print(f"Error: Key number '{key_number}' is invalid.")
         return
+    
     target_key_data = all_geometries[key_number - 1]
-    target_leds = analyze_led_placement_on_top(target_key_data, led_width, led_offset, threshold, led_spacing)
-    target_led_indices = {led['led_index'] for led in target_leds}
+    standard_leds = analyze_led_placement_on_top(target_key_data, led_width, led_offset, threshold, led_spacing)
+    
     prev_key_data, next_key_data = None, None
     if key_number > 1: prev_key_data = all_geometries[key_number - 2]
     if key_number < 88: next_key_data = all_geometries[key_number]
-        
-    print("\n--- Piano Key Position Analysis ---")
-    print(f"  MODE: {mode_string} (Using pitch: {led_spacing:.4f} mm)")
-    print(f"  Using LED physical width:     {led_width} mm")
-    print(f"  Using LED strip offset:       {led_offset} mm")
-    print(f"  Using LED overhang threshold: {threshold} mm")
-    print(f"  Accounting for solder joints (+{LED_JOINT_ADDAGE}mm) after LEDs: {sorted(list(SOLDER_JOINT_POSITIONS))}")
-    print(f"\n  Key Number: {target_key_data['key_number']} ({target_key_data['name']})")
-    print(f"  Exposed Top Range for LEDs: {target_key_data['exposed_start_mm']} mm to {target_key_data['exposed_end_mm']} mm")
-    print(f"  Exposed Top Midpoint: {(target_key_data['exposed_start_mm'] + target_key_data['exposed_end_mm']) / 2:.2f} mm")
+
+    rescued_leds = []
+    if prev_key_data:
+        prev_leds = analyze_led_placement_on_top(prev_key_data, led_width, led_offset, threshold, led_spacing)
+        if (not standard_leds and prev_leds) or (standard_leds and prev_leds and min(l['led_index'] for l in standard_leds) > max(l['led_index'] for l in prev_leds) + 1):
+            start_gap = max(l['led_index'] for l in prev_leds) + 1 if prev_leds else 0
+            end_gap = min(l['led_index'] for l in standard_leds) if standard_leds else start_gap + 5 # search a few
+            for i in range(start_gap, end_gap):
+                led_center = get_led_center_position(i, led_offset, led_spacing)
+                dist_to_prev = abs(led_center - prev_key_data['exposed_end_mm'])
+                dist_to_target = abs(led_center - target_key_data['exposed_start_mm'])
+                if dist_to_target < dist_to_prev:
+                    rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': f"Rescued (Closer: {dist_to_target:.2f}mm vs prev: {dist_to_prev:.2f}mm)"})
+
+    if next_key_data:
+        next_leds = analyze_led_placement_on_top(next_key_data, led_width, led_offset, threshold, led_spacing)
+        if (not standard_leds and next_leds) or (standard_leds and next_leds and max(l['led_index'] for l in standard_leds) + 1 < min(l['led_index'] for l in next_leds)):
+            start_gap = max(l['led_index'] for l in standard_leds) + 1 if standard_leds else (max(l['led_index'] for l in rescued_leds) + 1 if rescued_leds else 0)
+            end_gap = min(l['led_index'] for l in next_leds) if next_leds else start_gap + 5
+            for i in range(start_gap, end_gap):
+                led_center = get_led_center_position(i, led_offset, led_spacing)
+                dist_to_target = abs(led_center - target_key_data['exposed_end_mm'])
+                dist_to_next = abs(led_center - next_key_data['exposed_start_mm'])
+                if dist_to_target <= dist_to_next:
+                    rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': f"Rescued (Closer: {dist_to_target:.2f}mm vs next: {dist_to_next:.2f}mm)"})
+
+    all_assigned_leds = []
+    for led in standard_leds: all_assigned_leds.append({**led, 'assignment': 'Standard'})
+    all_assigned_leds.extend(rescued_leds)
+    all_assigned_leds.sort(key=lambda x: x['led_index'])
+    all_assigned_indices = {led['led_index'] for led in all_assigned_leds}
+
+    exposed_midpoint = (target_key_data['exposed_start_mm'] + target_key_data['exposed_end_mm']) / 2
+    print(f"""
+--- Piano Key Position Analysis ---
+  MODE: {mode_string} (Using pitch: {led_spacing:.4f} mm)
+  Using LED physical width:     {led_width} mm
+  Using LED strip offset:       {led_offset} mm
+  Using LED overhang threshold: {threshold} mm
+  Accounting for solder joints (+{LED_JOINT_ADDAGE}mm) after LEDs: {sorted(list(SOLDER_JOINT_POSITIONS))}
+
+  Key Number: {target_key_data['key_number']} ({target_key_data['name']})
+  Exposed Top Range for LEDs: {target_key_data['exposed_start_mm']} mm to {target_key_data['exposed_end_mm']} mm
+  Exposed Top Midpoint: {exposed_midpoint:.2f} mm""")
     
-    print("\n--- Valid LED Placement Analysis (Top) ---")
-    if not target_leds:
-        print("  No valid LED placements found for this key.")
+    print("\n--- Final LED Assignment (Top) ---")
+    if not all_assigned_leds:
+        print("  No LEDs assigned to this key.")
     else:
-        print(f"  Found {len(target_leds)} valid LED placement(s) for this key:")
+        print(f"  Found {len(all_assigned_leds)} total LED(s) assigned to this key:")
         last_led_end = None
-        for led in target_leds:
+        for led in all_assigned_leds:
             led_start, led_end = led['center_pos'] - (led_width / 2), led['center_pos'] + (led_width / 2)
-            print(f"  > LED #{led['led_index']} | Center: {led['center_pos']:.2f} mm | Physical: {led_start:.2f} to {led_end:.2f} mm")
-            if last_led_end is not None: print(f"    (Gap from previous LED: {led_start - last_led_end:.2f} mm)")
+            print(f"  > LED #{led['led_index']} | Center: {led['center_pos']:.2f} mm | Physical: {led_start:.2f} to {led_end:.2f} mm | Assignment: {led['assignment']}")
+            if last_led_end is not None and led['assignment'] == 'Standard':
+                gap = led_start - last_led_end
+                if gap > led_spacing - led_width + 0.1:
+                    print(f"    (Gap from previous LED: {gap:.2f} mm)")
             last_led_end = led_end
         print("\n--- Symmetry Analysis ---")
-        symmetry_result = perform_symmetry_analysis(target_key_data, target_leds)
+        symmetry_result = perform_symmetry_analysis(target_key_data, all_assigned_leds)
         print(f"  Classification: {symmetry_result['classification']}")
         print(symmetry_result['details'])
     
     print("\n--- Neighbor Interaction Analysis ---")
     if prev_key_data:
-        prev_leds = analyze_led_placement_on_top(prev_key_data, led_width, led_offset, threshold, led_spacing)
-        prev_led_indices = {led['led_index'] for led in prev_leds}
+        prev_leds_final = analyze_led_placement_on_top(prev_key_data, led_width, led_offset, threshold, led_spacing)
+        prev_led_indices = {l['led_index'] for l in prev_leds_final}
         print(f"Analysis with Previous Key (#{prev_key_data['key_number']} - {prev_key_data['name']}):")
-        shared_with_prev = target_led_indices.intersection(prev_led_indices)
-        print(f"  Shared LEDs: {', '.join(f'#{i}' for i in sorted(list(shared_with_prev))) or ['None']}")
-        if target_leds and prev_leds and min(target_led_indices) == max(prev_led_indices) + 1:
-            print(f"  Consecutive Coverage: YES (Prev ends on #{max(prev_led_indices)}, this starts on #{min(target_led_indices)})")
+        shared = all_assigned_indices.intersection(prev_led_indices)
+        print(f"  Shared LEDs: {', '.join(f'#{i}' for i in sorted(list(shared))) or ['None']}")
+        if all_assigned_leds and prev_leds_final and min(all_assigned_indices) == max(prev_led_indices) + 1:
+            print(f"  Consecutive Coverage: YES (Prev ends on #{max(prev_led_indices)}, this starts on #{min(all_assigned_indices)})")
         else: print("  Consecutive Coverage: NO or N/A")
     else: print("No previous key to analyze.")
     print("")
     if next_key_data:
-        next_leds = analyze_led_placement_on_top(next_key_data, led_width, led_offset, threshold, led_spacing)
-        next_led_indices = {led['led_index'] for led in next_leds}
+        next_leds_final = analyze_led_placement_on_top(next_key_data, led_width, led_offset, threshold, led_spacing)
+        next_led_indices = {l['led_index'] for l in next_leds_final}
         print(f"Analysis with Next Key (#{next_key_data['key_number']} - {next_key_data['name']}):")
-        shared_with_next = target_led_indices.intersection(next_led_indices)
-        print(f"  Shared LEDs: {', '.join(f'#{i}' for i in sorted(list(shared_with_next))) or ['None']}")
-        if target_leds and next_leds and max(target_led_indices) + 1 == min(next_led_indices):
-            print(f"  Consecutive Coverage: YES (This ends on #{max(target_led_indices)}, next starts on #{min(next_led_indices)})")
+        shared = all_assigned_indices.intersection(next_led_indices)
+        print(f"  Shared LEDs: {', '.join(f'#{i}' for i in sorted(list(shared))) or ['None']}")
+        if all_assigned_leds and next_leds_final and max(all_assigned_indices) + 1 == min(next_led_indices):
+            print(f"  Consecutive Coverage: YES (This ends on #{max(all_assigned_indices)}, next starts on #{min(next_led_indices)})")
         else: print("  Consecutive Coverage: NO or N/A")
     else: print("No next key to analyze.")
     print("----------------------------------------\n")
 
 def calculate_total_leds(all_geometries, led_width, led_offset, threshold, led_spacing):
-    """A silent utility to calculate the total required LEDs."""
     highest_led_index_used = -1
     for key_data in all_geometries:
         led_analysis = analyze_led_placement_on_top(key_data, led_width, led_offset, threshold, led_spacing)
@@ -204,13 +241,14 @@ def calculate_total_leds(all_geometries, led_width, led_offset, threshold, led_s
     return highest_led_index_used + 1 if highest_led_index_used > -1 else 0
 
 def run_full_strip_analysis(all_geometries: list, led_width: float, led_offset: float, threshold: float, led_spacing: float, mode_string: str):
-    print("\n=======================================================")
-    print("      FULL PIANO STRIP LED COVERAGE REPORT (TOP VIEW)")
-    print("=======================================================")
-    print(f"  MODE: {mode_string} (Using pitch: {led_spacing:.4f} mm)")
-    print(f"Analyzing with LED width: {led_width} mm, offset: {led_offset} mm, threshold: {threshold} mm")
-    print(f"Accounting for solder joints (+{LED_JOINT_ADDAGE}mm) after LEDs: {sorted(list(SOLDER_JOINT_POSITIONS))}\n")
-    
+    print(f"""
+=======================================================
+      FULL PIANO STRIP LED COVERAGE REPORT (TOP VIEW)
+=======================================================
+  MODE: {mode_string} (Using pitch: {led_spacing:.4f} mm)
+Analyzing with LED width: {led_width} mm, offset: {led_offset} mm, threshold: {threshold} mm
+Accounting for solder joints (+{LED_JOINT_ADDAGE}mm) after LEDs: {sorted(list(SOLDER_JOINT_POSITIONS))}
+""")
     highest_led_index_used = -1
     for key_data in all_geometries:
         print(f"--- Key {key_data['key_number']} ({key_data['name']}) | Top Exposed: {key_data['exposed_start_mm']} to {key_data['exposed_end_mm']} mm ---")
@@ -232,8 +270,7 @@ def run_full_strip_analysis(all_geometries: list, led_width: float, led_offset: 
 
 def main():
     all_key_geometries = calculate_all_key_geometries()
-    target_key = None
-    led_width, led_offset, threshold = DEFAULT_LED_PHYSICAL_WIDTH, DEFAULT_LED_STRIP_OFFSET, DEFAULT_LED_OVERHANG_THRESHOLD
+    target_key, led_width, led_offset, threshold = None, DEFAULT_LED_PHYSICAL_WIDTH, DEFAULT_LED_STRIP_OFFSET, DEFAULT_LED_OVERHANG_THRESHOLD
     led_spacing, mode_string = THEORETICAL_LED_SPACING, "THEORETICAL"
 
     try:
@@ -254,30 +291,23 @@ def main():
                     base_pitch = float(sys.argv[3]) if len(sys.argv) > 3 else THEORETICAL_LED_SPACING
                     print(f"--- SCALING MODE ACTIVATED ---")
                     print(f"Attempting to scale to fit {expected_leds} LEDs, starting from a base pitch of {base_pitch:.4f} mm.")
-                    
                     calculated_leds = calculate_total_leds(all_key_geometries, led_width, led_offset, threshold, base_pitch)
-                    
                     if calculated_leds == expected_leds:
                         print("Base pitch already produces the correct number of LEDs. No scaling needed.")
                         led_spacing = base_pitch
                         mode_string = f"SCALED (from count, no change)"
                     else:
-                        # Scaling formula: determined_coverage / provided_coverage
-                        # If algorithm calculates 239 LEDs but we have 247, we need to adjust pitch
-                        # scaling_factor = calculated_leds / provided_leds
-                        scaling_factor = calculated_leds / expected_leds
+                        scaling_factor = (calculated_leds - 1) / (expected_leds - 1)
                         led_spacing = base_pitch * scaling_factor
                         mode_string = f"SCALED (from count)"
                         print(f"Dry run calculated {calculated_leds} LEDs. A scaling factor of {scaling_factor:.6f} will be applied.")
                         print(f"New adjusted LED spacing: {led_spacing:.4f} mm")
-                        print(f"Coverage ratio: {calculated_leds}/{expected_leds} = {scaling_factor:.4f}")
                     target_key = 'all'
                 else: raise ValueError("Scale mode requires <expected_leds> and an optional [base_pitch].")
 
             elif command != 'all':
                 target_key = int(command)
         
-        # Standard parameter parsing (only for non-calibration/scaling modes)
         if mode_string == "THEORETICAL":
             if len(sys.argv) > 2: led_width = float(sys.argv[2])
             if len(sys.argv) > 3: led_offset = float(sys.argv[3])
@@ -296,7 +326,7 @@ def main():
         run_full_strip_analysis(all_key_geometries, led_width, led_offset, threshold, led_spacing, mode_string)
     elif target_key is not None:
         run_single_key_analysis(all_key_geometries, target_key, led_width, led_offset, threshold, led_spacing, mode_string)
-    else: # Default behavior: full report
+    else:
         run_full_strip_analysis(all_key_geometries, led_width, led_offset, threshold, led_spacing, mode_string)
 
 if __name__ == "__main__":

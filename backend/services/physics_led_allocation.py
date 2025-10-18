@@ -192,9 +192,129 @@ class PhysicsBasedAllocationService:
                 'message': 'Failed to allocate LEDs using physics-based detection',
             }
     
+    def _get_key_edge_position(self, key_geom, edge: str) -> float:
+        """
+        Get the exposed start or end position of a key.
+        
+        Args:
+            key_geom: Key geometry object
+            edge: 'start' or 'end'
+        
+        Returns:
+            Position in mm
+        """
+        if edge == 'start':
+            return getattr(key_geom, '_exposed_start', key_geom.start_mm)
+        else:
+            return getattr(key_geom, '_exposed_end', key_geom.end_mm)
+    
+    def _get_led_center_position(self, led_idx: int, led_placements: Dict) -> float:
+        """Get the center position of an LED from placements dict."""
+        rel_idx = led_idx  # In led_placements, keys are relative indices
+        if rel_idx in led_placements:
+            return led_placements[rel_idx].center_mm
+        return 0.0
+    
+    def _rescue_orphaned_leds(
+        self,
+        final_mapping: Dict[int, List[int]],
+        key_geometries: Dict,
+        led_placements: Dict,
+        start_led: int,
+        end_led: int
+    ) -> tuple:
+        """
+        Implement consecutive LED mapping with gap-bridging.
+        
+        For each key, check if there are orphaned LEDs in gaps to adjacent keys.
+        If an LED is not assigned to either key, assign it to the one it's closest to.
+        
+        Args:
+            final_mapping: Current LED-to-key mapping (will be modified)
+            key_geometries: All 88 key geometries
+            led_placements: LED placement data
+            start_led: First LED index
+            end_led: Last LED index
+        
+        Returns:
+            Tuple of (updated_mapping, rescued_led_count, rescue_stats)
+        """
+        rescued_led_count = 0
+        rescue_stats = {'total_rescued': 0, 'rescued_from_prev': 0, 'rescued_from_next': 0}
+        
+        for key_idx in range(88):
+            standard_leds = set(final_mapping[key_idx])
+            current_key_geom = key_geometries[key_idx]
+            
+            # Check gap to previous key
+            if key_idx > 0:
+                prev_key_geom = key_geometries[key_idx - 1]
+                prev_leds = set(final_mapping[key_idx - 1])
+                
+                if standard_leds and prev_leds:
+                    min_current = min(standard_leds)
+                    max_prev = max(prev_leds)
+                    
+                    # If there's a gap between prev key's last LED and current key's first LED
+                    if min_current > max_prev + 1:
+                        for led_idx in range(max_prev + 1, min_current):
+                            if led_idx not in standard_leds and led_idx not in prev_leds:
+                                # Calculate distances
+                                rel_idx = led_idx - start_led
+                                led_center = self._get_led_center_position(rel_idx, led_placements)
+                                
+                                dist_to_prev = abs(led_center - self._get_key_edge_position(prev_key_geom, 'end'))
+                                dist_to_current = abs(led_center - self._get_key_edge_position(current_key_geom, 'start'))
+                                
+                                # Assign to the closer key (current key in this case since we're checking from current)
+                                if dist_to_current < dist_to_prev:
+                                    final_mapping[key_idx].append(led_idx)
+                                    rescued_led_count += 1
+                                    rescue_stats['rescued_from_prev'] += 1
+                                    logger.debug(f"Rescued LED #{led_idx}: closer to key {key_idx} "
+                                              f"({dist_to_current:.2f}mm) vs prev ({dist_to_prev:.2f}mm)")
+            
+            # Check gap to next key
+            if key_idx < 87:
+                next_key_geom = key_geometries[key_idx + 1]
+                next_leds = set(final_mapping[key_idx + 1])
+                
+                if standard_leds and next_leds:
+                    max_current = max(standard_leds)
+                    min_next = min(next_leds)
+                    
+                    # If there's a gap between current key's last LED and next key's first LED
+                    if max_current + 1 < min_next:
+                        for led_idx in range(max_current + 1, min_next):
+                            if led_idx not in standard_leds and led_idx not in next_leds:
+                                # Calculate distances
+                                rel_idx = led_idx - start_led
+                                led_center = self._get_led_center_position(rel_idx, led_placements)
+                                
+                                dist_to_current = abs(led_center - self._get_key_edge_position(current_key_geom, 'end'))
+                                dist_to_next = abs(led_center - self._get_key_edge_position(next_key_geom, 'start'))
+                                
+                                # Assign to the closer key
+                                if dist_to_current <= dist_to_next:
+                                    final_mapping[key_idx].append(led_idx)
+                                    rescued_led_count += 1
+                                    rescue_stats['rescued_from_next'] += 1
+                                    logger.debug(f"Rescued LED #{led_idx}: closer to key {key_idx} "
+                                              f"({dist_to_current:.2f}mm) vs next ({dist_to_next:.2f}mm)")
+        
+        rescue_stats['total_rescued'] = rescued_led_count
+        
+        # Sort LED indices for each key
+        for key_idx in range(88):
+            final_mapping[key_idx].sort()
+        
+        return final_mapping, rescued_led_count, rescue_stats
+    
     def _generate_mapping(self, key_geometries: Dict, start_led: int, end_led: int) -> tuple:
         """
         Generate LED mapping and detect maximum LED coverage.
+        
+        Includes consecutive LED mapping with gap-bridging to rescue orphaned LEDs.
         
         Returns:
             Tuple of (mapping_dict, max_led_assigned)
@@ -249,6 +369,15 @@ class PhysicsBasedAllocationService:
             filtered_abs = [idx + start_led for idx in coverage_result["filtered_leds"]]
             final_mapping[key_idx] = filtered_abs
         
+        # Apply consecutive LED mapping with gap-bridging (rescue orphaned LEDs)
+        logger.info("Applying consecutive LED mapping with gap-bridging...")
+        final_mapping, rescued_count, rescue_stats = self._rescue_orphaned_leds(
+            final_mapping, key_geometries, led_placements, start_led, end_led
+        )
+        logger.info(f"Rescued LEDs: total={rescue_stats['total_rescued']}, "
+                   f"from_prev={rescue_stats['rescued_from_prev']}, "
+                   f"from_next={rescue_stats['rescued_from_next']}")
+        
         # Ensure full LED range coverage by extending last key
         max_led_assigned = 0
         for leds in final_mapping.values():
@@ -273,7 +402,7 @@ class PhysicsBasedAllocationService:
     
     @staticmethod
     def _calculate_stats(mapping: Dict[int, List[int]], start_led: int, end_led: int) -> Dict:
-        """Calculate allocation statistics."""
+        """Calculate allocation statistics including rescued LED metrics."""
         total_keys = len(mapping)
         total_leds_used = len(set(led for leds in mapping.values() for led in leds))
         
@@ -284,6 +413,18 @@ class PhysicsBasedAllocationService:
         distribution = {}
         for count in leds_per_key:
             distribution[str(count)] = distribution.get(str(count), 0) + 1
+        
+        # Count keys with rescued LEDs (keys that had gaps filled)
+        keys_with_continuous_coverage = 0
+        for key_idx in range(87):
+            current_leds = mapping[key_idx]
+            next_leds = mapping[key_idx + 1]
+            
+            if current_leds and next_leds:
+                max_current = max(current_leds)
+                min_next = min(next_leds)
+                if max_current + 1 == min_next:
+                    keys_with_continuous_coverage += 1
         
         return {
             'total_key_count': total_keys,
@@ -296,4 +437,5 @@ class PhysicsBasedAllocationService:
             'leds_per_key_distribution': distribution,
             'led_range': f"{start_led}-{end_led}",
             'total_led_range_available': (end_led - start_led) + 1,
+            'consecutive_coverage_count': keys_with_continuous_coverage,
         }
