@@ -14,6 +14,8 @@ WHITE_KEY_WIDTH = 22.0 #23.5 mm width of a standard white piano key
 WHITE_KEY_GAP = 1.0 #1.0 mm gap between white keys
 WHITE_KEY_PITCH = WHITE_KEY_WIDTH + WHITE_KEY_GAP
 BLACK_KEY_WIDTH = 12.0 #13.7 mm width of a standard black piano key
+PIANO_LENTH_MM = 1193.8 # Length of an 88-key piano in mm
+
 cut_A = 2.2
 cut_B = BLACK_KEY_WIDTH - cut_A
 cut_C = BLACK_KEY_WIDTH / 2
