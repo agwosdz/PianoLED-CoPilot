@@ -113,6 +113,9 @@ class PhysicsBasedAllocationService:
                 actual_end_led=end_led,
             )
             
+            # Store the pitch info from STEP 2 to use later (before analyzer recalculates)
+            initial_pitch_info = pitch_info.copy()
+            
             # STEP 3: If pitch was adjusted, regenerate mapping with new pitch
             if was_adjusted:
                 logger.info(f"Pitch adjusted: {theoretical_pitch:.4f}mm → {calibrated_pitch:.4f}mm "
@@ -138,6 +141,13 @@ class PhysicsBasedAllocationService:
                 start_led=start_led,
                 end_led=end_led,
             )
+            
+            # IMPORTANT: Use the pitch_info from STEP 2, not the recalculated one from analyze_mapping
+            # because analyze_mapping recalculates with the updated pitch, losing the "was_adjusted" info
+            if was_adjusted:
+                # Override with the actual adjustment that happened
+                analysis['pitch_calibration'] = initial_pitch_info
+                logger.info(f"Using pitch calibration from STEP 2: was_adjusted={initial_pitch_info.get('was_adjusted')}")
             
             # Calculate allocation statistics
             led_allocation_stats = self._calculate_stats(final_mapping, start_led, end_led)

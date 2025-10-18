@@ -904,46 +904,30 @@
           </div>
         {/each}
 
+        <!-- Pitch Adjustment Status - 6th grid item -->
         {#if pitchCalibrationInfo}
-          {#if pitchCalibrationInfo.was_adjusted}
-            <div class="parameter-control pitch-adjustment-box">
-              <label>Pitch Adjustment Status</label>
-              <div class="pitch-adjustment-content">
-                <div class="pitch-status-indicator">
+          <div class="parameter-control pitch-adjustment-box" class:pitch-not-adjusted={!pitchCalibrationInfo.was_adjusted}>
+            <label>Pitch Adjustment</label>
+            <div class="pitch-display-content">
+              <div class="pitch-status-indicator">
+                {#if pitchCalibrationInfo.was_adjusted}
                   <span class="status-badge adjusted">Adjusted</span>
+                {:else}
+                  <span class="status-badge not-adjusted">Optimal</span>
+                {/if}
+              </div>
+              <div class="pitch-values">
+                <div class="pitch-value-row">
+                  <span class="value-label">Used:</span>
+                  <span class="value-data">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
                 </div>
-                <div class="pitch-details">
-                  <div class="pitch-detail-item">
-                    <span class="detail-label">Theoretical:</span>
-                    <span class="detail-value">{pitchCalibrationInfo.theoretical_pitch_mm?.toFixed(4)} mm</span>
-                  </div>
-                  <div class="pitch-detail-item">
-                    <span class="detail-label">Calibrated:</span>
-                    <span class="detail-value">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
-                  </div>
-                  <div class="pitch-detail-item">
-                    <span class="detail-label">Difference:</span>
-                    <span class="detail-value">{pitchCalibrationInfo.difference_mm?.toFixed(4)} mm ({pitchCalibrationInfo.difference_percent?.toFixed(2)}%)</span>
-                  </div>
-                </div>
-                <div class="pitch-reason">
-                  <p>{pitchCalibrationInfo.reason}</p>
+                <div class="pitch-value-row">
+                  <span class="value-label">Theory:</span>
+                  <span class="value-data">{pitchCalibrationInfo.theoretical_pitch_mm?.toFixed(4)} mm</span>
                 </div>
               </div>
             </div>
-          {:else}
-            <div class="parameter-control pitch-adjustment-box pitch-not-adjusted">
-              <label>Pitch Calibration</label>
-              <div class="pitch-adjustment-content">
-                <div class="pitch-status-indicator">
-                  <span class="status-badge not-adjusted">No Adjustment Needed</span>
-                </div>
-                <div class="pitch-reason">
-                  <p>{pitchCalibrationInfo.reason}</p>
-                </div>
-              </div>
-            </div>
-          {/if}
+          </div>
         {/if}
       </div>
 
@@ -2018,12 +2002,14 @@
   }
 
   .pitch-adjustment-box {
-    grid-column: 1 / -1;
     background: linear-gradient(135deg, #fef3c7, #fde68a);
     border: 2px solid #fbbf24;
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.75rem;
     opacity: 0.95;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   .pitch-adjustment-box.pitch-not-adjusted {
@@ -2032,21 +2018,19 @@
   }
 
   .pitch-adjustment-box label {
-    font-weight: 700;
-    color: #92400e;
-    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 0.9rem;
   }
 
   .pitch-adjustment-box.pitch-not-adjusted label {
-    color: #374151;
+    color: #1e293b;
   }
 
-  .pitch-adjustment-content {
+  .pitch-display-content {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-    pointer-events: none;
+    gap: 0.5rem;
   }
 
   .pitch-status-indicator {
@@ -2059,7 +2043,7 @@
     display: inline-block;
     padding: 0.25rem 0.75rem;
     border-radius: 4px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -2077,45 +2061,28 @@
     border: 1px solid #9ca3af;
   }
 
-  .pitch-details {
+  .pitch-values {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    background: rgba(255, 255, 255, 0.7);
-    padding: 0.75rem;
-    border-radius: 6px;
+    gap: 0.3rem;
+    font-size: 0.8rem;
   }
 
-  .pitch-detail-item {
+  .pitch-value-row {
     display: flex;
     justify-content: space-between;
-    font-size: 0.85rem;
+    align-items: center;
   }
 
-  .detail-label {
+  .value-label {
     font-weight: 600;
-    color: #664d03;
+    color: #64748b;
   }
 
-  .detail-value {
+  .value-data {
     font-weight: 700;
-    color: #b45309;
+    color: #1e293b;
     font-family: 'Courier New', monospace;
-  }
-
-  .pitch-reason {
-    font-size: 0.8rem;
-    color: #664d03;
-    font-style: italic;
-  }
-
-  .pitch-adjustment-box.pitch-not-adjusted .pitch-reason {
-    color: #4b5563;
-  }
-
-  .pitch-reason p {
-    margin: 0;
-    line-height: 1.4;
   }
 
   .advanced-settings-actions {
