@@ -599,6 +599,34 @@ class PhysicalMappingAnalyzer:
         if end_led is None:
             end_led = led_count - 1
 
+        # Auto-calibrate pitch based on actual LED coverage vs theoretical
+        from backend.services.led_pitch_auto_calibration import auto_calibrate_pitch
+        
+        # Calculate piano dimensions from key geometries
+        key_geometries_temp = PhysicalKeyGeometry.calculate_all_key_geometries(
+            white_key_width=self.white_key_width,
+            black_key_width=self.black_key_width,
+            white_key_gap=self.white_key_gap,
+        )
+        piano_start_mm = key_geometries_temp[0].start_mm
+        piano_end_mm = key_geometries_temp[87].end_mm
+        
+        # Get theoretical pitch from led_density
+        theoretical_pitch = self.led_placement.led_spacing_mm
+        
+        # Auto-calibrate
+        calibrated_pitch, was_adjusted, pitch_info = auto_calibrate_pitch(
+            theoretical_pitch_mm=theoretical_pitch,
+            piano_start_mm=piano_start_mm,
+            piano_end_mm=piano_end_mm,
+            start_led=start_led,
+            actual_end_led=end_led,
+        )
+        
+        # Update led_placement with calibrated pitch if needed
+        if was_adjusted:
+            self.led_placement.led_spacing_mm = calibrated_pitch
+
         # Calculate geometries
         key_geometries = self.key_geometry.calculate_all_key_geometries(
             white_key_width=self.white_key_width,
@@ -783,6 +811,7 @@ class PhysicalMappingAnalyzer:
             "per_key_analysis": per_key_analysis,
             "quality_metrics": quality_metrics,
             "overall_quality": overall_quality,
+            "pitch_calibration": pitch_info,
             "parameters_used": {
                 "led_density": self.led_density,
                 "led_physical_width": self.led_physical_width,
@@ -791,6 +820,8 @@ class PhysicalMappingAnalyzer:
                 "white_key_width": self.white_key_width,
                 "black_key_width": self.black_key_width,
                 "white_key_gap": self.white_key_gap,
+                "pitch_mm": calibrated_pitch,
+                "pitch_was_auto_calibrated": was_adjusted,
             },
             "led_range": {
                 "start_led": start_led,

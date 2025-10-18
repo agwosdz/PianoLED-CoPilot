@@ -2034,6 +2034,27 @@ def get_set_physics_parameters():
                                 'total_leds_used': stats.get('total_led_count', 0),
                                 'avg_leds_per_key': stats.get('avg_leds_per_key', 0),
                             }
+                            
+                            # Include pitch calibration info if available
+                            if 'per_key_analysis' in allocation_result:
+                                # Extract pitch info from the analysis
+                                # The analysis['pitch_calibration'] is available from PhysicalMappingAnalyzer
+                                pitch_info = None
+                                # Get pitch calibration from the analyzer's analysis result
+                                try:
+                                    # Re-run analyze_mapping to get pitch info
+                                    analysis = service.analyzer.analyze_mapping(
+                                        allocation_result['key_led_mapping'],
+                                        led_count=246,
+                                        start_led=start_led,
+                                        end_led=end_led
+                                    )
+                                    if 'pitch_calibration' in analysis:
+                                        pitch_info = analysis['pitch_calibration']
+                                        response['pitch_calibration_info'] = pitch_info
+                                except Exception as e:
+                                    logger.warning(f"Could not extract pitch calibration info: {e}")
+                            
                             logger.info(f"Mapping regenerated with new physics parameters")
                         else:
                             response['warning'] = 'Mapping regeneration failed'

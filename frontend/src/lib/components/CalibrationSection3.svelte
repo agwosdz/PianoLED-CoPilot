@@ -94,7 +94,7 @@
   let isLoadingPhysicsParams = false;
   let isSavingPhysicsParams = false;
   let physicsParamsChanged = false;
-  let previewStats: any = null;
+  let pitchCalibrationInfo: any = null;
 
   async function loadPhysicsParameters(): Promise<void> {
     try {
@@ -134,9 +134,10 @@
         await updateLedMapping();
         pianoKeys = generatePianoKeys();
         
-        if (result.mapping_stats) {
-          previewStats = result.mapping_stats;
-          console.log('[Physics] Mapping regenerated with new parameters:', result.mapping_stats);
+        // Capture pitch calibration info if available
+        if (result.pitch_calibration_info) {
+          pitchCalibrationInfo = result.pitch_calibration_info;
+          console.log('[Physics] Pitch calibration info:', pitchCalibrationInfo);
         }
         console.log('[Physics] Parameters saved and visualization updated');
       } else {
@@ -894,6 +895,34 @@
             </div>
           </div>
         {/each}
+
+        {#if pitchCalibrationInfo && pitchCalibrationInfo.was_adjusted}
+          <div class="parameter-control pitch-adjustment-box">
+            <label>Pitch Adjustment Status</label>
+            <div class="pitch-adjustment-content">
+              <div class="pitch-status-indicator">
+                <span class="status-badge adjusted">Adjusted</span>
+              </div>
+              <div class="pitch-details">
+                <div class="pitch-detail-item">
+                  <span class="detail-label">Theoretical:</span>
+                  <span class="detail-value">{pitchCalibrationInfo.theoretical_pitch_mm?.toFixed(4)} mm</span>
+                </div>
+                <div class="pitch-detail-item">
+                  <span class="detail-label">Calibrated:</span>
+                  <span class="detail-value">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
+                </div>
+                <div class="pitch-detail-item">
+                  <span class="detail-label">Difference:</span>
+                  <span class="detail-value">{pitchCalibrationInfo.difference_mm?.toFixed(4)} mm ({pitchCalibrationInfo.difference_percent?.toFixed(2)}%)</span>
+                </div>
+              </div>
+              <div class="pitch-reason">
+                <p>{pitchCalibrationInfo.reason}</p>
+              </div>
+            </div>
+          </div>
+        {/if}
       </div>
 
       <div class="advanced-settings-actions">
@@ -926,17 +955,6 @@
           </button>
         </div>
       </div>
-
-      {#if previewStats}
-        <div class="preview-stats">
-          <p><strong>Preview Stats:</strong></p>
-          <ul>
-            <li>Keys Mapped: {previewStats.total_keys_mapped}</li>
-            <li>LEDs Used: {previewStats.total_leds_used}</li>
-            <li>Avg LEDs/Key: {previewStats.avg_leds_per_key.toFixed(2)}</li>
-          </ul>
-        </div>
-      {/if}
     </div>
   {/if}
 
@@ -1975,6 +1993,88 @@
     font-size: 0.75rem;
     color: #64748b;
     font-style: italic;
+  }
+
+  .pitch-adjustment-box {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 2px solid #fbbf24;
+    border-radius: 8px;
+    padding: 1rem;
+    opacity: 0.95;
+  }
+
+  .pitch-adjustment-box label {
+    font-weight: 700;
+    color: #92400e;
+    font-size: 0.95rem;
+  }
+
+  .pitch-adjustment-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    pointer-events: none;
+  }
+
+  .pitch-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .status-badge.adjusted {
+    background: #fcd34d;
+    color: #92400e;
+    border: 1px solid #fbbf24;
+  }
+
+  .pitch-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 0.75rem;
+    border-radius: 6px;
+  }
+
+  .pitch-detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+  }
+
+  .detail-label {
+    font-weight: 600;
+    color: #664d03;
+  }
+
+  .detail-value {
+    font-weight: 700;
+    color: #b45309;
+    font-family: 'Courier New', monospace;
+  }
+
+  .pitch-reason {
+    font-size: 0.8rem;
+    color: #664d03;
+    font-style: italic;
+  }
+
+  .pitch-reason p {
+    margin: 0;
+    line-height: 1.4;
   }
 
   .advanced-settings-actions {

@@ -262,11 +262,15 @@ def main():
                         led_spacing = base_pitch
                         mode_string = f"SCALED (from count, no change)"
                     else:
-                        scaling_factor = (calculated_leds - 1) / (expected_leds - 1)
+                        # Scaling formula: determined_coverage / provided_coverage
+                        # If algorithm calculates 239 LEDs but we have 247, we need to adjust pitch
+                        # scaling_factor = calculated_leds / provided_leds
+                        scaling_factor = calculated_leds / expected_leds
                         led_spacing = base_pitch * scaling_factor
                         mode_string = f"SCALED (from count)"
                         print(f"Dry run calculated {calculated_leds} LEDs. A scaling factor of {scaling_factor:.6f} will be applied.")
                         print(f"New adjusted LED spacing: {led_spacing:.4f} mm")
+                        print(f"Coverage ratio: {calculated_leds}/{expected_leds} = {scaling_factor:.4f}")
                     target_key = 'all'
                 else: raise ValueError("Scale mode requires <expected_leds> and an optional [base_pitch].")
 
