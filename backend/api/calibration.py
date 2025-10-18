@@ -1771,34 +1771,16 @@ def get_physical_analysis():
                    f"range=[{start_led},{end_led}], "
                    f"piano_size={piano_size}")
         
-        # First get the current LED mapping
-        from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
-        
-        mapping_result = calculate_per_key_led_allocation(
-            leds_per_meter=leds_per_meter,
-            start_led=start_led,
-            end_led=end_led,
-            piano_size=piano_size,
-            allow_led_sharing=True  # Use default sharing mode
-        )
-        
-        if not mapping_result.get('success'):
-            logger.error(f"Failed to generate mapping for analysis: {mapping_result.get('error')}")
-            return jsonify({
-                'error': 'Mapping Failed',
-                'message': 'Could not generate LED mapping for physical analysis',
-                'timestamp': datetime.now().isoformat()
-            }), 400
-        
-        key_led_mapping = mapping_result.get('key_led_mapping', {})
-        
         # Get total LED count (physical strip size, not just usable range)
         total_led_count = settings_service.get_setting('led', 'led_count', 255)
         
-        # Get current distribution mode
+        # Get current distribution mode AND allow_led_sharing setting
         distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
+        allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
         
-        # If using physics-based mode, regenerate mapping with physics-based allocation
+        logger.info(f"Physical analysis will use distribution_mode='{distribution_mode}', allow_led_sharing={allow_led_sharing}")
+        
+        # Generate LED mapping based on distribution mode (MATCHING /key-led-mapping logic)
         if distribution_mode == 'Physics-Based LED Detection':
             logger.info("Physical analysis using Physics-Based LED Detection mode")
             from backend.services.physics_led_allocation import PhysicsBasedAllocationService
@@ -1815,16 +1797,32 @@ def get_physical_analysis():
             service.analyzer.black_key_width = black_key_width
             service.analyzer.white_key_gap = white_key_gap
             
-            physics_result = service.allocate_leds(
+            allocation_result = service.allocate_leds(
                 start_led=start_led,
                 end_led=end_led
             )
+        else:
+            # Use traditional Piano-Based allocation with setting-respecting allow_led_sharing
+            logger.info(f"Physical analysis using Piano-Based mode with allow_led_sharing={allow_led_sharing}")
+            from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
             
-            if physics_result.get('success'):
-                key_led_mapping = physics_result.get('key_led_mapping', {})
-                logger.info("Physics-based mapping generated for analysis")
-            else:
-                logger.warning("Physics-based allocation failed, falling back to piano-based")
+            allocation_result = calculate_per_key_led_allocation(
+                leds_per_meter=leds_per_meter,
+                start_led=start_led,
+                end_led=end_led,
+                piano_size=piano_size,
+                allow_led_sharing=allow_led_sharing
+            )
+        
+        if not allocation_result.get('success'):
+            logger.error(f"Failed to generate mapping for analysis: {allocation_result.get('error')}")
+            return jsonify({
+                'error': 'Mapping Failed',
+                'message': 'Could not generate LED mapping for physical analysis',
+                'timestamp': datetime.now().isoformat()
+            }), 400
+        
+        key_led_mapping = allocation_result.get('key_led_mapping', {})
 
         
         # Import physical analysis module
@@ -1849,7 +1847,30 @@ def get_physical_analysis():
             end_led=end_led
         )
         
+        # For alignment with /key-led-mapping, also apply calibration offsets to the mapping
+        key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
+        converted_offsets = {}
+        if key_offsets:
+            for midi_note_str, offset_value in key_offsets.items():
+                try:
+                    midi_note = int(midi_note_str) if isinstance(midi_note_str, str) else midi_note_str
+                    key_index = midi_note - 21
+                    if 0 <= key_index < 88:
+                        converted_offsets[key_index] = offset_value
+                except (ValueError, TypeError):
+                    pass
+        
+        # Apply calibration offsets to match /key-led-mapping behavior
+        final_mapping = apply_calibration_offsets_to_mapping(
+            mapping=key_led_mapping,
+            start_led=start_led,
+            end_led=end_led,
+            key_offsets=converted_offsets,
+            led_count=total_led_count
+        )
+        
         response = {
+            'mapping': final_mapping,  # Include the actual key-led mapping with offsets applied
             'per_key_analysis': analysis_result['per_key_analysis'],
             'quality_metrics': analysis_result['quality_metrics'],
             'overall_quality': analysis_result['overall_quality'],
