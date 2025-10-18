@@ -27,7 +27,7 @@ class PhysicsBasedAllocationService:
     def __init__(
         self,
         led_density: float = 200.0,
-        led_physical_width: float = 3.5,
+        led_physical_width: float = 2.0,
         led_strip_offset: Optional[float] = None,
         overhang_threshold_mm: float = 1.5,
     ):
@@ -36,7 +36,7 @@ class PhysicsBasedAllocationService:
         
         Args:
             led_density: LEDs per meter (default 200 for WS2812B)
-            led_physical_width: Physical width of each LED in mm (default 3.5)
+            led_physical_width: Physical width of each LED in mm (default 2.0)
             led_strip_offset: Offset of LED center from strip edge in mm
                             (default is led_physical_width / 2)
             overhang_threshold_mm: Maximum allowed overhang in mm (default 1.5)

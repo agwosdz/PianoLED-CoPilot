@@ -190,8 +190,9 @@ class SettingsService:
             'calibration': {
                 'start_led': {'type': 'number', 'default': 0, 'min': 0, 'description': 'First LED index at the beginning of the piano (Set First LED)'},
                 'end_led': {'type': 'number', 'default': 245, 'min': 0, 'description': 'Last LED index at the end of the piano (Set Last LED)'},
-                'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key offset adjustments {midi_note: offset_value}'},
+                'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key offset adjustments {midi_note: offset_value_leds}'},
                 'led_weld_offsets': {'type': 'object', 'default': {}, 'description': 'LED strip weld/joint offsets {led_index: offset_mm} for soldered seams where density rule is violated'},
+                'led_soldering_joints': {'type': 'object', 'default': {}, 'description': 'Soldering joints with width and offset {led_index: {width_mm: float, offset_mm: float, description?: str}}'},
                 'calibration_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable per-key calibration offsets'},
                 'calibration_mode': {'type': 'string', 'default': 'none', 'enum': ['none', 'assisted', 'manual'], 'description': 'Calibration mode'},
                 'last_calibration': {'type': 'string', 'default': '', 'description': 'Timestamp of last calibration'},
@@ -201,7 +202,7 @@ class SettingsService:
                 'fixed_leds_per_key': {'type': 'number', 'default': 3, 'min': 1, 'max': 10, 'description': 'Number of LEDs per key for fixed distribution mode'},
                 'custom_distribution': {'type': 'object', 'default': {}, 'description': 'Custom distribution configuration {mode_name: config}'},
                 # Physical geometry settings (from piano.py integration)
-                'led_physical_width': {'type': 'number', 'default': 3.5, 'min': 1.0, 'max': 10.0, 'description': 'Physical width of each LED in mm'},
+                'led_physical_width': {'type': 'number', 'default': 2.0, 'min': 1.0, 'max': 10.0, 'description': 'Physical width of each LED in mm'},
                 'led_strip_offset': {'type': 'number', 'default': 1.75, 'min': 0.0, 'max': 5.0, 'description': 'Physical offset of LED center from strip edge in mm'},
                 'led_overhang_threshold': {'type': 'number', 'default': 1.5, 'min': 0.5, 'max': 5.0, 'description': 'Minimum overhang to count LED as assigned (in mm)'},
                 'white_key_width': {'type': 'number', 'default': 23.5, 'min': 20.0, 'max': 30.0, 'description': 'Width of white piano keys in mm'},

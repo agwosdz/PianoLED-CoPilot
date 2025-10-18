@@ -71,7 +71,7 @@
     white_key_width: 22.0,
     black_key_width: 12.0,
     white_key_gap: 1.0,
-    led_physical_width: 3.5,
+    led_physical_width: 2.0,
     overhang_threshold_mm: 1.5
   };
 
@@ -79,7 +79,7 @@
     white_key_width: { min: 18.5, max: 28.5, default: 22.0 },
     black_key_width: { min: 10.0, max: 20.0, default: 12.0 },
     white_key_gap: { min: 0.0, max: 3.0, default: 1.0 },
-    led_physical_width: { min: 1.0, max: 10.0, default: 3.5 },
+    led_physical_width: { min: 1.0, max: 10.0, default: 2.0 },
     overhang_threshold_mm: { min: 0.5, max: 5.0, default: 1.5 }
   };
 
@@ -154,7 +154,7 @@
       white_key_width: 22.0,
       black_key_width: 12.0,
       white_key_gap: 1.0,
-      led_physical_width: 3.5,
+      led_physical_width: 2.0,
       overhang_threshold_mm: 1.5
     };
     physicsParamsChanged = true;

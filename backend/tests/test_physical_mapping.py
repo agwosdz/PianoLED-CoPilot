@@ -109,8 +109,8 @@ class TestLEDPhysicalPlacement:
         placement = LEDPhysicalPlacement()
         assert placement.led_density == 200.0
         assert placement.led_spacing_mm == 5.0  # 1000/200
-        assert placement.led_physical_width == 3.5
-        assert placement.led_strip_offset == 1.75
+        assert placement.led_physical_width == 2.0
+        assert placement.led_strip_offset == 1.0
 
     def test_calculate_led_placements(self):
         """Test LED placement calculation."""
@@ -121,11 +121,11 @@ class TestLEDPhysicalPlacement:
         
         # LED 0 should start at offset
         led_0 = led_placements[0]
-        assert led_0.center_mm == pytest.approx(1.75, rel=0.01)
+        assert led_0.center_mm == pytest.approx(1.0, rel=0.01)
         
         # LED 1 should be 5mm away
         led_1 = led_placements[1]
-        assert led_1.center_mm == pytest.approx(6.75, rel=0.01)
+        assert led_1.center_mm == pytest.approx(6.0, rel=0.01)
 
     def test_led_overhang_calculation(self):
         """Test LED overhang from key edge calculation."""
@@ -268,8 +268,8 @@ class TestPhysicalMappingAnalyzer:
         """Test analyzer can be initialized with various parameters."""
         analyzer = PhysicalMappingAnalyzer(
             led_density=200,
-            led_physical_width=3.5,
-            led_strip_offset=1.75,
+            led_physical_width=2.0,
+            led_strip_offset=1.0,
             overhang_threshold_mm=1.5,
             white_key_width=23.5,
             black_key_width=13.7,
@@ -360,8 +360,8 @@ class TestPhysicalMappingIntegration:
         """Test complete analysis pipeline with small dataset."""
         analyzer = PhysicalMappingAnalyzer(
             led_density=200,
-            led_physical_width=3.5,
-            led_strip_offset=1.75,
+            led_physical_width=2.0,
+            led_strip_offset=1.0,
             overhang_threshold_mm=1.5,
             white_key_width=23.5,
             black_key_width=13.7,
