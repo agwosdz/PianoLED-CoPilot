@@ -102,7 +102,10 @@
       if (response.ok) {
         const data = await response.json();
         physicsParameters = data.physics_parameters;
-        parameterRanges = data.parameter_ranges;
+        // Merge backend ranges with local ranges, preferring frontend values
+        if (data.parameter_ranges) {
+          parameterRanges = { ...data.parameter_ranges, ...parameterRanges };
+        }
         physicsParamsChanged = false;
         console.log('[Physics] Parameters loaded:', physicsParameters);
       }
@@ -119,7 +122,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...physicsParameters,
-          apply_mapping: regenerateMapping
+          apply_mapping: true  // Always regenerate mapping when parameters change
         })
       });
 
@@ -131,13 +134,11 @@
         await updateLedMapping();
         pianoKeys = generatePianoKeys();
         
-        if (regenerateMapping) {
+        if (result.mapping_stats) {
           previewStats = result.mapping_stats;
-          console.log('[Physics] Mapping regenerated with new parameters');
-        } else {
-          console.log('[Physics] Parameters saved and visualization updated');
+          console.log('[Physics] Mapping regenerated with new parameters:', result.mapping_stats);
         }
-        console.log('[Physics] Parameters saved successfully');
+        console.log('[Physics] Parameters saved and visualization updated');
       } else {
         console.error('[Physics] Failed to save parameters');
       }
@@ -470,13 +471,18 @@
   }
 
   function openAddOffsetForm(midiNote: number) {
-    // Dispatch event to parent or scroll to CalibrationSection2
-    // For now, we'll emit an event that parent can listen to
-    const event = new CustomEvent('openAddOffset', { 
-      detail: { midiNote },
-      bubbles: true 
-    });
-    window.dispatchEvent(event);
+    // Set form values and open the add offset form in the Individual Key Offsets section
+    newKeyMidiNote = midiNote.toString();
+    newKeyOffset = 0;
+    showAddForm = true;
+    
+    // Scroll to the Individual Key Offsets section
+    const offsetsSection = document.querySelector('.per-key-offsets-container');
+    if (offsetsSection) {
+      offsetsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    
+    console.log(`[Offsets] Opening form to add offset for MIDI note ${midiNote} (${getMidiNoteName(midiNote)})`);
   }
 
   async function toggleLayoutVisualization() {
