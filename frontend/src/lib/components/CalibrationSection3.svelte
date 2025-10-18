@@ -101,6 +101,7 @@
       const response = await fetch('/api/calibration/physics-parameters');
       if (response.ok) {
         const data = await response.json();
+        console.log('[Physics] Full GET response:', data);
         physicsParameters = data.physics_parameters;
         // Merge backend ranges with local ranges, preferring frontend values
         if (data.parameter_ranges) {
@@ -109,10 +110,14 @@
         // Load pitch calibration info if available
         if (data.pitch_calibration_info) {
           pitchCalibrationInfo = data.pitch_calibration_info;
-          console.log('[Physics] Pitch calibration info loaded:', pitchCalibrationInfo);
+          console.log('[Physics] Pitch calibration info loaded from GET:', pitchCalibrationInfo);
+        } else {
+          console.log('[Physics] No pitch_calibration_info in GET response. Data keys:', Object.keys(data));
         }
         physicsParamsChanged = false;
         console.log('[Physics] Parameters loaded:', physicsParameters);
+      } else {
+        console.error('[Physics] GET failed, status:', response.status);
       }
     } catch (error) {
       console.error('[Physics] Error loading parameters:', error);

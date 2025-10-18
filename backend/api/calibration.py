@@ -1937,35 +1937,18 @@ def get_set_physics_parameters():
             settings_service = get_settings_service()
             pitch_calibration_info = None
             
-            # Try to get current pitch calibration info from last allocation
+            # Try to get cached pitch calibration info from last successful allocation
             try:
-                distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
-                
-                if distribution_mode == 'Physics-Based LED Detection':
-                    from backend.services.physics_led_allocation import PhysicsBasedAllocationService
-                    
-                    start_led = settings_service.get_setting('calibration', 'start_led', 4)
-                    end_led = settings_service.get_setting('calibration', 'end_led', 249)
-                    led_density = settings_service.get_setting('led', 'leds_per_meter', 200)
-                    led_width = settings_service.get_setting('calibration', 'led_physical_width', 3.5)
-                    overhang_threshold = settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5)
-                    white_key_width = settings_service.get_setting('calibration', 'white_key_width', 22.0)
-                    black_key_width = settings_service.get_setting('calibration', 'black_key_width', 12.0)
-                    white_key_gap = settings_service.get_setting('calibration', 'white_key_gap', 1.0)
-                    
-                    service = PhysicsBasedAllocationService(
-                        led_density=led_density,
-                        led_physical_width=led_width,
-                        overhang_threshold_mm=overhang_threshold
-                    )
-                    service.set_key_dimensions(white_key_width, black_key_width, white_key_gap)
-                    
-                    allocation_result = service.allocate_leds(start_led=start_led, end_led=end_led)
-                    
-                    if allocation_result.get('success') and 'pitch_calibration' in allocation_result:
-                        pitch_calibration_info = allocation_result['pitch_calibration']
+                cached_pitch_json = settings_service.get_setting('calibration', 'last_pitch_calibration_info', None)
+                if cached_pitch_json:
+                    import json
+                    pitch_calibration_info = json.loads(cached_pitch_json)
+                    logger.info(f"[Pitch Debug] Retrieved cached pitch calibration info: {pitch_calibration_info}")
+                else:
+                    logger.info(f"[Pitch Debug] No cached pitch calibration info found")
             except Exception as e:
-                logger.warning(f"Could not load current pitch calibration: {e}")
+                logger.warning(f"[Pitch Debug] Could not retrieve cached pitch calibration: {e}")
+            
             
             return jsonify({
                 'physics_parameters': {
@@ -2073,6 +2056,9 @@ def get_set_physics_parameters():
                             # No need to re-analyze - allocate_leds already includes it
                             if 'pitch_calibration' in allocation_result:
                                 response['pitch_calibration_info'] = allocation_result['pitch_calibration']
+                                # Also cache it in settings for GET requests
+                                import json
+                                settings_service.set_setting('calibration', 'last_pitch_calibration_info', json.dumps(allocation_result['pitch_calibration']))
                                 logger.info(f"Pitch calibration info included: was_adjusted={allocation_result['pitch_calibration'].get('was_adjusted', False)}")
                             
                             logger.info(f"Mapping regenerated with new physics parameters")
