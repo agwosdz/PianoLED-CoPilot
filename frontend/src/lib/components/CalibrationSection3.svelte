@@ -106,6 +106,11 @@
         if (data.parameter_ranges) {
           parameterRanges = { ...data.parameter_ranges, ...parameterRanges };
         }
+        // Load pitch calibration info if available
+        if (data.pitch_calibration_info) {
+          pitchCalibrationInfo = data.pitch_calibration_info;
+          console.log('[Physics] Pitch calibration info loaded:', pitchCalibrationInfo);
+        }
         physicsParamsChanged = false;
         console.log('[Physics] Parameters loaded:', physicsParameters);
       }
@@ -904,31 +909,27 @@
           </div>
         {/each}
 
-        <!-- Pitch Adjustment Status - 6th grid item -->
-        {#if pitchCalibrationInfo}
-          <div class="parameter-control pitch-adjustment-box" class:pitch-not-adjusted={!pitchCalibrationInfo.was_adjusted}>
-            <label>Pitch Adjustment</label>
-            <div class="pitch-display-content">
-              <div class="pitch-status-indicator">
-                {#if pitchCalibrationInfo.was_adjusted}
-                  <span class="status-badge adjusted">Adjusted</span>
-                {:else}
-                  <span class="status-badge not-adjusted">Optimal</span>
-                {/if}
+        <!-- Actual Pitch Used - Always visible -->
+        <div class="parameter-control pitch-display-box">
+          <div class="pitch-display-label">Actual Pitch Used</div>
+          <div class="pitch-display-content">
+            {#if pitchCalibrationInfo}
+              <div class="pitch-value-row">
+                <span class="value-label">Pitch:</span>
+                <span class="value-data">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
               </div>
-              <div class="pitch-values">
-                <div class="pitch-value-row">
-                  <span class="value-label">Used:</span>
-                  <span class="value-data">{pitchCalibrationInfo.calibrated_pitch_mm?.toFixed(4)} mm</span>
+              {#if pitchCalibrationInfo.was_adjusted}
+                <div class="pitch-adjustment-indicator">
+                  <span class="adjustment-badge">Auto-Adjusted</span>
                 </div>
-                <div class="pitch-value-row">
-                  <span class="value-label">Theory:</span>
-                  <span class="value-data">{pitchCalibrationInfo.theoretical_pitch_mm?.toFixed(4)} mm</span>
-                </div>
+              {/if}
+            {:else}
+              <div class="pitch-value-row">
+                <span class="value-label">Loading...</span>
               </div>
-            </div>
+            {/if}
           </div>
-        {/if}
+        </div>
       </div>
 
       <div class="advanced-settings-actions">
@@ -1925,6 +1926,12 @@
   }
 
   .parameter-control label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  .pitch-display-label {
     font-size: 0.9rem;
     font-weight: 600;
     color: #1e293b;

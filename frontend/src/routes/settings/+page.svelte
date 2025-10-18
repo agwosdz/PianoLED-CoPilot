@@ -755,7 +755,6 @@
                 <option value={180}>180 LEDs/m</option>
                 <option value={200}>200 LEDs/m</option>
               </select>
-              <p class="field-hint">LED strip density for future auto calibration.</p>
             </div>
 
             <div class="field">
