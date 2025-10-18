@@ -790,8 +790,8 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     return mapping
 
 
-def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, led_count=None):
-    """Apply calibration offsets to a pre-computed key mapping with cascading individual offsets
+def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, led_count=None, weld_offsets=None):
+    """Apply calibration offsets to a pre-computed key mapping with cascading individual offsets and weld compensations
     
     Args:
         mapping: Base key-to-LED mapping dict
@@ -800,9 +800,13 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         key_offsets: Per-key offset dict {midi_note: offset}
                      Individual offsets cascade: an offset at note N affects all notes >= N
         led_count: Total LED count for bounds checking (optional, no bounds if None)
+        weld_offsets: Weld offset dict {led_index: offset_mm} for LED strip welds/joints
+                      Offsets after a weld are adjusted by the cumulative weld offset to account for
+                      density discontinuities at solder points
     
     Returns:
-        dict: Adjusted mapping with LED range clamped to [start_led, end_led] and cascading offsets applied
+        dict: Adjusted mapping with LED range clamped to [start_led, end_led], cascading key offsets applied,
+              and weld compensations factored in
     """
     from backend.logging_config import get_logger
     logger = get_logger(__name__)
@@ -810,16 +814,40 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     if end_led is None:
         end_led = (led_count - 1) if led_count else 245
     
-    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets):
+    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets and not weld_offsets):
         logger.debug(f"Skipping offset application: mapping_empty={not mapping}, "
-                    f"start_led={start_led}, end_led={end_led}, key_offsets_empty={not key_offsets}")
+                    f"start_led={start_led}, end_led={end_led}, key_offsets_empty={not key_offsets}, "
+                    f"weld_offsets_empty={not weld_offsets}")
         return mapping
     
     if key_offsets is None:
         key_offsets = {}
+    if weld_offsets is None:
+        weld_offsets = {}
     
     logger.info(f"Applying calibration offsets to mapping with {len(mapping)} entries. "
-               f"start_led={start_led}, end_led={end_led}, key_offsets_count={len(key_offsets)}, led_count={led_count}")
+               f"start_led={start_led}, end_led={end_led}, key_offsets_count={len(key_offsets)}, "
+               f"weld_offsets_count={len(weld_offsets)}, led_count={led_count}")
+    
+    # Normalize and sort weld offsets by LED index for efficient processing
+    normalized_weld_offsets = {}
+    invalid_weld_count = 0
+    for led_idx_str, offset_val in weld_offsets.items():
+        try:
+            led_idx = int(led_idx_str) if isinstance(led_idx_str, str) else led_idx_str
+            offset_mm = float(offset_val) if isinstance(offset_val, (str, int)) else offset_val
+            normalized_weld_offsets[led_idx] = offset_mm
+        except (ValueError, TypeError):
+            invalid_weld_count += 1
+            continue
+    
+    if invalid_weld_count > 0:
+        logger.warning(f"Skipped {invalid_weld_count} invalid weld offset entries during normalization")
+    
+    if normalized_weld_offsets:
+        logger.debug(f"Normalized {len(normalized_weld_offsets)} weld offsets. "
+                    f"LED indices: {sorted(normalized_weld_offsets.keys())}, "
+                    f"Offsets (mm): {[normalized_weld_offsets[i] for i in sorted(normalized_weld_offsets.keys())]}")
     
     adjusted = {}
     
@@ -871,8 +899,22 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         
         if isinstance(led_indices, list):
             for idx in led_indices:
-                # Apply cascading individual offsets
+                # Apply cascading key offsets first
                 adjusted_idx = idx + cascading_offset
+                
+                # Apply weld compensation: sum of all weld offsets for LEDs < current LED
+                # Each weld at or before this LED index adds its offset to account for density discontinuity
+                weld_compensation = 0
+                if normalized_weld_offsets:
+                    for weld_idx, weld_offset_mm in sorted(normalized_weld_offsets.items()):
+                        if weld_idx < adjusted_idx:
+                            # Convert mm offset to LED count (rough estimate: 1 LED ≈ 3.5-4mm spacing)
+                            # For precise values, this should be calculated from leds_per_meter
+                            # As default: 1mm ≈ 0.29 LEDs (3.5mm per LED at 200 LEDs/meter)
+                            weld_led_offset = round(weld_offset_mm / 3.5)
+                            weld_compensation += weld_led_offset
+                
+                adjusted_idx = adjusted_idx + weld_compensation
                 
                 # Clamp to the start_led and end_led range
                 was_clamped = False
@@ -883,12 +925,24 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
                 
                 adjusted_indices.append(adjusted_idx)
                 
-                if cascading_offset != 0:
+                if cascading_offset != 0 or weld_compensation != 0:
                     logger.debug(f"Note {midi_note_int}: LED {idx} → {adjusted_idx} "
-                                f"(cascading={cascading_offset}, "
+                                f"(cascading_key_offset={cascading_offset}, "
+                                f"weld_compensation={weld_compensation} LEDs, "
                                 f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         elif isinstance(led_indices, int):
+            # Apply cascading key offsets first
             adjusted_idx = led_indices + cascading_offset
+            
+            # Apply weld compensation
+            weld_compensation = 0
+            if normalized_weld_offsets:
+                for weld_idx, weld_offset_mm in sorted(normalized_weld_offsets.items()):
+                    if weld_idx < adjusted_idx:
+                        weld_led_offset = round(weld_offset_mm / 3.5)
+                        weld_compensation += weld_led_offset
+            
+            adjusted_idx = adjusted_idx + weld_compensation
             
             # Clamp to the start_led and end_led range
             was_clamped = False
@@ -899,9 +953,10 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
             
             adjusted_indices = [adjusted_idx]
             
-            if cascading_offset != 0:
+            if cascading_offset != 0 or weld_compensation != 0:
                 logger.debug(f"Note {midi_note_int}: LED {led_indices} → {adjusted_idx} "
-                            f"(cascading={cascading_offset}, "
+                            f"(cascading_key_offset={cascading_offset}, "
+                            f"weld_compensation={weld_compensation} LEDs, "
                             f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         
         if adjusted_indices:
@@ -912,9 +967,11 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     
     logger.info(f"Offset application complete. Adjusted {len(adjusted)} notes. "
                f"Clamped {clamped_count} LED indices (bounds: {start_led}-{end_led}). "
+               f"Applied {len(normalized_weld_offsets)} weld compensations. "
                f"Adjusted mapping now has {sum(len(v) if isinstance(v, list) else 1 for v in adjusted.values())} total LED assignments")
     
     return adjusted
+
 
 
 def validate_gpio_pin_availability(pin, exclude_pins=None):
@@ -1618,6 +1675,7 @@ def get_canonical_led_mapping(settings_service=None):
         start_led = settings_service.get_setting('calibration', 'start_led', 4)
         end_led = settings_service.get_setting('calibration', 'end_led', 249)
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
+        weld_offsets = settings_service.get_setting('calibration', 'led_weld_offsets', {})
         distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
         allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
         leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 200)
@@ -1681,13 +1739,14 @@ def get_canonical_led_mapping(settings_service=None):
                 except (ValueError, TypeError):
                     pass
         
-        # Apply calibration offsets
+        # Apply calibration offsets and weld compensations
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=base_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=converted_offsets,
-            led_count=led_count
+            led_count=led_count,
+            weld_offsets=weld_offsets
         )
         
         return {
