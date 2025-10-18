@@ -2035,21 +2035,11 @@ def get_set_physics_parameters():
                                 'avg_leds_per_key': stats.get('avg_leds_per_key', 0),
                             }
                             
-                            # Extract pitch calibration info from the allocation result
-                            # The PhysicsBasedAllocationService includes pitch_calibration in per_key_analysis
-                            try:
-                                # Get the full analysis which includes pitch calibration data
-                                analysis = service.analyzer.analyze_mapping(
-                                    allocation_result['key_led_mapping'],
-                                    led_count=246,
-                                    start_led=start_led,
-                                    end_led=end_led
-                                )
-                                if 'pitch_calibration' in analysis:
-                                    response['pitch_calibration_info'] = analysis['pitch_calibration']
-                                    logger.info(f"Pitch calibration info included: was_adjusted={analysis['pitch_calibration'].get('was_adjusted', False)}")
-                            except Exception as e:
-                                logger.warning(f"Could not extract pitch calibration info: {e}")
+                            # Extract pitch calibration info directly from allocation result
+                            # No need to re-analyze - allocate_leds already includes it
+                            if 'pitch_calibration' in allocation_result:
+                                response['pitch_calibration_info'] = allocation_result['pitch_calibration']
+                                logger.info(f"Pitch calibration info included: was_adjusted={allocation_result['pitch_calibration'].get('was_adjusted', False)}")
                             
                             logger.info(f"Mapping regenerated with new physics parameters")
                         else:

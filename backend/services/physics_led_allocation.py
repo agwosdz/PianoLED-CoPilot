@@ -173,6 +173,7 @@ class PhysicsBasedAllocationService:
                 'per_key_analysis': analysis['per_key_analysis'],
                 'quality_metrics': analysis['quality_metrics'],
                 'overall_quality': analysis['overall_quality'],
+                'pitch_calibration': analysis['pitch_calibration'],
                 'parameters_used': {
                     'allocation_method': 'Physics-Based LED Detection',
                     'led_density': self.led_density,
