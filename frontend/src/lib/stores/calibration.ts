@@ -14,6 +14,7 @@ export interface CalibrationState {
   start_led: number;
   end_led: number;
   key_offsets: Record<number, number>;
+  key_joint_offsets: Record<number, number>;
   calibration_mode: 'none' | 'assisted' | 'manual';
   last_calibration: string | null;
 }
@@ -21,6 +22,12 @@ export interface CalibrationState {
 export interface KeyOffset {
   midiNote: number;
   offset: number;
+  noteName: string;
+}
+
+export interface KeyJointOffset {
+  midiNote: number;
+  offsetMm: number;
   noteName: string;
 }
 
@@ -61,6 +68,7 @@ const defaultCalibrationState: CalibrationState = {
   start_led: 0,
   end_led: 245,
   key_offsets: {},
+  key_joint_offsets: {},
   calibration_mode: 'none',
   last_calibration: null
 };
@@ -173,6 +181,7 @@ class CalibrationService {
         start_led: data.start_led ?? 0,
         end_led: data.end_led ?? 245,
         key_offsets: this.normalizeKeyOffsets(data.key_offsets ?? {}),
+        key_joint_offsets: this.normalizeKeyJointOffsets(data.key_joint_offsets ?? {}),
         calibration_mode: data.calibration_mode ?? 'none',
         last_calibration: data.last_calibration ?? null
       };
@@ -189,6 +198,21 @@ class CalibrationService {
   }
 
   private normalizeKeyOffsets(offsets: any): Record<number, number> {
+    const normalized: Record<number, number> = {};
+    
+    for (const [key, value] of Object.entries(offsets)) {
+      const noteNum = parseInt(key, 10);
+      const offset = Number(value);
+      
+      if (Number.isFinite(noteNum) && Number.isFinite(offset)) {
+        normalized[noteNum] = offset;
+      }
+    }
+    
+    return normalized;
+  }
+
+  private normalizeKeyJointOffsets(offsets: any): Record<number, number> {
     const normalized: Record<number, number> = {};
     
     for (const [key, value] of Object.entries(offsets)) {
@@ -341,6 +365,52 @@ class CalibrationService {
     
     try {
       const response = await fetch(`${this.baseUrl}/key-offset/${midiNote}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      await this.loadStatus();
+      calibrationUI.update(ui => ({ ...ui, isLoading: false }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      calibrationUI.update(ui => ({ ...ui, isLoading: false, error: message }));
+      throw error;
+    }
+  }
+
+  async setKeyJointOffset(midiNote: number, offsetMm: number): Promise<void> {
+    const clamped = Math.max(-10.0, Math.min(10.0, offsetMm));
+    
+    calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
+    
+    try {
+      const response = await fetch(`${this.baseUrl}/key-joint-offset/${midiNote}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offset_mm: clamped })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      await this.loadStatus();
+      calibrationUI.update(ui => ({ ...ui, isLoading: false }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      calibrationUI.update(ui => ({ ...ui, isLoading: false, error: message }));
+      throw error;
+    }
+  }
+
+  async deleteKeyJointOffset(midiNote: number): Promise<void> {
+    calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
+    
+    try {
+      const response = await fetch(`${this.baseUrl}/key-joint-offset/${midiNote}`, {
         method: 'DELETE'
       });
 
@@ -562,6 +632,8 @@ export const setStartLed = (ledIndex: number): Promise<void> => calibrationServi
 export const setEndLed = (ledIndex: number): Promise<void> => calibrationService.setEndLed(ledIndex);
 export const setKeyOffset = (midiNote: number, offset: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset);
 export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyOffset(midiNote);
+export const setKeyJointOffset = (midiNote: number, offsetMm: number): Promise<void> => calibrationService.setKeyJointOffset(midiNote, offsetMm);
+export const deleteKeyJointOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyJointOffset(midiNote);
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();
 export const getKeyLedMapping = (): Promise<Record<number, number[]>> => calibrationService.getKeyLedMapping();
 export const getKeyLedMappingWithRange = (): Promise<{ mapping: Record<number, number[]>; start_led: number; end_led: number; led_count: number }> => calibrationService.getKeyLedMappingWithRange();

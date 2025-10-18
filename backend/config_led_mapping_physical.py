@@ -276,7 +276,15 @@ class PhysicalKeyGeometry:
 class LEDPhysicalPlacement:
     """
     Calculates LED strip placements and detects physical overlaps.
+    
+    Includes compensation for solder joints in the LED strip:
+    - LED_JOINT_ADDAGE = 1.0 mm per joint
+    - SOLDER_JOINT_POSITIONS = {53, 154} (LED indices after which physical gaps exist)
     """
+    
+    # Solder joint compensation constants (matching piano.py)
+    LED_JOINT_ADDAGE = 1.0  # mm per joint
+    SOLDER_JOINT_POSITIONS = {53, 154}  # LED indices after which joints create gaps
 
     def __init__(
         self,
@@ -308,6 +316,9 @@ class LEDPhysicalPlacement:
     ) -> Dict[int, LEDPlacement]:
         """
         Calculate physical placement of LEDs in a usable range.
+        
+        Includes compensation for solder joints at specific LED positions.
+        Solder joints create 1mm physical gaps in the LED strip after LEDs 53 and 154.
 
         Uses relative indices (0 to range_size-1) for positioning calculation,
         then maps back to actual LED indices for the dictionary keys.
@@ -328,9 +339,17 @@ class LEDPhysicalPlacement:
 
         # Calculate placements for usable range using relative indices
         for relative_idx in range(start_led, end_led + 1):
-            # Position of LED center using relative index for spacing
+            # Base position of LED center using relative index for spacing
             # This ensures LEDs 0 to range_size-1 have correct spacing
-            led_center = strip_start_mm + (relative_idx * self.led_spacing_mm) + self.led_strip_offset
+            base_center = strip_start_mm + (relative_idx * self.led_spacing_mm) + self.led_strip_offset
+            
+            # Apply solder joint compensation
+            # Count how many solder joints are BEFORE this LED index
+            num_joints_before = sum(1 for joint_pos in self.SOLDER_JOINT_POSITIONS if relative_idx > joint_pos)
+            joint_compensation = num_joints_before * self.LED_JOINT_ADDAGE
+            
+            # Final LED center position with joint compensation
+            led_center = base_center + joint_compensation
             led_start = led_center - (self.led_physical_width / 2)
             led_end = led_center + (self.led_physical_width / 2)
 
