@@ -1055,7 +1055,7 @@
             <div class="offset-item">
               <div class="offset-info">
                 <span class="offset-note">{getMidiNoteName(midiNote)}</span>
-                <span class="offset-value">{offset}ms</span>
+                <span class="offset-value">{offset} LEDs</span>
               </div>
               <div class="offset-actions">
                 <button
