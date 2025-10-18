@@ -518,175 +518,6 @@ def set_all_key_offsets():
             'error': 'Internal Server Error',
             'message': 'Failed to update key offsets'
         }), 500
-
-
-# === JOINT OFFSET ENDPOINTS ===
-# Joint offsets are automatic compensations applied to keys near LED solder joints
-# They are stored separately from manual LED offsets to distinguish between:
-# - LED offsets: Manual fine-tuning in LED units
-# - Joint offsets: Automatic compensation in mm for solder joint gaps
-
-@calibration_bp.route('/key-joint-offset/<int:midi_note>', methods=['GET'])
-def get_key_joint_offset(midi_note):
-    """Get the joint offset for a specific key"""
-    try:
-        if not (0 <= midi_note <= 127):
-            return jsonify({
-                'error': 'Bad Request',
-                'message': 'MIDI note must be between 0 and 127'
-            }), 400
-        
-        settings_service = get_settings_service()
-        key_joint_offsets = settings_service.get_setting('calibration', 'key_joint_offsets', {}) or {}
-        joint_offset = key_joint_offsets.get(str(midi_note), None)
-        
-        return jsonify({
-            'midi_note': midi_note,
-            'joint_offset': joint_offset
-        }), 200
-    except Exception as e:
-        logger.error(f"Error getting key joint offset: {e}")
-        return jsonify({
-            'error': 'Internal Server Error',
-            'message': f'Failed to retrieve joint offset for MIDI note {midi_note}'
-        }), 500
-
-
-@calibration_bp.route('/key-joint-offset/<int:midi_note>', methods=['PUT'])
-def set_key_joint_offset(midi_note):
-    """
-    Set a joint offset for a specific key.
-    Joint offsets are mm-based compensations for solder joint gaps.
-    """
-    try:
-        if not (0 <= midi_note <= 127):
-            return jsonify({
-                'error': 'Bad Request',
-                'message': 'MIDI note must be between 0 and 127'
-            }), 400
-        
-        data = request.get_json()
-        if not data or 'offset_mm' not in data:
-            return jsonify({
-                'error': 'Bad Request',
-                'message': 'Request must include "offset_mm" field'
-            }), 400
-        
-        offset_mm = data['offset_mm']
-        
-        # Validate offset is a number
-        try:
-            offset_mm = float(offset_mm)
-            if not (-10.0 <= offset_mm <= 10.0):
-                return jsonify({
-                    'error': 'Validation Error',
-                    'message': 'offset_mm must be between -10.0 and 10.0'
-                }), 400
-        except (TypeError, ValueError):
-            return jsonify({
-                'error': 'Validation Error',
-                'message': 'offset_mm must be a number'
-            }), 400
-        
-        settings_service = get_settings_service()
-        
-        # Get current joint offsets
-        key_joint_offsets = settings_service.get_setting('calibration', 'key_joint_offsets', {}) or {}
-        
-        # Update or remove joint offset
-        if offset_mm == 0.0 and str(midi_note) in key_joint_offsets:
-            # Remove offset if it's 0 (default)
-            del key_joint_offsets[str(midi_note)]
-        elif offset_mm != 0.0:
-            key_joint_offsets[str(midi_note)] = offset_mm
-        
-        # Save updated offsets
-        settings_service.set_setting('calibration', 'key_joint_offsets', key_joint_offsets)
-        settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
-        
-        # Broadcast offset change
-        socketio = get_socketio()
-        socketio.emit('key_joint_offset_changed', {
-            'midi_note': midi_note,
-            'offset_mm': offset_mm
-        })
-        
-        logger.info(f"Key joint offset for MIDI note {midi_note} set to {offset_mm}mm")
-        return jsonify({
-            'message': 'Key joint offset updated',
-            'midi_note': midi_note,
-            'offset_mm': offset_mm
-        }), 200
-    except Exception as e:
-        logger.error(f"Error setting key joint offset: {e}")
-        return jsonify({
-            'error': 'Internal Server Error',
-            'message': f'Failed to set joint offset for MIDI note {midi_note}'
-        }), 500
-
-
-@calibration_bp.route('/key-joint-offset/<int:midi_note>', methods=['DELETE'])
-def delete_key_joint_offset(midi_note):
-    """Delete the joint offset for a specific key"""
-    try:
-        if not (0 <= midi_note <= 127):
-            return jsonify({
-                'error': 'Bad Request',
-                'message': 'MIDI note must be between 0 and 127'
-            }), 400
-        
-        settings_service = get_settings_service()
-        
-        # Get current joint offsets
-        key_joint_offsets = settings_service.get_setting('calibration', 'key_joint_offsets', {}) or {}
-        
-        # Remove offset for this key if it exists
-        if str(midi_note) in key_joint_offsets:
-            del key_joint_offsets[str(midi_note)]
-            
-            # Save updated offsets
-            settings_service.set_setting('calibration', 'key_joint_offsets', key_joint_offsets)
-            settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
-            
-            # Broadcast offset change
-            socketio = get_socketio()
-            socketio.emit('key_joint_offset_changed', {
-                'midi_note': midi_note,
-                'offset_mm': 0.0
-            })
-            
-            logger.info(f"Key joint offset for MIDI note {midi_note} deleted")
-        
-        return jsonify({
-            'message': 'Key joint offset deleted',
-            'midi_note': midi_note
-        }), 200
-    except Exception as e:
-        logger.error(f"Error deleting key joint offset: {e}")
-        return jsonify({
-            'error': 'Internal Server Error',
-            'message': f'Failed to delete joint offset for MIDI note {midi_note}'
-        }), 500
-
-
-@calibration_bp.route('/key-joint-offsets', methods=['GET'])
-def get_all_key_joint_offsets():
-    """Get all key joint offsets"""
-    try:
-        settings_service = get_settings_service()
-        key_joint_offsets = settings_service.get_setting('calibration', 'key_joint_offsets', {}) or {}
-        
-        return jsonify({
-            'key_joint_offsets': key_joint_offsets
-        }), 200
-    except Exception as e:
-        logger.error(f"Error getting all key joint offsets: {e}")
-        return jsonify({
-            'error': 'Internal Server Error',
-            'message': 'Failed to retrieve key joint offsets'
-        }), 500
-
-
 @calibration_bp.route('/reset', methods=['POST'])
 def reset_calibration():
     """Reset all calibration offsets to defaults"""
@@ -697,7 +528,6 @@ def reset_calibration():
         settings_service.set_setting('calibration', 'start_led', 0)
         settings_service.set_setting('calibration', 'end_led', led_count - 1)
         settings_service.set_setting('calibration', 'key_offsets', {})
-        settings_service.set_setting('calibration', 'key_joint_offsets', {})
         settings_service.set_setting('calibration', 'calibration_enabled', False)
         settings_service.set_setting('calibration', 'calibration_mode', 'none')
         
@@ -707,7 +537,6 @@ def reset_calibration():
             'start_led': 0,
             'end_led': led_count - 1,
             'key_offsets': {},
-            'key_joint_offsets': {},
             'enabled': False
         })
         
@@ -896,17 +725,15 @@ def get_key_led_mapping():
         
         logger.info(f"Converted {len(converted_offsets)} offsets from MIDI notes to key indices")
         
-        # Get joint offsets from settings
-        key_joint_offsets = settings_service.get_setting('calibration', 'key_joint_offsets', {}) or {}
+        logger.info(f"Converted {len(converted_offsets)} offsets from MIDI notes to key indices")
         
-        # Apply calibration key offsets and joint offsets to the mapping
+        # Apply calibration key offsets to the mapping (now with matching key indices)
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=base_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=converted_offsets,
-            led_count=led_count,
-            key_joint_offsets=key_joint_offsets
+            led_count=led_count
         )
         
         logger.info(f"Successfully generated mapping with {len(final_mapping)} keys (distribution_mode='{distribution_mode}')")
@@ -2033,17 +1860,13 @@ def get_physical_analysis():
                 except (ValueError, TypeError):
                     pass
         
-        # Get joint offsets from settings
-        key_joint_offsets = settings_service.get_setting('calibration', 'key_joint_offsets', {}) or {}
-        
         # Apply calibration offsets to match /key-led-mapping behavior
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=key_led_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=converted_offsets,
-            led_count=total_led_count,
-            key_joint_offsets=key_joint_offsets
+            led_count=total_led_count
         )
         
         response = {

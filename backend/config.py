@@ -790,28 +790,23 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     return mapping
 
 
-def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, led_count=None, weld_offsets=None, key_joint_offsets=None):
+def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, led_count=None, weld_offsets=None):
     """Apply calibration offsets to a pre-computed key mapping with cascading individual offsets and weld compensations
     
     Args:
         mapping: Base key-to-LED mapping dict
         start_led: First LED index at the beginning of the piano (clamp min)
         end_led: Last LED index at the end of the piano (clamp max)
-        key_offsets: Per-key LED offset dict {midi_note: offset_leds}
+        key_offsets: Per-key offset dict {midi_note: offset}
                      Individual offsets cascade: an offset at note N affects all notes >= N
-                     Units: LED indices (whole numbers)
         led_count: Total LED count for bounds checking (optional, no bounds if None)
         weld_offsets: Weld offset dict {led_index: offset_mm} for LED strip welds/joints
                       Offsets after a weld are adjusted by the cumulative weld offset to account for
                       density discontinuities at solder points
-                      Units: millimeters
-        key_joint_offsets: Per-key joint compensation dict {midi_note: offset_mm}
-                          Joint-based compensations for solder joint gaps
-                          Units: millimeters (automatically converted to LED units)
     
     Returns:
         dict: Adjusted mapping with LED range clamped to [start_led, end_led], cascading key offsets applied,
-              weld compensations and joint compensations factored in
+              and weld compensations factored in
     """
     from backend.logging_config import get_logger
     logger = get_logger(__name__)
@@ -819,23 +814,20 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     if end_led is None:
         end_led = (led_count - 1) if led_count else 245
     
-    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets and not weld_offsets and not key_joint_offsets):
+    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets and not weld_offsets):
         logger.debug(f"Skipping offset application: mapping_empty={not mapping}, "
                     f"start_led={start_led}, end_led={end_led}, key_offsets_empty={not key_offsets}, "
-                    f"weld_offsets_empty={not weld_offsets}, key_joint_offsets_empty={not key_joint_offsets}")
+                    f"weld_offsets_empty={not weld_offsets}")
         return mapping
     
     if key_offsets is None:
         key_offsets = {}
     if weld_offsets is None:
         weld_offsets = {}
-    if key_joint_offsets is None:
-        key_joint_offsets = {}
     
     logger.info(f"Applying calibration offsets to mapping with {len(mapping)} entries. "
                f"start_led={start_led}, end_led={end_led}, key_offsets_count={len(key_offsets)}, "
-               f"weld_offsets_count={len(weld_offsets)}, key_joint_offsets_count={len(key_joint_offsets)}, "
-               f"led_count={led_count}")
+               f"weld_offsets_count={len(weld_offsets)}, led_count={led_count}")
     
     # Normalize and sort weld offsets by LED index for efficient processing
     normalized_weld_offsets = {}
@@ -880,30 +872,7 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         logger.debug(f"Normalized {len(normalized_key_offsets)} key offsets. "
                     f"Notes: {sorted(normalized_key_offsets.keys())}, "
                     f"Offsets: {[normalized_key_offsets[n] for n in sorted(normalized_key_offsets.keys())]}")
-    
-    # Normalize key_joint_offsets to convert mm to LED units
-    # Conversion: 1mm ≈ 0.286 LEDs (3.5mm per LED at 200 LEDs/meter standard spacing)
-    normalized_key_joint_offsets = {}
-    invalid_joint_offsets_count = 0
-    mm_to_leds_ratio = 3.5  # mm per LED at standard 200 LEDs/meter density
-    for key, value in key_joint_offsets.items():
-        try:
-            note_num = int(key) if isinstance(key, str) else key
-            offset_mm = float(value) if isinstance(value, (str, int)) else value
-            # Convert mm to LED units and round
-            offset_leds = round(offset_mm / mm_to_leds_ratio)
-            normalized_key_joint_offsets[note_num] = offset_leds
-        except (ValueError, TypeError):
-            invalid_joint_offsets_count += 1
-            continue  # Skip invalid entries
-    
-    if invalid_joint_offsets_count > 0:
-        logger.warning(f"Skipped {invalid_joint_offsets_count} invalid joint offset entries during normalization")
-    
-    if normalized_key_joint_offsets:
-        logger.debug(f"Normalized {len(normalized_key_joint_offsets)} key joint offsets. "
-                    f"Notes: {sorted(normalized_key_joint_offsets.keys())}, "
-                    f"Offsets (mm->LEDs): {[(n, normalized_key_joint_offsets[n]) for n in sorted(normalized_key_joint_offsets.keys())]}")
+
     
     clamped_count = 0
     invalid_entries_count = 0
@@ -920,9 +889,7 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         
         # Calculate cascading offset: sum of all key offsets for notes <= current note
         cascading_offset = 0
-        cascading_joint_offset = 0
         contributing_offsets = []
-        contributing_joint_offsets = []
         
         if normalized_key_offsets:
             for offset_note, offset_value in sorted(normalized_key_offsets.items()):
@@ -932,22 +899,10 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
                 else:
                     break  # No more offsets apply to this note
         
-        # Apply cascading joint offsets (cascade like key offsets)
-        if normalized_key_joint_offsets:
-            for offset_note, offset_value in sorted(normalized_key_joint_offsets.items()):
-                if offset_note <= midi_note_int:
-                    cascading_joint_offset += offset_value
-                    contributing_joint_offsets.append((offset_note, offset_value, 'joint'))
-                else:
-                    break  # No more joint offsets apply to this note
-        
-        # Combine both cascading offsets
-        total_cascading_offset = cascading_offset + cascading_joint_offset
-        
         if isinstance(led_indices, list):
             for idx in led_indices:
-                # Apply cascading key offsets and joint offsets
-                adjusted_idx = idx + total_cascading_offset
+                # Apply cascading key offsets
+                adjusted_idx = idx + cascading_offset
                 
                 # Apply weld compensation: sum of all weld offsets for LEDs < current LED
                 # Each weld at or before this LED index adds its offset to account for density discontinuity
@@ -972,15 +927,14 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
                 
                 adjusted_indices.append(adjusted_idx)
                 
-                if cascading_offset != 0 or cascading_joint_offset != 0 or weld_compensation != 0:
+                if cascading_offset != 0 or weld_compensation != 0:
                     logger.debug(f"Note {midi_note_int}: LED {idx} → {adjusted_idx} "
-                                f"(led_offset={cascading_offset}, joint_offset={cascading_joint_offset}, "
+                                f"(led_offset={cascading_offset}, "
                                 f"weld_compensation={weld_compensation} LEDs, "
-                                f"contributing_offsets={contributing_offsets}, "
-                                f"contributing_joint_offsets={contributing_joint_offsets}, clamped={was_clamped})")
+                                f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         elif isinstance(led_indices, int):
-            # Apply cascading key offsets and joint offsets
-            adjusted_idx = led_indices + total_cascading_offset
+            # Apply cascading key offsets
+            adjusted_idx = led_indices + cascading_offset
             
             # Apply weld compensation
             weld_compensation = 0
@@ -1001,12 +955,11 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
             
             adjusted_indices = [adjusted_idx]
             
-            if cascading_offset != 0 or cascading_joint_offset != 0 or weld_compensation != 0:
+            if cascading_offset != 0 or weld_compensation != 0:
                 logger.debug(f"Note {midi_note_int}: LED {led_indices} → {adjusted_idx} "
-                            f"(led_offset={cascading_offset}, joint_offset={cascading_joint_offset}, "
+                            f"(led_offset={cascading_offset}, "
                             f"weld_compensation={weld_compensation} LEDs, "
-                            f"contributing_offsets={contributing_offsets}, "
-                            f"contributing_joint_offsets={contributing_joint_offsets}, clamped={was_clamped})")
+                            f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         
         if adjusted_indices:
             adjusted[midi_note] = adjusted_indices
@@ -1016,7 +969,7 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     
     logger.info(f"Offset application complete. Adjusted {len(adjusted)} notes. "
                f"Clamped {clamped_count} LED indices (bounds: {start_led}-{end_led}). "
-               f"Applied {len(normalized_key_offsets)} LED offsets, {len(normalized_key_joint_offsets)} joint offsets, "
+               f"Applied {len(normalized_key_offsets)} LED offsets "
                f"and {len(normalized_weld_offsets)} weld compensations. "
                f"Adjusted mapping now has {sum(len(v) if isinstance(v, list) else 1 for v in adjusted.values())} total LED assignments")
     
