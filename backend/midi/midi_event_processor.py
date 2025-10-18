@@ -383,8 +383,40 @@ class MidiEventProcessor:
         )
 
     def _generate_key_mapping(self) -> Dict[int, List[int]]:
+        """Generate key mapping using canonical LED mapping from settings."""
         mapping: Dict[int, List[int]] = {}
-
+        
+        # Try to use canonical mapping from config if settings_service is available
+        if self._settings_service is not None:
+            try:
+                from backend.config import get_canonical_led_mapping
+                result = get_canonical_led_mapping(self._settings_service)
+                if result.get('success'):
+                    canonical_mapping = result.get('mapping', {})
+                    logger.info(
+                        "MIDI processor using canonical LED mapping with %d keys from settings",
+                        len(canonical_mapping)
+                    )
+                    # Convert from key indices (0-87) to MIDI notes (21-108)
+                    for key_index, led_indices in canonical_mapping.items():
+                        midi_note = key_index + 21
+                        if isinstance(led_indices, list):
+                            # Use configured LED count (total strip size) for bounds check, not calibration-adjusted
+                            # The canonical mapping has absolute indices within the total LED range
+                            mapping[midi_note] = [idx for idx in led_indices if 0 <= idx < self._configured_led_count]
+                        else:
+                            # Shouldn't happen, but handle it
+                            if 0 <= led_indices < self._configured_led_count:
+                                mapping[midi_note] = [led_indices]
+                    
+                    if mapping:
+                        return mapping  # Return canonical mapping
+                else:
+                    logger.warning("Canonical mapping failed: %s, falling back to local generation", result.get('error'))
+            except Exception as e:
+                logger.debug("Could not load canonical mapping: %s, falling back to local generation", e)
+        
+        # Fallback: local mapping generation (original logic)
         if self.mapping_mode == 'manual' and self.key_mapping:
             for note_str, led_indices in self.key_mapping.items():
                 try:

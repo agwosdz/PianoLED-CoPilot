@@ -1582,3 +1582,125 @@ def validate_auto_mapping_config(piano_size, led_count, leds_per_key=None, base_
         'recommendations': recommendations,
         'stats': stats
     }
+
+
+def get_canonical_led_mapping(settings_service=None):
+    """
+    Get the canonical LED-to-key mapping respecting all current settings.
+    
+    This function generates the authoritative mapping that should be used by:
+    - USB MIDI input processor
+    - rtpMIDI input processor
+    - LED playback service
+    - Any other component that needs MIDI-to-LED mapping
+    
+    Uses the same logic as /key-led-mapping endpoint to ensure consistency.
+    
+    Args:
+        settings_service: Optional SettingsService instance. If None, uses default settings.
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'mapping': {key_index: [led_indices]},  # key_index 0-87, MIDI notes 21-108
+            'error': str or None
+        }
+    """
+    try:
+        # Get settings service if not provided
+        if settings_service is None:
+            from backend.services.settings_service import SettingsService
+            settings_service = SettingsService()
+        
+        # Read all required settings
+        piano_size = settings_service.get_setting('piano', 'size', '88-key')
+        led_count = settings_service.get_setting('led', 'led_count', 300)
+        start_led = settings_service.get_setting('calibration', 'start_led', 4)
+        end_led = settings_service.get_setting('calibration', 'end_led', 249)
+        key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
+        distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
+        allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
+        leds_per_meter = settings_service.get_setting('led', 'leds_per_meter', 200)
+        
+        # Choose allocation algorithm based on distribution mode
+        if distribution_mode == 'Physics-Based LED Detection':
+            # Use physics-based allocation
+            from backend.services.physics_led_allocation import PhysicsBasedAllocationService
+            
+            led_physical_width = settings_service.get_setting('calibration', 'led_physical_width', 3.5)
+            led_strip_offset = settings_service.get_setting('calibration', 'led_strip_offset', None)
+            overhang_threshold = settings_service.get_setting('calibration', 'led_overhang_threshold', 1.5)
+            white_key_width = settings_service.get_setting('calibration', 'white_key_width', 22.0)
+            black_key_width = settings_service.get_setting('calibration', 'black_key_width', 12.0)
+            white_key_gap = settings_service.get_setting('calibration', 'white_key_gap', 1.0)
+            
+            service = PhysicsBasedAllocationService(
+                led_density=leds_per_meter,
+                led_physical_width=led_physical_width,
+                led_strip_offset=led_strip_offset,
+                overhang_threshold_mm=overhang_threshold
+            )
+            
+            service.analyzer.white_key_width = white_key_width
+            service.analyzer.black_key_width = black_key_width
+            service.analyzer.white_key_gap = white_key_gap
+            
+            allocation_result = service.allocate_leds(
+                start_led=start_led,
+                end_led=end_led
+            )
+        else:
+            # Use traditional Piano-Based allocation
+            from backend.config_led_mapping_advanced import calculate_per_key_led_allocation
+            allocation_result = calculate_per_key_led_allocation(
+                leds_per_meter=leds_per_meter,
+                start_led=start_led,
+                end_led=end_led,
+                piano_size=piano_size,
+                allow_led_sharing=allow_led_sharing
+            )
+        
+        if not allocation_result.get('success'):
+            return {
+                'success': False,
+                'mapping': {},
+                'error': allocation_result.get('message', 'Unknown error')
+            }
+        
+        base_mapping = allocation_result.get('key_led_mapping', {})
+        
+        # Convert offset keys from MIDI notes (21-108) to key indices (0-87)
+        converted_offsets = {}
+        if key_offsets:
+            for midi_note_str, offset_value in key_offsets.items():
+                try:
+                    midi_note = int(midi_note_str) if isinstance(midi_note_str, str) else midi_note_str
+                    key_index = midi_note - 21
+                    if 0 <= key_index < 88:
+                        converted_offsets[key_index] = offset_value
+                except (ValueError, TypeError):
+                    pass
+        
+        # Apply calibration offsets
+        final_mapping = apply_calibration_offsets_to_mapping(
+            mapping=base_mapping,
+            start_led=start_led,
+            end_led=end_led,
+            key_offsets=converted_offsets,
+            led_count=led_count
+        )
+        
+        return {
+            'success': True,
+            'mapping': final_mapping,
+            'error': None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating canonical LED mapping: {e}", exc_info=True)
+        return {
+            'success': False,
+            'mapping': {},
+            'error': str(e)
+        }
+
