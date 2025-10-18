@@ -796,7 +796,7 @@ class PhysicalMappingAnalyzer:
                 "start_led": start_led,
                 "end_led": end_led,
                 "total_leds_analyzed": end_led - start_led + 1,
-                "total_strip_leds": self.total_led_count  # Actual LED strip size
+                "total_strip_leds": led_count  # Actual LED strip size
             },
         }
 
