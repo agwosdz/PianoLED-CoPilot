@@ -457,6 +457,52 @@ class CalibrationService {
     }
   }
 
+  /**
+   * Get LED mapping from physical analysis endpoint (reflects current physics parameters)
+   * This is more accurate than key-led-mapping as it uses the current physics parameters
+   */
+  async getKeyLedMappingFromPhysicalAnalysis(): Promise<{ mapping: Record<number, number[]>; start_led: number; end_led: number; led_count: number }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/physical-analysis`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const mapping: Record<number, number[]> = {};
+      const startLed = data.led_range?.start_led ?? 0;
+      const endLed = data.led_range?.end_led ?? 245;
+      const ledCount = data.led_range?.total_leds_analyzed ?? 246;
+
+      // Extract LED indices from per-key analysis
+      if (data.per_key_analysis) {
+        for (let keyIndex = 0; keyIndex < 88; keyIndex++) {
+          const keyAnalysis = data.per_key_analysis[keyIndex];
+          if (keyAnalysis && keyAnalysis.led_indices && keyAnalysis.led_indices.length > 0) {
+            const midiNote = 21 + keyIndex;
+            mapping[midiNote] = keyAnalysis.led_indices;
+          }
+        }
+      }
+
+      console.log('[Calibration] Loaded LED mapping from physical analysis:', { 
+        keysWithLeds: Object.keys(mapping).length, 
+        startLed, 
+        endLed 
+      });
+
+      return {
+        mapping,
+        start_led: startLed,
+        end_led: endLed,
+        led_count: ledCount
+      };
+    } catch (error) {
+      console.error('Failed to get LED mapping from physical analysis:', error);
+      throw error;
+    }
+  }
+
   async exportCalibration(): Promise<CalibrationState> {
     try {
       const response = await fetch(`${this.baseUrl}/export`);
@@ -512,3 +558,4 @@ export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationS
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();
 export const getKeyLedMapping = (): Promise<Record<number, number[]>> => calibrationService.getKeyLedMapping();
 export const getKeyLedMappingWithRange = (): Promise<{ mapping: Record<number, number[]>; start_led: number; end_led: number; led_count: number }> => calibrationService.getKeyLedMappingWithRange();
+export const getKeyLedMappingFromPhysicalAnalysis = (): Promise<{ mapping: Record<number, number[]>; start_led: number; end_led: number; led_count: number }> => calibrationService.getKeyLedMappingFromPhysicalAnalysis();

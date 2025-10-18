@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
-  import { calibrationState, calibrationUI, getKeyLedMappingWithRange, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset } from '$lib/stores/calibration';
+  import { calibrationState, calibrationUI, getKeyLedMappingWithRange, getKeyLedMappingFromPhysicalAnalysis, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset } from '$lib/stores/calibration';
   import { onMount } from 'svelte';
 
   // Piano size specifications for different keyboard types
@@ -292,8 +292,9 @@
   async function updateLedMapping(): Promise<void> {
     isLoadingMapping = true;
     try {
-      // Fetch the LED mapping with offsets applied from the backend, along with range info
-      const { mapping, start_led, end_led, led_count } = await getKeyLedMappingWithRange();
+      // Fetch the LED mapping from physical analysis (reflects current physics parameters)
+      // This is more accurate than key-led-mapping as it uses the current physics settings
+      const { mapping, start_led, end_led, led_count } = await getKeyLedMappingFromPhysicalAnalysis();
       ledMapping = mapping;
       ledRangeStart = start_led;
       ledRangeEnd = end_led;
