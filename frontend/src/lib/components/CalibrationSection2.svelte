@@ -22,6 +22,7 @@
     if (endLedValue === 245 && ledCount !== 246) {
       endLedValue = ledCount - 1;
     }
+    console.log(`[CalibrationSection2] Reactive update: startLedValue=${startLedValue}, endLedValue=${endLedValue}, ledCount=${ledCount}`);
   }
 
   onMount(() => {

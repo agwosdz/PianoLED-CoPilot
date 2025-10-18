@@ -300,6 +300,8 @@
       ledRangeEnd = end_led;
       totalLedCount = led_count;
       
+      console.log(`[CalibrationSection3] updateLedMapping() - Received: start_led=${start_led}, end_led=${end_led}, led_count=${led_count}`);
+      
       // Debug logging
       const coveredKeys = Object.keys(mapping).length;
       const uncoveredKeys = pianoKeyCount - coveredKeys;

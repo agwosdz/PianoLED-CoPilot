@@ -489,7 +489,10 @@ class CalibrationService {
       console.log('[Calibration] Loaded LED mapping from physical analysis:', { 
         keysWithLeds: Object.keys(mapping).length, 
         startLed, 
-        endLed 
+        endLed,
+        ledCount,
+        rawTotalStripLeds: data.led_range?.total_strip_leds,
+        rawTotalAnalyzed: data.led_range?.total_leds_analyzed
       });
 
       return {
