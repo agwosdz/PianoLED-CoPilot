@@ -315,6 +315,8 @@ class PhysicsBasedAllocationService:
         Generate LED mapping and detect maximum LED coverage.
         
         Includes consecutive LED mapping with gap-bridging to rescue orphaned LEDs.
+        When an LED has equal or near-equal overlap with multiple keys, it's assigned
+        to the white key (which is physically farther and visually more prominent).
         
         Returns:
             Tuple of (mapping_dict, max_led_assigned)
@@ -329,7 +331,10 @@ class PhysicsBasedAllocationService:
         )
         
         # Build initial mapping: find overlapping LEDs for each key
+        # Also track potential assignments for conflict resolution
         initial_mapping = {}
+        led_candidates = {}  # Track all potential keys for each LED
+        
         for key_idx in range(88):
             key_geom = key_geometries[key_idx]
             overlapping_leds = []
@@ -348,10 +353,46 @@ class PhysicsBasedAllocationService:
                 overlap_end = min(key_end, led_end)
                 overlap = max(0, overlap_end - overlap_start)
                 
-                if overlap > 0:
+                # Include LED if it overlaps, or if it's at the boundary of a white key
+                # (boundary preference: white keys are physically larger and visually prominent)
+                is_white_key = key_geom.key_type.value == 'white'
+                is_boundary = (led_end == key_start or led_start == key_end) and is_white_key
+                
+                if overlap > 0 or is_boundary:
                     overlapping_leds.append(abs_idx)
+                    
+                    # Track this LED as a candidate for this key
+                    # Use a small penalty for boundary touches vs actual overlap
+                    penalty = 0.1 if is_boundary else 0
+                    if abs_idx not in led_candidates:
+                        led_candidates[abs_idx] = []
+                    led_candidates[abs_idx].append((key_idx, max(0, overlap - penalty)))
             
             initial_mapping[key_idx] = overlapping_leds
+        
+        # Resolve conflicts: when an LED has equal overlap with multiple keys, 
+        # prefer the white key
+        from backend.config_led_mapping_physical import KeyType
+        
+        for led_idx, candidates in led_candidates.items():
+            if len(candidates) > 1:
+                # Sort by overlap amount (descending), then by white key preference
+                candidates_sorted = sorted(
+                    candidates,
+                    key=lambda x: (
+                        -x[1],  # Higher overlap first
+                        key_geometries[x[0]].key_type != KeyType.WHITE,  # White keys (False) before black (True)
+                        x[0]  # Earlier keys as tiebreaker
+                    )
+                )
+                
+                best_key = candidates_sorted[0][0]
+                best_overlap = candidates_sorted[0][1]
+                
+                # Remove this LED from all other keys' assignments
+                for key_idx in range(88):
+                    if key_idx != best_key and led_idx in initial_mapping[key_idx]:
+                        initial_mapping[key_idx].remove(led_idx)
         
         # Apply overhang filtering
         final_mapping = {}

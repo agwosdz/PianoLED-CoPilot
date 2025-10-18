@@ -150,13 +150,17 @@ def run_single_key_analysis(all_geometries: list, key_number: int, led_width: fl
         prev_leds = analyze_led_placement_on_top(prev_key_data, led_width, led_offset, threshold, led_spacing)
         if (not standard_leds and prev_leds) or (standard_leds and prev_leds and min(l['led_index'] for l in standard_leds) > max(l['led_index'] for l in prev_leds) + 1):
             start_gap = max(l['led_index'] for l in prev_leds) + 1 if prev_leds else 0
-            end_gap = min(l['led_index'] for l in standard_leds) if standard_leds else start_gap + 5 # search a few
+            end_gap = min(l['led_index'] for l in standard_leds) if standard_leds else start_gap + 5
             for i in range(start_gap, end_gap):
                 led_center = get_led_center_position(i, led_offset, led_spacing)
                 dist_to_prev = abs(led_center - prev_key_data['exposed_end_mm'])
                 dist_to_target = abs(led_center - target_key_data['exposed_start_mm'])
+                is_tie = abs(dist_to_target - dist_to_prev) < 0.01
+
                 if dist_to_target < dist_to_prev:
                     rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': f"Rescued (Closer: {dist_to_target:.2f}mm vs prev: {dist_to_prev:.2f}mm)"})
+                elif is_tie and target_key_data['type'] == 'White':
+                    rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': "Rescued (Tie-break, assigned to White key)"})
 
     if next_key_data:
         next_leds = analyze_led_placement_on_top(next_key_data, led_width, led_offset, threshold, led_spacing)
@@ -164,11 +168,17 @@ def run_single_key_analysis(all_geometries: list, key_number: int, led_width: fl
             start_gap = max(l['led_index'] for l in standard_leds) + 1 if standard_leds else (max(l['led_index'] for l in rescued_leds) + 1 if rescued_leds else 0)
             end_gap = min(l['led_index'] for l in next_leds) if next_leds else start_gap + 5
             for i in range(start_gap, end_gap):
+                # Ensure we don't double-add a rescued LED
+                if any(led['led_index'] == i for led in rescued_leds): continue
                 led_center = get_led_center_position(i, led_offset, led_spacing)
                 dist_to_target = abs(led_center - target_key_data['exposed_end_mm'])
                 dist_to_next = abs(led_center - next_key_data['exposed_start_mm'])
-                if dist_to_target <= dist_to_next:
-                    rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': f"Rescued (Closer: {dist_to_target:.2f}mm vs next: {dist_to_next:.2f}mm)"})
+                is_tie = abs(dist_to_target - dist_to_next) < 0.01
+
+                if dist_to_target < dist_to_next:
+                     rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': f"Rescued (Closer: {dist_to_target:.2f}mm vs next: {dist_to_next:.2f}mm)"})
+                elif is_tie and target_key_data['type'] == 'White':
+                     rescued_leds.append({'led_index': i, 'center_pos': led_center, 'assignment': "Rescued (Tie-break, assigned to White key)"})
 
     all_assigned_leds = []
     for led in standard_leds: all_assigned_leds.append({**led, 'assignment': 'Standard'})
