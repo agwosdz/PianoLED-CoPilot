@@ -126,17 +126,16 @@
       if (response.ok) {
         const result = await response.json();
         physicsParamsChanged = false;
+        
+        // Always update LED mapping to reflect parameter changes in the visualization
+        await updateLedMapping();
+        pianoKeys = generatePianoKeys();
+        
         if (regenerateMapping) {
           previewStats = result.mapping_stats;
-          // Reload LED mapping
-          await updateLedMapping();
-          pianoKeys = generatePianoKeys();
           console.log('[Physics] Mapping regenerated with new parameters');
         } else {
-          // Even without regenerating mapping, refresh the visual representation
-          // to reflect parameter changes in the piano key display
-          pianoKeys = generatePianoKeys();
-          console.log('[Physics] Visual representation refreshed');
+          console.log('[Physics] Parameters saved and visualization updated');
         }
         console.log('[Physics] Parameters saved successfully');
       } else {
