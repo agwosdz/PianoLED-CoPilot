@@ -292,9 +292,8 @@
   async function updateLedMapping(): Promise<void> {
     isLoadingMapping = true;
     try {
-      // Fetch the LED mapping from physical analysis (reflects current physics parameters)
-      // This is more accurate than key-led-mapping as it uses the current physics settings
-      const { mapping, start_led, end_led, led_count } = await getKeyLedMappingFromPhysicalAnalysis();
+      // Fetch the LED mapping from key-led-mapping endpoint (the proven working endpoint)
+      const { mapping, start_led, end_led, led_count } = await getKeyLedMappingWithRange();
       ledMapping = mapping;
       ledRangeStart = start_led;
       ledRangeEnd = end_led;
@@ -966,13 +965,13 @@
           />
         </div>
         <div class="form-group">
-          <label for="offset-value-input">Offset (ms):</label>
+          <label for="offset-value-input">Offset (LEDs):</label>
           <input
             id="offset-value-input"
             type="number"
             step="1"
             bind:value={newKeyOffset}
-            placeholder="Time offset"
+            placeholder="LED offset"
             class="offset-input"
           />
         </div>

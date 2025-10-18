@@ -165,6 +165,8 @@ class CalibrationService {
       }
 
       const data = await response.json();
+      console.log('[Calibration Store] loadStatus() received from API:', { start_led: data.start_led, end_led: data.end_led });
+      
       const state: CalibrationState = {
         enabled: data.calibration_enabled ?? false,
         calibration_enabled: data.calibration_enabled ?? false,
@@ -175,6 +177,7 @@ class CalibrationService {
         last_calibration: data.last_calibration ?? null
       };
 
+      console.log('[Calibration Store] Setting calibrationState to:', { start_led: state.start_led, end_led: state.end_led });
       calibrationState.set(state);
       calibrationUI.update(ui => ({ ...ui, isLoading: false }));
       return state;
