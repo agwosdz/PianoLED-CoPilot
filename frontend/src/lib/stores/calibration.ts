@@ -472,7 +472,8 @@ class CalibrationService {
       const mapping: Record<number, number[]> = {};
       const startLed = data.led_range?.start_led ?? 0;
       const endLed = data.led_range?.end_led ?? 245;
-      const ledCount = data.led_range?.total_leds_analyzed ?? 246;
+      // Use total_strip_leds (actual physical count) instead of total_leds_analyzed (range size)
+      const ledCount = data.led_range?.total_strip_leds ?? data.led_range?.total_leds_analyzed ?? 246;
 
       // Extract LED indices from per-key analysis
       if (data.per_key_analysis) {

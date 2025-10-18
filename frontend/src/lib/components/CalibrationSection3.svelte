@@ -334,6 +334,11 @@
     loadColorsFromSettings();
   }
 
+  // Refresh LED mapping when LED range selection changes
+  $: if ($calibrationState?.start_led !== undefined && $calibrationState?.end_led !== undefined) {
+    updateLedMapping();
+  }
+
   async function lightUpLedRange(ledIndices: number[]): Promise<void> {
     if (!ledIndices || ledIndices.length === 0) return;
     
