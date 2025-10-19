@@ -33,6 +33,7 @@
   let ledOperationInProgress = false; // Prevent overlapping LED operations
   let showingLayoutVisualization = false; // Toggle for layout visualization mode
   let layoutVisualizationActive = false; // Track if LEDs are currently on for visualization
+  let shouldRestoreLayoutAfterAdjustment = false; // Remember if we should restore layout visualization after adding adjustment
 
   // LED range info for coverage determination
   let ledRangeStart = 0;
@@ -304,6 +305,51 @@
       setTimeout(() => {
         calibrationUI.update(ui => ({ ...ui, success: null }));
       }, 2000);
+      
+      // Restore layout visualization if it was active before opening the form
+      if (shouldRestoreLayoutAfterAdjustment) {
+        console.log('[LED] Restoring layout visualization after adjustment');
+        shouldRestoreLayoutAfterAdjustment = false;
+        
+        // Re-trigger the layout visualization with the updated mapping
+        try {
+          showingLayoutVisualization = true;
+          layoutVisualizationActive = true;
+          
+          const whiteKeyNotes = pianoKeys.filter(k => !k.isBlack).map(k => k.midiNote);
+          const blackKeyNotes = pianoKeys.filter(k => k.isBlack).map(k => k.midiNote);
+          
+          const whiteKeyLeds: number[] = [];
+          const blackKeyLeds: number[] = [];
+          
+          for (const note of whiteKeyNotes) {
+            const indices = ledMapping[note];
+            if (indices && indices.length > 0) {
+              whiteKeyLeds.push(...indices);
+            }
+          }
+          
+          for (const note of blackKeyNotes) {
+            const indices = ledMapping[note];
+            if (indices && indices.length > 0) {
+              blackKeyLeds.push(...indices);
+            }
+          }
+          
+          console.log(`[LED] Restored layout visualization: ${whiteKeyLeds.length} white key LEDs, ${blackKeyLeds.length} black key LEDs`);
+          
+          if (whiteKeyLeds.length > 0) {
+            await lightUpLedRangeWithColor(whiteKeyLeds, WHITE_KEY_COLOR);
+          }
+          if (blackKeyLeds.length > 0) {
+            await lightUpLedRangeWithColor(blackKeyLeds, BLACK_KEY_COLOR);
+          }
+        } catch (error) {
+          console.error('[LED] Failed to restore layout visualization:', error);
+          layoutVisualizationActive = false;
+          showingLayoutVisualization = false;
+        }
+      }
     } catch (error) {
       console.error('Failed to add key offset:', error);
     }
@@ -651,11 +697,26 @@
       selectedNote = null;
       await turnOffAllLeds();
       console.log(`[LED] Deselection complete`);
+      
+      // If layout visualization should be restored, do it now
+      if (shouldRestoreLayoutAfterAdjustment) {
+        console.log('[LED] Restoring layout visualization after key deselection');
+        await toggleLayoutVisualization();
+      }
       return;
     }
 
     // ALWAYS turn off all LEDs first, regardless of state
     console.log(`[LED] Turning off any existing LEDs before selecting new key...`);
+    
+    // If layout is currently active, save it so we can restore after adding adjustment
+    if (layoutVisualizationActive) {
+      console.log('[LED] Layout visualization is active - will restore after adjustment');
+      shouldRestoreLayoutAfterAdjustment = true;
+      layoutVisualizationActive = false;
+      showingLayoutVisualization = false;
+    }
+    
     await turnOffAllLeds();
     console.log(`[LED] All LEDs cleared, now proceeding with new key selection`);
 
@@ -704,6 +765,18 @@
     // Set form values and open the add offset form in the Individual Key Offsets section
     newKeyMidiNote = midiNote.toString();
     newKeyOffset = 0;
+    
+    // Remember if layout visualization is currently active
+    shouldRestoreLayoutAfterAdjustment = layoutVisualizationActive;
+    
+    // Turn off layout visualization while editing
+    if (layoutVisualizationActive) {
+      console.log('[LED] Saving layout visualization state for later restoration');
+      layoutVisualizationActive = false;
+      showingLayoutVisualization = false;
+      turnOffAllLeds();
+    }
+    
     showAddForm = true;
     showLEDGrid = false; // Let user manually check to customize LEDs if needed
     
