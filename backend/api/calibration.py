@@ -486,14 +486,21 @@ def set_key_offset(midi_note):
         else:
             key_offsets[str(midi_note)] = offset
         
-        # Handle LED trims if provided
+        # Handle LED trims
+        key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {}) or {}
+        
         if left_trim > 0 or right_trim > 0:
-            key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {}) or {}
+            # Save trim if any trim is non-zero
             key_led_trims[str(midi_note)] = {
                 'left_trim': left_trim,
                 'right_trim': right_trim
             }
-            settings_service.set_setting('calibration', 'key_led_trims', key_led_trims)
+        else:
+            # Clear trim if both are zero (no trim)
+            if str(midi_note) in key_led_trims:
+                del key_led_trims[str(midi_note)]
+        
+        settings_service.set_setting('calibration', 'key_led_trims', key_led_trims)
         
         # Save updated offsets
         settings_service.set_setting('calibration', 'key_offsets', key_offsets)
