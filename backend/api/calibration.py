@@ -874,7 +874,7 @@ def get_key_led_mapping():
                     midi_note = int(midi_note_str) if isinstance(midi_note_str, str) else midi_note_str
                     key_index = midi_note - 21
                     if 0 <= key_index < 88:
-                        converted_trims[midi_note] = trim_value
+                        converted_trims[key_index] = trim_value
                         logger.debug(f"Converted trim: MIDI {midi_note} → index {key_index}, trim={trim_value}")
                     else:
                         logger.warning(f"Trim MIDI note {midi_note} out of range, skipped")
