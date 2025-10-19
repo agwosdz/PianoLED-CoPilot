@@ -215,6 +215,14 @@
   async function handleDeleteKeyOffset(midiNote: number) {
     if (confirm(`Delete offset for ${getMidiNoteName(midiNote)}?`)) {
       await deleteKeyOffset(midiNote);
+      
+      // Reload the LED mapping to reflect the deletion
+      await updateLedMapping();
+      
+      calibrationUI.update(ui => ({ ...ui, success: `Key adjustment deleted for ${getMidiNoteName(midiNote)}` }));
+      setTimeout(() => {
+        calibrationUI.update(ui => ({ ...ui, success: null }));
+      }, 2000);
     }
   }
 

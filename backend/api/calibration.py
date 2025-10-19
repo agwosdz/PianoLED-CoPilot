@@ -536,8 +536,9 @@ def delete_key_offset(midi_note):
         
         settings_service = get_settings_service()
         
-        # Get current offsets
+        # Get current offsets and trims
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {}) or {}
+        key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {}) or {}
         
         # Remove offset for this key if it exists
         if str(midi_note) in key_offsets:
@@ -545,19 +546,28 @@ def delete_key_offset(midi_note):
             
             # Save updated offsets
             settings_service.set_setting('calibration', 'key_offsets', key_offsets)
-            settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
-            
-            # Broadcast offset change
-            socketio = get_socketio()
-            socketio.emit('key_offset_changed', {
-                'midi_note': midi_note,
-                'offset': 0
-            })
-            
             logger.info(f"Key offset for MIDI note {midi_note} deleted")
         
+        # Also remove any LED trims for this key
+        if str(midi_note) in key_led_trims:
+            del key_led_trims[str(midi_note)]
+            
+            # Save updated trims
+            settings_service.set_setting('calibration', 'key_led_trims', key_led_trims)
+            logger.info(f"Key LED trim for MIDI note {midi_note} deleted")
+        
+        # Update last calibration timestamp
+        settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
+        
+        # Broadcast offset change
+        socketio = get_socketio()
+        socketio.emit('key_offset_changed', {
+            'midi_note': midi_note,
+            'offset': 0
+        })
+        
         return jsonify({
-            'message': 'Key offset deleted',
+            'message': 'Key adjustment deleted',
             'midi_note': midi_note
         }), 200
     except Exception as e:
