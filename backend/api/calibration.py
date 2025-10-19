@@ -133,6 +133,7 @@ def get_calibration_status():
             'trim_left': settings_service.get_setting('calibration', 'trim_left', 0),
             'trim_right': settings_service.get_setting('calibration', 'trim_right', 0),
             'key_offsets': settings_service.get_setting('calibration', 'key_offsets', {}),
+            'key_led_trims': settings_service.get_setting('calibration', 'key_led_trims', {}),
             'last_calibration': settings_service.get_setting('calibration', 'last_calibration', ''),
             'mapping_base_offset': settings_service.get_setting('led', 'mapping_base_offset', 0),
             'leds_per_key': settings_service.get_setting('led', 'leds_per_key', 3),

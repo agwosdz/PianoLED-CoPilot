@@ -16,6 +16,7 @@ export interface CalibrationState {
   trim_left: number;
   trim_right: number;
   key_offsets: Record<number, number>;
+  key_led_trims: Record<number, { left_trim: number; right_trim: number }>;
   calibration_mode: 'none' | 'assisted' | 'manual';
   last_calibration: string | null;
 }
@@ -65,6 +66,7 @@ const defaultCalibrationState: CalibrationState = {
   trim_left: 0,
   trim_right: 0,
   key_offsets: {},
+  key_led_trims: {},
   calibration_mode: 'none',
   last_calibration: null
 };
@@ -179,6 +181,7 @@ class CalibrationService {
         trim_left: data.trim_left ?? 0,
         trim_right: data.trim_right ?? 0,
         key_offsets: this.normalizeKeyOffsets(data.key_offsets ?? {}),
+        key_led_trims: data.key_led_trims ?? {},
         calibration_mode: data.calibration_mode ?? 'none',
         last_calibration: data.last_calibration ?? null
       };
@@ -630,7 +633,7 @@ export const setStartLed = (ledIndex: number): Promise<void> => calibrationServi
 export const setEndLed = (ledIndex: number): Promise<void> => calibrationService.setEndLed(ledIndex);
 export const setTrimLeft = (trimLeft: number): Promise<void> => calibrationService.setTrimLeft(trimLeft);
 export const setTrimRight = (trimRight: number): Promise<void> => calibrationService.setTrimRight(trimRight);
-export const setKeyOffset = (midiNote: number, offset: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset);
+export const setKeyOffset = (midiNote: number, offset: number, leftTrim?: number, rightTrim?: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset, leftTrim, rightTrim);
 export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyOffset(midiNote);
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();
 export const getKeyLedMapping = (): Promise<Record<number, number[]>> => calibrationService.getKeyLedMapping();

@@ -240,32 +240,38 @@
 
     try {
       // Calculate LED trims based on the original vs modified allocation
+      // NOTE: This assumes selections are contiguous. Non-contiguous selections won't work properly.
       let leftTrim = 0;
       let rightTrim = 0;
       
+      console.log(`[Before Trim Calc] currentKeyLEDAllocation=[${currentKeyLEDAllocation.join(',')}], selectedLEDsForNewKey=[${Array.from(selectedLEDsForNewKey).sort((a,b)=>a-b).join(',')}]`);
+      
       if (currentKeyLEDAllocation.length > 0 && selectedLEDsForNewKey.size > 0) {
-        // Calculate left trim (how many LEDs removed from the left)
+        // Find first and last selected LED indices in the allocation
+        let firstSelectedIdx = -1;
+        let lastSelectedIdx = -1;
+        
         for (let i = 0; i < currentKeyLEDAllocation.length; i++) {
-          if (!selectedLEDsForNewKey.has(currentKeyLEDAllocation[i])) {
-            leftTrim++;
-          } else {
-            break; // Stop counting when we hit a selected LED
+          if (selectedLEDsForNewKey.has(currentKeyLEDAllocation[i])) {
+            if (firstSelectedIdx === -1) firstSelectedIdx = i;
+            lastSelectedIdx = i;
           }
         }
         
-        // Calculate right trim (how many LEDs removed from the right)
-        for (let i = currentKeyLEDAllocation.length - 1; i >= 0; i--) {
-          if (!selectedLEDsForNewKey.has(currentKeyLEDAllocation[i])) {
-            rightTrim++;
-          } else {
-            break; // Stop counting when we hit a selected LED
-          }
+        if (firstSelectedIdx >= 0 && lastSelectedIdx >= 0) {
+          leftTrim = firstSelectedIdx;
+          rightTrim = currentKeyLEDAllocation.length - lastSelectedIdx - 1;
         }
+        
+        console.log(`[After Trim Calc] firstSelectedIdx=${firstSelectedIdx}, lastSelectedIdx=${lastSelectedIdx}, leftTrim=${leftTrim}, rightTrim=${rightTrim}`);
       }
       
       // Save offset and trims in a single API call
-      console.log(`[Key Adjustment] MIDI ${midiNote}: offset=${newKeyOffset}, left_trim=${leftTrim}, right_trim=${rightTrim}`);
-      await calibrationService.setKeyOffset(midiNote, newKeyOffset, leftTrim, rightTrim);
+      console.log(`[Key Adjustment] MIDI ${midiNote}: offset=${newKeyOffset}, left_trim=${leftTrim}, right_trim=${rightTrim}, selected=[${Array.from(selectedLEDsForNewKey).sort((a,b)=>a-b).join(',')}], baseAllocation=[${currentKeyLEDAllocation.join(',')}]`);
+      await setKeyOffset(midiNote, newKeyOffset, leftTrim, rightTrim);
+      
+      // Reload the LED mapping to reflect the new adjustments
+      await updateLedMapping();
       
       resetAddForm();
       calibrationUI.update(ui => ({ ...ui, success: `Key adjustment added for ${getMidiNoteName(midiNote)}` }));
@@ -334,6 +340,35 @@
       selectedLEDsForNewKey.add(ledIndex);
     }
     selectedLEDsForNewKey = selectedLEDsForNewKey; // Trigger reactivity
+  }
+
+  function getAdjustedLEDIndices(midiNote: number): number[] {
+    // Get base LED mapping for this MIDI note
+    const baseLEDs = ledMapping[midiNote] ?? [];
+    if (baseLEDs.length === 0) return [];
+
+    // Get trim values if they exist
+    const trimData = $calibrationState.key_led_trims[midiNote];
+    if (!trimData) {
+      console.log(`[getAdjustedLEDIndices] MIDI ${midiNote}: No trim data, returning base LEDs`, baseLEDs);
+      return baseLEDs;
+    }
+
+    const { left_trim = 0, right_trim = 0 } = trimData;
+    
+    // Apply trims to get adjusted indices
+    const startIdx = left_trim;
+    const endIdx = baseLEDs.length - right_trim;
+    
+    const result = baseLEDs.slice(startIdx, endIdx);
+    console.log(`[getAdjustedLEDIndices] MIDI ${midiNote}: base=${baseLEDs}, left_trim=${left_trim}, right_trim=${right_trim}, result=${result}`);
+    
+    if (startIdx >= endIdx) {
+      console.log(`[getAdjustedLEDIndices] MIDI ${midiNote}: Invalid range (startIdx=${startIdx} >= endIdx=${endIdx}), returning []`);
+      return [];
+    }
+    
+    return result;
   }
 
   function handleReallocateLED(ledIndex: number) {
@@ -872,7 +907,7 @@
             selectedNote === key.midiNote ? 'selected' : ''
           } ${hoveredNote === key.midiNote ? 'hovered' : ''} ${
             key.offset !== 0 ? 'has-offset' : ''
-          } ${isKeyCovered(key.midiNote) ? 'covered' : 'uncovered'}`}
+          } ${$calibrationState.key_led_trims[key.midiNote] ? 'has-custom-led' : ''} ${isKeyCovered(key.midiNote) ? 'covered' : 'uncovered'}`}
           on:click={(e) => {
             handleKeyPressWhileVisualizingLayout(e);
             handleKeyClick(key.midiNote);
@@ -960,6 +995,10 @@
     <div class="legend-item">
       <div class="legend-box offset"></div>
       <span>Has Custom Offset</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-box custom-led"></div>
+      <span>Has Custom LED</span>
     </div>
     <div class="legend-divider"></div>
     
@@ -1123,6 +1162,16 @@
 
     {#if showAddForm}
       <div class="add-offset-form">
+        {#if newKeyMidiNote}
+          {@const midiNoteNum = parseInt(newKeyMidiNote, 10)}
+          {@const alreadyExists = Object.keys($keyOffsetsList).some(k => parseInt(k, 10) === midiNoteNum)}
+          {#if alreadyExists}
+            <div class="warning-box">
+              <span>⚠️ This MIDI note already has an adjustment. Delete it first to create a new one.</span>
+            </div>
+          {/if}
+        {/if}
+
         <div class="form-group">
           <label for="midi-note-input">MIDI Note (0-127):</label>
           <input
@@ -1200,18 +1249,31 @@
                   <p class="no-allocation">No LED allocation for this key</p>
                 {/if}
               </div>
+            </div>
 
-              <!-- Add Adjustment Button -->
-              <div class="led-action-buttons">
+            <!-- Add Adjustment Button -->
+            <div class="led-action-buttons">
+              {#if newKeyMidiNote}
+                {@const midiNoteNum = parseInt(newKeyMidiNote, 10)}
+                {@const alreadyExists = Number.isFinite(midiNoteNum) && Object.keys($keyOffsetsList).some(k => parseInt(k, 10) === midiNoteNum)}
                 <button
                   class="btn-save-offset"
                   on:click={handleAddKeyOffset}
-                  disabled={!newKeyMidiNote}
-                  title="Save offset with LED customizations"
+                  disabled={alreadyExists}
+                  title={alreadyExists ? "Delete existing adjustment first" : "Save offset with LED customizations"}
                 >
                   ✓ Add Adjustment
                 </button>
-              </div>
+              {:else}
+                <button
+                  class="btn-save-offset"
+                  on:click={handleAddKeyOffset}
+                  disabled={true}
+                  title="Enter a MIDI note first"
+                >
+                  ✓ Add Adjustment
+                </button>
+              {/if}
             </div>
           {/if}
         {/if}
@@ -1223,56 +1285,32 @@
         {#each $keyOffsetsList as offsetItem (offsetItem.midiNote)}
           {@const midiNote = offsetItem.midiNote}
           {@const offset = offsetItem.offset}
-          {@const hasLedOverride = $ledSelectionState.overrides[midiNote]}
-          {#if editingKeyNote === midiNote}
-            <div class="offset-item editing">
-              <div class="offset-info">
-                <span class="offset-note">{getMidiNoteName(midiNote)}</span>
-                <input
-                  type="number"
-                  step="1"
-                  bind:value={editingKeyOffset}
-                  class="offset-edit-input"
-                />
-              </div>
-              <div class="offset-actions">
-                <button
-                  class="btn-save"
-                  on:click={saveEditingKeyOffset}
-                  title="Save changes"
-                >
-                  ✓
-                </button>
-                <button
-                  class="btn-cancel"
-                  on:click={cancelEditingKeyOffset}
-                  title="Cancel editing"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          {:else}
+          {@const ledTrim = $calibrationState.key_led_trims[midiNote]}
+          {@const adjustedIndices = getAdjustedLEDIndices(midiNote)}
             <div class="offset-item">
               <div class="offset-info">
                 <div class="offset-main">
                   <span class="offset-note">{getMidiNoteName(midiNote)}</span>
                   <span class="offset-value">{offset} LEDs offset</span>
+                  {#if ledTrim && (ledTrim.left_trim > 0 || ledTrim.right_trim > 0)}
+                    <span class="led-trim-badge">
+                      Trim: L{ledTrim.left_trim} R{ledTrim.right_trim}
+                    </span>
+                  {/if}
                 </div>
-                {#if hasLedOverride}
-                  <div class="led-override-badge">
-                    <span>LEDs: [{hasLedOverride.join(', ')}]</span>
+                {#if adjustedIndices.length > 0}
+                  <div class="led-indices-display">
+                    <span class="indices-label">Adjusted LEDs:</span>
+                    <span class="indices-value">
+                      {adjustedIndices[0]}
+                      {#if adjustedIndices.length > 1}
+                        -{adjustedIndices[adjustedIndices.length - 1]}
+                      {/if}
+                    </span>
                   </div>
                 {/if}
               </div>
               <div class="offset-actions">
-                <button
-                  class="btn-edit"
-                  on:click={() => startEditingKeyOffset(midiNote, offset)}
-                  title="Edit adjustment"
-                >
-                  ✎
-                </button>
                 <button
                   class="btn-delete"
                   on:click={() => handleDeleteKeyOffset(midiNote)}
@@ -1282,7 +1320,6 @@
                 </button>
               </div>
             </div>
-          {/if}
         {/each}
       </div>
     {:else if !showAddForm}
@@ -1668,6 +1705,28 @@
     border-width: 2px;
   }
 
+  .piano-key.has-custom-led {
+    border-color: #f59e0b;
+    border-width: 2px;
+  }
+
+  /* Gradient when both offset and custom LED are present */
+  .piano-key.has-offset.has-custom-led {
+    border: 3px solid;
+    border-image: linear-gradient(135deg, #10b981, #f59e0b) 1;
+    background-clip: padding-box;
+  }
+
+  .piano-key.has-offset.has-custom-led.white {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%), linear-gradient(to bottom, #ffffff, #f1f5f9);
+    color: #0f172a;
+  }
+
+  .piano-key.has-offset.has-custom-led.black {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%), linear-gradient(to bottom, #1e293b, #0f172a);
+    color: #ffffff;
+  }
+
   .piano-key.uncovered {
     opacity: 0.5;
     cursor: not-allowed;
@@ -1868,6 +1927,10 @@
 
   .legend-box.offset {
     background: linear-gradient(135deg, #10b981, #059669);
+  }
+
+  .legend-box.custom-led {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
   }
 
   /* Color samples for layout visualization */
@@ -2557,6 +2620,19 @@
     gap: 0.75rem;
   }
 
+  .warning-box {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-left: 4px solid #f59e0b;
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    color: #92400e;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
   .offset-item {
     background: white;
     border: 1px solid #c8e6c9;
@@ -2595,6 +2671,37 @@
   .offset-value {
     color: #558b2f;
     font-size: 0.9rem;
+  }
+
+  .led-trim-badge {
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    color: #b45309;
+    font-weight: 600;
+  }
+
+  .led-indices-display {
+    background: #e0f2fe;
+    border-left: 3px solid #0284c7;
+    padding: 0.5rem 0.75rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: #0c4a6e;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .indices-label {
+    font-weight: 600;
+  }
+
+  .indices-value {
+    font-family: monospace;
+    font-weight: 700;
   }
 
   .led-override-badge {
