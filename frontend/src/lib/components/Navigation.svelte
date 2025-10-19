@@ -16,6 +16,7 @@
 	const navigationItems = [
 		{ href: '/', icon: '🏠', text: 'Home', description: 'System overview and status' },
 		{ href: '/listen', icon: '🎧', text: 'Listen', description: 'Upload and play MIDI files' },
+		{ href: '/play', icon: '▶️', text: 'Play', description: 'Visual MIDI playback with piano' },
 		{
 			href: '/settings',
 			icon: '⚙️',

@@ -1,0 +1,146 @@
+import os
+import json
+from flask import Blueprint, request, jsonify, current_app
+from pathlib import Path
+
+play_bp = Blueprint('play', __name__)
+
+
+@play_bp.route('/uploaded-midi-files', methods=['GET'])
+def get_uploaded_files():
+    """Get list of uploaded MIDI files."""
+    try:
+        midi_dir = Path(current_app.config.get('UPLOADED_MIDI_DIR', './uploaded_midi'))
+        
+        if not midi_dir.exists():
+            return jsonify([])
+        
+        files = []
+        for file_path in midi_dir.glob('*.mid'):
+            files.append({
+                'filename': file_path.name,
+                'path': str(file_path),
+                'size': file_path.stat().st_size
+            })
+        
+        # Sort by name
+        files.sort(key=lambda x: x['filename'])
+        return jsonify(files)
+    except Exception as e:
+        current_app.logger.error(f"Error listing MIDI files: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@play_bp.route('/midi-notes', methods=['GET'])
+def get_midi_notes():
+    """Get MIDI notes from a file for visualization."""
+    try:
+        filename = request.args.get('filename')
+        if not filename:
+            return jsonify({'error': 'filename required'}), 400
+        
+        # Security: prevent path traversal
+        filename = Path(filename).name
+        midi_dir = Path(current_app.config.get('UPLOADED_MIDI_DIR', './uploaded_midi'))
+        file_path = midi_dir / filename
+        
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Use MIDI parser to extract notes
+        from backend.midi_parser import MIDIParser
+        
+        parser = MIDIParser(current_app.settings_service)
+        parsed_data = parser.parse_file(str(file_path))
+        
+        if not parsed_data:
+            return jsonify({'error': 'Failed to parse MIDI file'}), 400
+        
+        # Convert note events to visualization format
+        notes = []
+        for event in parsed_data.get('note_events', []):
+            notes.append({
+                'note': event['note'],
+                'startTime': event['time'],
+                'duration': event['duration'],
+                'velocity': event['velocity']
+            })
+        
+        return jsonify({
+            'notes': notes,
+            'tempo': parsed_data.get('tempo', 120),
+            'total_duration': parsed_data.get('duration', 0)
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error extracting MIDI notes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@play_bp.route('/playback-status', methods=['GET'])
+def get_playback_status():
+    """Get current playback status."""
+    try:
+        playback_service = current_app.playback_service
+        
+        return jsonify({
+            'state': playback_service.state,
+            'current_time': playback_service.current_time,
+            'total_duration': playback_service.total_duration,
+            'filename': playback_service.current_file,
+            'progress_percentage': playback_service.progress_percentage,
+            'error_message': playback_service.error_message
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error getting playback status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@play_bp.route('/play', methods=['POST'])
+def play():
+    """Start playback of a MIDI file."""
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        
+        if not filename:
+            return jsonify({'error': 'filename required'}), 400
+        
+        # Security: prevent path traversal
+        filename = Path(filename).name
+        midi_dir = Path(current_app.config.get('UPLOADED_MIDI_DIR', './uploaded_midi'))
+        file_path = midi_dir / filename
+        
+        if not file_path.exists():
+            return jsonify({'error': 'File not found'}), 404
+        
+        playback_service = current_app.playback_service
+        playback_service.play(str(file_path))
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        current_app.logger.error(f"Error starting playback: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@play_bp.route('/pause', methods=['POST'])
+def pause():
+    """Pause playback."""
+    try:
+        playback_service = current_app.playback_service
+        playback_service.pause()
+        return jsonify({'success': True})
+    except Exception as e:
+        current_app.logger.error(f"Error pausing playback: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@play_bp.route('/stop', methods=['POST'])
+def stop():
+    """Stop playback."""
+    try:
+        playback_service = current_app.playback_service
+        playback_service.stop()
+        return jsonify({'success': True})
+    except Exception as e:
+        current_app.logger.error(f"Error stopping playback: {e}")
+        return jsonify({'error': str(e)}), 500

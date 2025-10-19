@@ -1012,6 +1012,10 @@ app.register_blueprint(joint_bp)
 from backend.api.led_selection import led_selection_bp
 app.register_blueprint(led_selection_bp)
 
+# Register play page API blueprint
+from backend.api.play import play_bp
+app.register_blueprint(play_bp, url_prefix='/api')
+
 # Hardware test endpoint moved to /api/hardware-test blueprint for better organization
 
 @app.route('/api/led-test-sequence', methods=['POST'])

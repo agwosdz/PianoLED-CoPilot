@@ -517,13 +517,6 @@
       return;
     }
 
-    if (browser) {
-      const confirmation = window.confirm(`Delete ${deriveOriginalName(file.filename)} from the device?`);
-      if (!confirmation) {
-        return;
-      }
-    }
-
     if (
       playbackFilename === file.path &&
       (playbackState === 'playing' || playbackState === 'paused')
