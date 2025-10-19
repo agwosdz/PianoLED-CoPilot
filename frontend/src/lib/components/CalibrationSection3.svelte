@@ -193,6 +193,7 @@
   let showLEDGrid = false;
   let currentKeyLEDAllocation: number[] = []; // Currently assigned LEDs for the selected key
   let allKeysLEDMapping: Record<number, number[]> = {}; // All keys' LED allocations
+  let lastInitializedMidiNote: number | null = null; // Track which MIDI note we last initialized for
 
   function startEditingKeyOffset(midiNote: number, offset: number) {
     editingKeyNote = midiNote;
@@ -223,6 +224,7 @@
     selectedLEDsForNewKey = new Set();
     showLEDGrid = false;
     showAddForm = false;
+    lastInitializedMidiNote = null;
   }
 
   async function handleAddKeyOffset() {
@@ -237,13 +239,33 @@
     }
 
     try {
-      await setKeyOffset(midiNote, newKeyOffset);
+      // Calculate LED trims based on the original vs modified allocation
+      let leftTrim = 0;
+      let rightTrim = 0;
       
-      // Also save LED override if LEDs were selected
-      if (selectedLEDsForNewKey.size > 0) {
-        const ledArray = Array.from(selectedLEDsForNewKey).sort((a, b) => a - b);
-        await ledSelectionAPI.setKeyOverride(midiNote, ledArray);
+      if (currentKeyLEDAllocation.length > 0 && selectedLEDsForNewKey.size > 0) {
+        // Calculate left trim (how many LEDs removed from the left)
+        for (let i = 0; i < currentKeyLEDAllocation.length; i++) {
+          if (!selectedLEDsForNewKey.has(currentKeyLEDAllocation[i])) {
+            leftTrim++;
+          } else {
+            break; // Stop counting when we hit a selected LED
+          }
+        }
+        
+        // Calculate right trim (how many LEDs removed from the right)
+        for (let i = currentKeyLEDAllocation.length - 1; i >= 0; i--) {
+          if (!selectedLEDsForNewKey.has(currentKeyLEDAllocation[i])) {
+            rightTrim++;
+          } else {
+            break; // Stop counting when we hit a selected LED
+          }
+        }
       }
+      
+      // Save offset and trims in a single API call
+      console.log(`[Key Adjustment] MIDI ${midiNote}: offset=${newKeyOffset}, left_trim=${leftTrim}, right_trim=${rightTrim}`);
+      await calibrationService.setKeyOffset(midiNote, newKeyOffset, leftTrim, rightTrim);
       
       resetAddForm();
       calibrationUI.update(ui => ({ ...ui, success: `Key adjustment added for ${getMidiNoteName(midiNote)}` }));
@@ -292,14 +314,16 @@
     }
   }
 
-  // Ensure LED allocation is populated when checkbox is checked
+  // Ensure LED allocation is populated when checkbox is checked (only initialize once per MIDI note)
   $: if (showLEDGrid && newKeyMidiNote) {
     const midiNote = parseInt(newKeyMidiNote, 10);
-    if (Number.isFinite(midiNote) && midiNote >= 0 && midiNote <= 127) {
+    // Only initialize if we haven't already initialized this MIDI note
+    if (Number.isFinite(midiNote) && midiNote >= 0 && midiNote <= 127 && lastInitializedMidiNote !== midiNote) {
       currentKeyLEDAllocation = ledMapping[midiNote] ?? [];
       // Initialize selectedLEDsForNewKey with all current allocations (default to green/ON)
       selectedLEDsForNewKey = new Set(currentKeyLEDAllocation);
-      console.log(`[Reactive] showLEDGrid toggled: MIDI ${midiNote}, currentKeyLEDAllocation=[${currentKeyLEDAllocation.join(',')}], selectedLEDs=[${Array.from(selectedLEDsForNewKey).join(',')}]`);
+      lastInitializedMidiNote = midiNote;
+      console.log(`[Reactive] Initialized for MIDI ${midiNote}: currentKeyLEDAllocation=[${currentKeyLEDAllocation.join(',')}], selectedLEDs=[${Array.from(selectedLEDsForNewKey).join(',')}]`);
     }
   }
 
@@ -620,6 +644,10 @@
     newKeyMidiNote = midiNote.toString();
     newKeyOffset = 0;
     showAddForm = true;
+    showLEDGrid = false; // Let user manually check to customize LEDs if needed
+    
+    // Trigger the reactive statement to populate LED allocations
+    lastInitializedMidiNote = null;
     
     // Scroll to the Individual Key Offsets section
     const offsetsSection = document.querySelector('.per-key-offsets-container');
@@ -1091,13 +1119,6 @@
         {/if}
       </h4>
       <p class="offsets-description">Adjust timing and LED allocation for specific keys</p>
-      <button
-        class="btn-add-offset"
-        on:click={() => (showAddForm = !showAddForm)}
-        title="Add a new key adjustment"
-      >
-        {showAddForm ? '✕ Cancel' : '⊕ Add'}
-      </button>
     </div>
 
     {#if showAddForm}
@@ -1179,17 +1200,21 @@
                   <p class="no-allocation">No LED allocation for this key</p>
                 {/if}
               </div>
+
+              <!-- Add Adjustment Button -->
+              <div class="led-action-buttons">
+                <button
+                  class="btn-save-offset"
+                  on:click={handleAddKeyOffset}
+                  disabled={!newKeyMidiNote}
+                  title="Save offset with LED customizations"
+                >
+                  ✓ Add Adjustment
+                </button>
+              </div>
             </div>
           {/if}
         {/if}
-
-        <button
-          class="btn-save-offset"
-          on:click={handleAddKeyOffset}
-          disabled={!newKeyMidiNote}
-        >
-          ✓ Add Adjustment
-        </button>
       </div>
     {/if}
 
@@ -2687,6 +2712,15 @@
     grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
     gap: 6px;
     margin-bottom: 0.75rem;
+  }
+
+  .led-action-buttons {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #c8e6c9;
   }
 
   .led-button-assigned {

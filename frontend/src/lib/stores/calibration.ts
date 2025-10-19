@@ -365,16 +365,29 @@ class CalibrationService {
     }
   }
 
-  async setKeyOffset(midiNote: number, offset: number): Promise<void> {
+  async setKeyOffset(
+    midiNote: number,
+    offset: number,
+    leftTrim?: number,
+    rightTrim?: number
+  ): Promise<void> {
     const clamped = Math.max(-10, Math.min(10, offset));
     
     calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
     
     try {
+      const body: any = { offset: clamped };
+      if (leftTrim !== undefined) {
+        body.left_trim = leftTrim;
+      }
+      if (rightTrim !== undefined) {
+        body.right_trim = rightTrim;
+      }
+
       const response = await fetch(`${this.baseUrl}/key-offset/${midiNote}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offset: clamped })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -433,6 +446,7 @@ class CalibrationService {
       throw error;
     }
   }
+
 
   async resetCalibration(): Promise<void> {
     calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));

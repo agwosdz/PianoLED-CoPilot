@@ -193,6 +193,7 @@ class SettingsService:
                 'trim_left': {'type': 'number', 'default': 0, 'min': 0, 'max': 100, 'description': 'Number of LEDs to trim from the left side of the strip'},
                 'trim_right': {'type': 'number', 'default': 0, 'min': 0, 'max': 100, 'description': 'Number of LEDs to trim from the right side of the strip'},
                 'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key LED offset adjustments {midi_note: offset_value_leds} - manual fine-tuning'},
+                'key_led_trims': {'type': 'object', 'default': {}, 'description': 'Per-key LED trim adjustments {midi_note: {left_trim: int, right_trim: int}} - trims from left/right of original allocation'},
                 'led_selection_overrides': {'type': 'object', 'default': {}, 'description': 'Per-key LED selection overrides {midi_note: [led_indices]} - manually selected LEDs for each key'},
                 'led_weld_offsets': {'type': 'object', 'default': {}, 'description': 'LED strip weld/joint offsets {led_index: offset_mm} for soldered seams where density rule is violated'},
                 'led_soldering_joints': {'type': 'object', 'default': {}, 'description': 'Soldering joints with width and offset {led_index: {width_mm: float, offset_mm: float, description?: str}}'},

@@ -420,7 +420,7 @@ def get_key_offset(midi_note):
 
 @calibration_bp.route('/key-offset/<int:midi_note>', methods=['PUT'])
 def set_key_offset(midi_note):
-    """Set the offset for a specific key"""
+    """Set the offset and optional LED trims for a specific key"""
     try:
         if not (0 <= midi_note <= 127):
             return jsonify({
@@ -436,6 +436,8 @@ def set_key_offset(midi_note):
             }), 400
         
         offset = data['offset']
+        left_trim = data.get('left_trim', 0)
+        right_trim = data.get('right_trim', 0)
         
         # Validate offset is an integer
         try:
@@ -451,6 +453,26 @@ def set_key_offset(midi_note):
                 'message': 'offset must be an integer'
             }), 400
         
+        # Validate trim values if provided
+        try:
+            left_trim = int(left_trim) if left_trim else 0
+            right_trim = int(right_trim) if right_trim else 0
+            if not (0 <= left_trim <= 100):
+                return jsonify({
+                    'error': 'Validation Error',
+                    'message': 'left_trim must be between 0 and 100'
+                }), 400
+            if not (0 <= right_trim <= 100):
+                return jsonify({
+                    'error': 'Validation Error',
+                    'message': 'right_trim must be between 0 and 100'
+                }), 400
+        except (TypeError, ValueError):
+            return jsonify({
+                'error': 'Validation Error',
+                'message': 'trim values must be integers'
+            }), 400
+        
         settings_service = get_settings_service()
         
         # Get current offsets
@@ -463,6 +485,15 @@ def set_key_offset(midi_note):
         else:
             key_offsets[str(midi_note)] = offset
         
+        # Handle LED trims if provided
+        if left_trim > 0 or right_trim > 0:
+            key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {}) or {}
+            key_led_trims[str(midi_note)] = {
+                'left_trim': left_trim,
+                'right_trim': right_trim
+            }
+            settings_service.set_setting('calibration', 'key_led_trims', key_led_trims)
+        
         # Save updated offsets
         settings_service.set_setting('calibration', 'key_offsets', key_offsets)
         settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
@@ -471,14 +502,18 @@ def set_key_offset(midi_note):
         socketio = get_socketio()
         socketio.emit('key_offset_changed', {
             'midi_note': midi_note,
-            'offset': offset
+            'offset': offset,
+            'left_trim': left_trim,
+            'right_trim': right_trim
         })
         
-        logger.info(f"Key offset for MIDI note {midi_note} set to {offset}")
+        logger.info(f"Key offset for MIDI note {midi_note} set to {offset}, trims: left={left_trim}, right={right_trim}")
         return jsonify({
             'message': 'Key offset updated',
             'midi_note': midi_note,
-            'offset': offset
+            'offset': offset,
+            'left_trim': left_trim,
+            'right_trim': right_trim
         }), 200
     except Exception as e:
         logger.error(f"Error setting key offset: {e}")
@@ -616,6 +651,8 @@ def set_all_key_offsets():
             'error': 'Internal Server Error',
             'message': 'Failed to update key offsets'
         }), 500
+
+
 @calibration_bp.route('/reset', methods=['POST'])
 def reset_calibration():
     """Reset all calibration offsets to defaults"""
