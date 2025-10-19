@@ -37,6 +37,7 @@ class MIDIParser:
         """
         # Load configuration values
         self._settings_service = settings_service
+        self._key_led_mapping = None  # Cached adjusted key-to-LED mapping (with offsets/trims)
         if settings_service:
             piano_size = settings_service.get_setting('piano', 'size', '88-key')
             piano_specs = self._get_piano_specs(piano_size)
@@ -83,6 +84,9 @@ class MIDIParser:
             self.led_orientation = orientation
             self.min_midi_note = piano_specs['midi_start']
             self.max_midi_note = piano_specs['midi_end']
+            
+            # Invalidate cached mapping so it gets reloaded on next use
+            self._key_led_mapping = None
 
             logger.info(f"MIDI parser runtime settings refreshed for {piano_size} piano with {self.led_count} LEDs, orientation: {self.led_orientation}")
         except Exception as e:
@@ -286,20 +290,49 @@ class MIDIParser:
     
     def _map_note_to_led(self, midi_note: int) -> Optional[int]:
         """
-        Map MIDI note number to LED strip position with orientation support.
+        Map MIDI note number to LED strip position using adjusted key-to-LED mapping.
+        This mapping includes all offsets, trims, and LED selection overrides.
         
         Args:
             midi_note: MIDI note number (0-127)
             
         Returns:
-            LED index (0-based) or None if note is outside range
+            First LED index from the mapped range, or None if note is outside range or not mapped
         """
         # Only map notes within piano range
         if midi_note < self.min_midi_note or midi_note > self.max_midi_note:
             return None
-            
-        # Map to logical LED position (0-based)
-        logical_index = midi_note - self.min_midi_note
+        
+        # Get adjusted key-to-LED mapping on first use
+        if self._key_led_mapping is None:
+            try:
+                if self._settings_service:
+                    from backend.config import get_canonical_led_mapping
+                    result = get_canonical_led_mapping(self._settings_service)
+                    self._key_led_mapping = result.get('mapping', {}) if result.get('success') else {}
+                else:
+                    self._key_led_mapping = {}
+                
+                if self._key_led_mapping:
+                    logger.debug(f"Loaded adjusted key-to-LED mapping with {len(self._key_led_mapping)} keys")
+                else:
+                    logger.warning("Could not load adjusted key-to-LED mapping, will use fallback")
+            except Exception as e:
+                logger.warning(f"Error loading adjusted key-to-LED mapping: {e}, using fallback")
+                self._key_led_mapping = {}
+        
+        # Convert MIDI note to key index (0-based from C0/MIDI 21)
+        key_index = midi_note - self.min_midi_note
+        
+        # Try to get from adjusted mapping first
+        if self._key_led_mapping and key_index in self._key_led_mapping:
+            led_list = self._key_led_mapping[key_index]
+            if led_list and len(led_list) > 0:
+                # Return first LED in the mapped range
+                return led_list[0]
+        
+        # Fallback to simple logical mapping if adjusted mapping not available or empty
+        logical_index = key_index
         
         # Ensure within LED strip bounds
         if logical_index >= self.led_count:

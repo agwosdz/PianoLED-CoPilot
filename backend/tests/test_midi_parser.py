@@ -391,6 +391,75 @@ class TestMIDIParser(unittest.TestCase):
         # Verify metadata reflects correct tempos
         self.assertEqual(result_120['metadata']['tempo'], 120)
         self.assertEqual(result_180['metadata']['tempo'], 180)
+    
+    def test_parse_file_with_adjusted_key_mapping(self):
+        """Test that note-to-LED mapping uses adjusted key-to-LED mapping with offsets/trims"""
+        # Create a mock settings service
+        class MockSettingsService:
+            def get_setting(self, category, key, default=None):
+                if category == 'piano' and key == 'size':
+                    return '88-key'
+                if category == 'led' and key == 'led_count':
+                    return 246
+                if category == 'led' and key == 'led_orientation':
+                    return 'normal'
+                return default
+        
+        # Create parser with mock settings
+        parser = MIDIParser(settings_service=MockSettingsService())
+        
+        # Create a simple MIDI file with middle C (MIDI 60)
+        filepath = os.path.join(self.temp_dir, 'test_adjusted_mapping.mid')
+        mid = mido.MidiFile()
+        track = mido.MidiTrack()
+        
+        # Add notes across a few octaves to test mapping
+        notes = [48, 60, 72]  # C2, C4, C5
+        for note in notes:
+            track.append(mido.Message('note_on', channel=0, note=note, velocity=64, time=0))
+            track.append(mido.Message('note_off', channel=0, note=note, velocity=64, time=480))
+        
+        mid.tracks.append(track)
+        mid.save(filepath)
+        
+        # Parse the file
+        result = parser.parse_file(filepath)
+        
+        # Check that notes are mapped to LED indices
+        events = result['events']
+        
+        # We should have note_on and note_off for each note
+        self.assertEqual(len(events), 6)
+        
+        # All events should have valid LED indices
+        for event in events:
+            self.assertIn('led_index', event)
+            self.assertIsNotNone(event['led_index'])
+            self.assertGreaterEqual(event['led_index'], 0)
+            self.assertLess(event['led_index'], parser.led_count)
+        
+        # Check specific note mappings
+        # MIDI 48 -> key index 27 (48 - 21)
+        # MIDI 60 -> key index 39 (60 - 21)
+        # MIDI 72 -> key index 51 (72 - 21)
+        
+        # The led_index should be derived from the mapping or fallback to logical index
+        note_48_events = [e for e in events if e['note'] == 48]
+        note_60_events = [e for e in events if e['note'] == 60]
+        note_72_events = [e for e in events if e['note'] == 72]
+        
+        self.assertEqual(len(note_48_events), 2)
+        self.assertEqual(len(note_60_events), 2)
+        self.assertEqual(len(note_72_events), 2)
+        
+        # LED indices should increase with note value (higher notes -> higher LED indices)
+        led_48 = note_48_events[0]['led_index']
+        led_60 = note_60_events[0]['led_index']
+        led_72 = note_72_events[0]['led_index']
+        
+        self.assertLess(led_48, led_60, "MIDI 48 should map to lower LED than MIDI 60")
+        self.assertLess(led_60, led_72, "MIDI 60 should map to lower LED than MIDI 72")
+
 
 
 if __name__ == '__main__':
