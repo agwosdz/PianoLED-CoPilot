@@ -790,8 +790,8 @@ def generate_auto_key_mapping(piano_size, led_count, led_orientation="normal", l
     return mapping
 
 
-def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, led_count=None, weld_offsets=None):
-    """Apply calibration offsets to a pre-computed key mapping with cascading individual offsets and weld compensations
+def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key_offsets=None, key_led_trims=None, led_count=None, weld_offsets=None):
+    """Apply calibration offsets and LED trims to a pre-computed key mapping with cascading individual offsets and weld compensations
     
     Args:
         mapping: Base key-to-LED mapping dict
@@ -799,6 +799,8 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         end_led: Last LED index at the end of the piano (clamp max)
         key_offsets: Per-key offset dict {midi_note: offset}
                      Individual offsets cascade: an offset at note N affects all notes >= N
+        key_led_trims: Per-key LED trim dict {midi_note: {left_trim: N, right_trim: M}}
+                       Trims are applied AFTER offsets to the adjusted LED indices
         led_count: Total LED count for bounds checking (optional, no bounds if None)
         weld_offsets: Weld offset dict {led_index: offset_mm} for LED strip welds/joints
                       Offsets after a weld are adjusted by the cumulative weld offset to account for
@@ -806,7 +808,7 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     
     Returns:
         dict: Adjusted mapping with LED range clamped to [start_led, end_led], cascading key offsets applied,
-              and weld compensations factored in
+              trims applied, and weld compensations factored in
     """
     from backend.logging_config import get_logger
     logger = get_logger(__name__)
@@ -814,20 +816,23 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     if end_led is None:
         end_led = (led_count - 1) if led_count else 245
     
-    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets and not weld_offsets):
+    if not mapping or (start_led == 0 and end_led == (led_count - 1 if led_count else 245) and not key_offsets and not key_led_trims and not weld_offsets):
         logger.debug(f"Skipping offset application: mapping_empty={not mapping}, "
                     f"start_led={start_led}, end_led={end_led}, key_offsets_empty={not key_offsets}, "
-                    f"weld_offsets_empty={not weld_offsets}")
+                    f"key_led_trims_empty={not key_led_trims}, weld_offsets_empty={not weld_offsets}")
         return mapping
     
     if key_offsets is None:
         key_offsets = {}
+    if key_led_trims is None:
+        key_led_trims = {}
     if weld_offsets is None:
         weld_offsets = {}
     
     logger.info(f"Applying calibration offsets to mapping with {len(mapping)} entries. "
                f"start_led={start_led}, end_led={end_led}, key_offsets_count={len(key_offsets)}, "
-               f"weld_offsets_count={len(weld_offsets)}, led_count={led_count}")
+               f"key_led_trims_count={len(key_led_trims)}, weld_offsets_count={len(weld_offsets)}, "
+               f"led_count={led_count}")
     
     # Normalize and sort weld offsets by LED index for efficient processing
     normalized_weld_offsets = {}
@@ -848,6 +853,32 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         logger.debug(f"Normalized {len(normalized_weld_offsets)} weld offsets. "
                     f"LED indices: {sorted(normalized_weld_offsets.keys())}, "
                     f"Offsets (mm): {[normalized_weld_offsets[i] for i in sorted(normalized_weld_offsets.keys())]}")
+    
+    # Normalize key_led_trims to ensure all keys are integers and trim values are valid
+    normalized_key_led_trims = {}
+    invalid_trims_count = 0
+    for key, trim_value in key_led_trims.items():
+        try:
+            note_num = int(key) if isinstance(key, str) else key
+            if isinstance(trim_value, dict):
+                left_trim = int(trim_value.get('left_trim', 0))
+                right_trim = int(trim_value.get('right_trim', 0))
+                normalized_key_led_trims[note_num] = {
+                    'left_trim': left_trim,
+                    'right_trim': right_trim
+                }
+            else:
+                invalid_trims_count += 1
+        except (ValueError, TypeError):
+            invalid_trims_count += 1
+            continue  # Skip invalid entries
+    
+    if invalid_trims_count > 0:
+        logger.warning(f"Skipped {invalid_trims_count} invalid trim entries during normalization")
+    
+    if normalized_key_led_trims:
+        logger.debug(f"Normalized {len(normalized_key_led_trims)} key LED trims. "
+                    f"Notes with trims: {sorted(normalized_key_led_trims.keys())}")
     
     adjusted = {}
     
@@ -876,6 +907,7 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     
     clamped_count = 0
     invalid_entries_count = 0
+    trimmed_count = 0
     
     for midi_note, led_indices in mapping.items():
         adjusted_indices = []
@@ -961,15 +993,42 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
                             f"weld_compensation={weld_compensation} LEDs, "
                             f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         
+        # Apply LED trims AFTER offsets: if key has custom trims, slice the adjusted indices
+        if adjusted_indices and midi_note_int in normalized_key_led_trims:
+            trim_spec = normalized_key_led_trims[midi_note_int]
+            left_trim = trim_spec.get('left_trim', 0)
+            right_trim = trim_spec.get('right_trim', 0)
+            
+            if left_trim > 0 or right_trim > 0:
+                # Apply trim by slicing: [left_trim : len - right_trim]
+                original_len = len(adjusted_indices)
+                
+                if right_trim > 0:
+                    trimmed_indices = adjusted_indices[left_trim:-right_trim]
+                else:
+                    trimmed_indices = adjusted_indices[left_trim:]
+                
+                if trimmed_indices:  # Only apply if result is non-empty
+                    adjusted_indices = trimmed_indices
+                    trimmed_count += 1
+                    logger.debug(f"Note {midi_note_int}: Applied trim L{left_trim}/R{right_trim} "
+                                f"→ {original_len} LEDs became {len(adjusted_indices)} LEDs "
+                                f"(LEDs: {adjusted_indices})")
+                else:
+                    # Trim result is empty - log warning but keep original
+                    logger.warning(f"Note {midi_note_int}: Trim L{left_trim}/R{right_trim} would eliminate all LEDs, "
+                                  f"keeping original {len(adjusted_indices)} LEDs")
+        
         if adjusted_indices:
             adjusted[midi_note] = adjusted_indices
     
     if invalid_entries_count > 0:
         logger.warning(f"Skipped {invalid_entries_count} invalid mapping entries (non-integer MIDI notes)")
     
-    logger.info(f"Offset application complete. Adjusted {len(adjusted)} notes. "
+    logger.info(f"Offset and trim application complete. Adjusted {len(adjusted)} notes. "
                f"Clamped {clamped_count} LED indices (bounds: {start_led}-{end_led}). "
-               f"Applied {len(normalized_key_offsets)} LED offsets "
+               f"Applied {len(normalized_key_offsets)} LED offsets, "
+               f"{trimmed_count} LED trims, "
                f"and {len(normalized_weld_offsets)} weld compensations. "
                f"Adjusted mapping now has {sum(len(v) if isinstance(v, list) else 1 for v in adjusted.values())} total LED assignments")
     

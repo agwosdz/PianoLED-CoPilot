@@ -863,12 +863,33 @@ def get_key_led_mapping():
         
         logger.info(f"Converted {len(converted_offsets)} offsets from MIDI notes to key indices")
         
-        # Apply calibration key offsets to the mapping (now with matching key indices)
+        # Get calibration LED trims
+        key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {})
+        
+        # Convert trim keys from MIDI notes to key indices (same as offsets)
+        converted_trims = {}
+        if key_led_trims:
+            for midi_note_str, trim_value in key_led_trims.items():
+                try:
+                    midi_note = int(midi_note_str) if isinstance(midi_note_str, str) else midi_note_str
+                    key_index = midi_note - 21
+                    if 0 <= key_index < 88:
+                        converted_trims[midi_note] = trim_value
+                        logger.debug(f"Converted trim: MIDI {midi_note} → index {key_index}, trim={trim_value}")
+                    else:
+                        logger.warning(f"Trim MIDI note {midi_note} out of range, skipped")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to convert trim key {midi_note_str}: {e}")
+        
+        logger.info(f"Converted {len(converted_trims)} trims from MIDI notes to key indices")
+        
+        # Apply calibration key offsets and LED trims to the mapping
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=base_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=converted_offsets,
+            key_led_trims=converted_trims,
             led_count=led_count
         )
         
@@ -881,6 +902,7 @@ def get_key_led_mapping():
             'start_led': start_led,
             'end_led': end_led,
             'key_offsets_count': len(key_offsets),
+            'key_led_trims_count': len(key_led_trims),
             'distribution_mode': distribution_mode,
             'allow_led_sharing': allow_led_sharing,
             'timestamp': datetime.now().isoformat()
