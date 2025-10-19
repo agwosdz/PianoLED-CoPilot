@@ -174,6 +174,12 @@
     if (!browser) return;
     try {
       midiOutputError = '';
+      
+      // If disabling, disconnect first
+      if (!enabled && midiOutputConnected) {
+        await disconnectMidiOutput();
+      }
+      
       const response = await fetch('/api/midi-output/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,6 +226,27 @@
       await toggleMidiOutput(true, device);
     } catch (error) {
       midiOutputError = 'Network error connecting MIDI output';
+    }
+  }
+
+  async function disconnectMidiOutput(): Promise<void> {
+    if (!browser) return;
+    try {
+      midiOutputError = '';
+      const response = await fetch('/api/midi-output/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        midiOutputError = 'Failed to disconnect from MIDI output device';
+        return;
+      }
+
+      midiOutputConnected = false;
+      selectedMidiOutputDevice = null;
+    } catch (error) {
+      midiOutputError = 'Network error disconnecting MIDI output';
     }
   }
 
@@ -644,7 +671,17 @@
 
           {#if midiOutputEnabled}
             <div class="midi-device-selector">
-              <label for="midi-device-select">Select Output Device:</label>
+              <div class="device-selector-row">
+                <label for="midi-device-select">Select Output Device:</label>
+                <button
+                  class="refresh-button"
+                  on:click={loadMidiOutputDevices}
+                  disabled={loadingMidiDevices}
+                  title="Refresh device list"
+                >
+                  🔄 Refresh
+                </button>
+              </div>
               <select
                 id="midi-device-select"
                 bind:value={selectedMidiOutputDevice}
@@ -652,14 +689,30 @@
                 disabled={loadingMidiDevices}
                 class="device-dropdown"
               >
-                <option value="">Loading devices...</option>
-                {#each midiOutputDevices as device (device.id)}
-                  <option value={device.name} selected={device.is_current}>
-                    {device.name}
-                  </option>
-                {/each}
+                {#if loadingMidiDevices}
+                  <option value="">Loading devices...</option>
+                {:else if midiOutputDevices.length === 0}
+                  <option value="">No devices found</option>
+                {:else}
+                  <option value="">Select a device...</option>
+                  {#each midiOutputDevices as device (device.id)}
+                    <option value={device.name} selected={device.is_current}>
+                      {device.name}
+                    </option>
+                  {/each}
+                {/if}
               </select>
             </div>
+
+            {#if midiOutputConnected}
+              <button
+                class="disconnect-button"
+                on:click={disconnectMidiOutput}
+                title="Disconnect from device"
+              >
+                ✕ Disconnect
+              </button>
+            {/if}
 
             {#if midiOutputError}
               <p class="midi-error">{midiOutputError}</p>
@@ -1213,10 +1266,45 @@
     gap: 0.5rem;
   }
 
+  .device-selector-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
   .midi-device-selector label {
     font-size: 0.875rem;
     font-weight: 500;
     color: #1f2937;
+  }
+
+  .refresh-button {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.375rem;
+    background: #f8fafc;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .refresh-button:hover:not(:disabled) {
+    border-color: #0f172a;
+    background: #ffffff;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.1);
+  }
+
+  .refresh-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .refresh-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .device-dropdown {
@@ -1244,6 +1332,28 @@
     background: #f8fafc;
     color: #94a3b8;
     cursor: not-allowed;
+  }
+
+  .disconnect-button {
+    padding: 0.5rem 0.875rem;
+    border: 1px solid #fecaca;
+    border-radius: 0.375rem;
+    background: #fee2e2;
+    color: #991b1b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .disconnect-button:hover {
+    background: #fca5a5;
+    border-color: #dc2626;
+    color: #7f1d1d;
+  }
+
+  .disconnect-button:active {
+    transform: scale(0.95);
   }
 
   .midi-error {
