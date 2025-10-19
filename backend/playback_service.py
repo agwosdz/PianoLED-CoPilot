@@ -890,7 +890,11 @@ class PlaybackService:
         """
         # Use precomputed mapping if available
         if note in self._precomputed_mapping:
-            return self._precomputed_mapping[note]
+            led_indices = self._precomputed_mapping[note]
+            # Filter to ensure all indices are within bounds
+            valid_indices = [idx for idx in led_indices if 0 <= idx < self.num_leds]
+            if valid_indices:
+                return valid_indices
         
         # Fallback to single LED mapping for backward compatibility
         single_led = self._map_note_to_led(note)
@@ -899,11 +903,34 @@ class PlaybackService:
     def _generate_key_mapping(self) -> Dict[int, List[int]]:
         """
         Generate key-to-LED mapping based on configuration.
+        Uses the calibrated adjusted mapping which includes offsets, trims, and selections.
         
         Returns:
             Dict[int, List[int]]: Mapping of MIDI note to list of LED indices
         """
         try:
+            # Try to use calibrated adjusted mapping first (includes offsets, trims, selections)
+            if self._settings_service:
+                try:
+                    from backend.config import get_canonical_led_mapping
+                    result = get_canonical_led_mapping(self._settings_service)
+                    if result.get('success'):
+                        canonical_mapping = result.get('mapping', {})
+                        if canonical_mapping:
+                            # Convert key indices (0-87) to MIDI notes (21-108)
+                            midi_mapping = {}
+                            for key_index, led_indices in canonical_mapping.items():
+                                midi_note = key_index + 21  # Convert index to MIDI note
+                                if isinstance(led_indices, list) and led_indices:
+                                    midi_mapping[midi_note] = led_indices
+                            
+                            if midi_mapping:
+                                logger.info(f"Using canonical LED mapping with {len(midi_mapping)} keys (includes calibration adjustments)")
+                                return midi_mapping
+                except Exception as e:
+                    logger.warning(f"Could not load canonical LED mapping: {e}, falling back to auto-generated")
+            
+            # Fallback to auto-generated mapping if canonical not available
             from backend.config import generate_auto_key_mapping
             
             if self.mapping_mode == 'manual' and self.key_mapping:
