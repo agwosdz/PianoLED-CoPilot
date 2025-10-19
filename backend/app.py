@@ -55,6 +55,11 @@ except Exception:
     PlaybackService = None
     PlaybackState = None
 
+try:
+    from backend.usb_midi_output_service import USBMIDIOutputService
+except Exception:
+    USBMIDIOutputService = None
+
 def websocket_status_callback(status):
     """Broadcast playback status over WebSocket."""
     try:
@@ -137,7 +142,8 @@ except Exception as e:
 # Initialize services that depend on LED controller
 # NOTE: USB MIDI service is created exclusively by MIDIInputManager to avoid duplicate processing
 # All USB MIDI events route through MIDIInputManager for unified event handling
-playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service) if PlaybackService and midi_parser else None
+midi_output_service = USBMIDIOutputService(settings_service=settings_service, websocket_callback=socketio.emit) if USBMIDIOutputService else None
+playback_service = PlaybackService(led_controller=led_controller, midi_parser=midi_parser, settings_service=settings_service, midi_output_service=midi_output_service) if PlaybackService and midi_parser else None
 midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
 usb_midi_service = midi_input_manager._usb_service if midi_input_manager else None  # Reference manager's service
 
@@ -1759,6 +1765,175 @@ def disconnect_rtpmidi_session():
         return jsonify({
             'error': 'Internal Server Error',
             'message': 'An unexpected error occurred while disconnecting from rtpMIDI session'
+        }), 500
+
+# ========== MIDI OUTPUT ENDPOINTS ==========
+
+@app.route('/api/midi-output/devices', methods=['GET'])
+def get_midi_output_devices():
+    """Get list of available MIDI output devices"""
+    try:
+        if not midi_output_service:
+            return jsonify({
+                'status': 'error',
+                'message': 'MIDI output service not available',
+                'devices': []
+            }), 503
+
+        devices = midi_output_service.get_available_devices()
+        device_list = [
+            {
+                'name': device.name,
+                'id': device.id,
+                'status': device.status,
+                'is_current': device.name == midi_output_service.current_device
+            }
+            for device in devices
+        ]
+
+        return jsonify({
+            'status': 'success',
+            'devices': device_list,
+            'current_device': midi_output_service.current_device,
+            'is_connected': midi_output_service.is_connected
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting MIDI output devices: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to get MIDI output devices'
+        }), 500
+
+
+@app.route('/api/midi-output/connect', methods=['POST'])
+def connect_midi_output():
+    """Connect to a MIDI output device"""
+    try:
+        if not midi_output_service:
+            return jsonify({
+                'status': 'error',
+                'message': 'MIDI output service not available'
+            }), 503
+
+        data = request.get_json(silent=True) or {}
+        device_name = data.get('device_name', None)
+
+        success = midi_output_service.connect(device_name)
+
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': f'Connected to MIDI output device: {midi_output_service.current_device}',
+                'device': midi_output_service.current_device,
+                'is_connected': True
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to connect to MIDI output device'
+            }), 400
+
+    except Exception as e:
+        logger.error(f"Error connecting to MIDI output: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to connect to MIDI output device'
+        }), 500
+
+
+@app.route('/api/midi-output/disconnect', methods=['POST'])
+def disconnect_midi_output():
+    """Disconnect from current MIDI output device"""
+    try:
+        if not midi_output_service:
+            return jsonify({
+                'status': 'error',
+                'message': 'MIDI output service not available'
+            }), 503
+
+        success = midi_output_service.disconnect()
+
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': 'Disconnected from MIDI output device',
+                'is_connected': False
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to disconnect from MIDI output device'
+            }), 400
+
+    except Exception as e:
+        logger.error(f"Error disconnecting from MIDI output: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to disconnect from MIDI output device'
+        }), 500
+
+
+@app.route('/api/midi-output/status', methods=['GET'])
+def get_midi_output_status():
+    """Get current MIDI output status"""
+    try:
+        if not midi_output_service:
+            return jsonify({
+                'status': 'error',
+                'message': 'MIDI output service not available'
+            }), 503
+
+        return jsonify({
+            'status': 'success',
+            'midi_output': midi_output_service.get_status()
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting MIDI output status: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to get MIDI output status'
+        }), 500
+
+
+@app.route('/api/midi-output/toggle', methods=['POST'])
+def toggle_midi_output():
+    """Enable/disable MIDI output during playback"""
+    try:
+        if not playback_service:
+            return jsonify({
+                'status': 'error',
+                'message': 'Playback service not available'
+            }), 503
+
+        data = request.get_json(silent=True) or {}
+        enabled = data.get('enabled', False)
+        device_name = data.get('device_name', None)
+
+        # Update settings
+        if settings_service:
+            settings_service.set_setting('hardware', 'midi_output_enabled', enabled)
+            if device_name:
+                settings_service.set_setting('hardware', 'midi_output_device', device_name)
+            logger.info(f"MIDI output setting updated: enabled={enabled}, device={device_name}")
+
+        # Reload MIDI output settings in playback service
+        if playback_service:
+            playback_service._load_midi_output_settings()
+
+        return jsonify({
+            'status': 'success',
+            'message': 'MIDI output setting updated',
+            'midi_output_enabled': enabled,
+            'midi_output_device': device_name or midi_output_service.current_device if midi_output_service else None
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error toggling MIDI output: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to toggle MIDI output'
         }), 500
 
 @app.route('/api/dashboard', methods=['GET'])

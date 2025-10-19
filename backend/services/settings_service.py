@@ -233,7 +233,9 @@ class SettingsService:
                 'auto_detect_led': {'type': 'boolean', 'default': True},
                 'midi_device_id': {'type': 'string', 'default': ''},
                 'rtpmidi_enabled': {'type': 'boolean', 'default': False},
-                'rtpmidi_port': {'type': 'number', 'default': 5004, 'min': 1024, 'max': 65535}
+                'rtpmidi_port': {'type': 'number', 'default': 5004, 'min': 1024, 'max': 65535},
+                'midi_output_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable MIDI output to connected devices during playback'},
+                'midi_output_device': {'type': 'string', 'default': '', 'description': 'Selected MIDI output device name'}
             },
             'system': {
                 'theme': {'type': 'string', 'default': 'auto', 'enum': ['light', 'dark', 'auto']},

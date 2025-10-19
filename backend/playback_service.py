@@ -32,6 +32,11 @@ except ImportError:
     PerformanceMonitor = None
 
 try:
+    from backend.usb_midi_output_service import USBMIDIOutputService
+except ImportError:
+    USBMIDIOutputService = None
+
+try:
     from backend.config import get_config, get_piano_specs
 except ImportError:
     logging.warning("Config module not available, using defaults")
@@ -70,7 +75,7 @@ class PlaybackStatus:
 class PlaybackService:
     """Service for coordinating MIDI playback with LED visualization"""
     
-    def __init__(self, led_controller=None, num_leds: Optional[int] = None, midi_parser=None, settings_service: Optional[Any] = None):
+    def __init__(self, led_controller=None, num_leds: Optional[int] = None, midi_parser=None, settings_service: Optional[Any] = None, midi_output_service: Optional[Any] = None):
         """
         Initialize playback service with configurable piano specifications.
         
@@ -79,9 +84,11 @@ class PlaybackService:
             num_leds: Number of LEDs in the strip (optional, loaded from settings if not provided)
             midi_parser: MIDI parser instance for file parsing
             settings_service: Settings service instance for retrieving configuration
+            midi_output_service: MIDI output service for sending notes to USB keyboard
         """
         self._led_controller = led_controller
         self._settings_service = settings_service
+        self._midi_output_service = midi_output_service
         self.piano_size = '88-key'
         
         if self._settings_service:
@@ -120,10 +127,17 @@ class PlaybackService:
         self._loop_start = 0.0
         self._loop_end = 0.0
         
+        # MIDI output configuration
+        self._midi_output_enabled = False
+        self._midi_notes_sent: Dict[int, bool] = {}  # Track which MIDI notes are currently on
+        
+        # Load MIDI output settings
+        self._load_midi_output_settings()
+        
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
         
-        logger.info(f"PlaybackService initialized with {self.num_leds} LEDs")
+        logger.info(f"PlaybackService initialized with {self.num_leds} LEDs, MIDI output: {self._midi_output_enabled}")
     
     def _load_settings_from_service(self, num_leds_override: Optional[int] = None) -> None:
         """Load runtime configuration from the settings service."""
@@ -180,6 +194,31 @@ class PlaybackService:
             self.min_midi_note = piano_config.get('midi_start', midi_start_default)
             self.max_midi_note = piano_config.get('midi_end', midi_end_default)
 
+    def _load_midi_output_settings(self) -> None:
+        """Load MIDI output configuration from settings service."""
+        if not self._settings_service:
+            self._midi_output_enabled = False
+            return
+
+        try:
+            get_setting = getattr(self._settings_service, 'get_setting', None)
+            if callable(get_setting):
+                self._midi_output_enabled = get_setting('hardware', 'midi_output_enabled', False)
+                midi_output_device = get_setting('hardware', 'midi_output_device', '')
+                
+                # If MIDI output is enabled and we have a service, connect to device
+                if self._midi_output_enabled and self._midi_output_service and USBMIDIOutputService:
+                    if midi_output_device:
+                        self._midi_output_service.connect(midi_output_device)
+                    else:
+                        self._midi_output_service.connect()  # Auto-select first device
+                    logger.info(f"MIDI output enabled: {midi_output_device or 'auto-select'}")
+            else:
+                self._midi_output_enabled = False
+        except Exception as e:
+            logger.error(f"Error loading MIDI output settings: {e}")
+            self._midi_output_enabled = False
+
     def _load_settings_from_config(self, num_leds_override: Optional[int] = None) -> None:
         """Fallback configuration loading from static config values."""
         piano_size = get_config('piano_size', '88-key')
@@ -207,6 +246,7 @@ class PlaybackService:
             self._load_settings_from_config()
 
         self._precomputed_mapping = self._generate_key_mapping()
+        self._load_midi_output_settings()
         logger.debug(
             "Playback service settings refreshed: num_leds=%s orientation=%s mapping_mode=%s",
             self.num_leds,
@@ -607,7 +647,7 @@ class PlaybackService:
     def stop_playback(self) -> bool:
         """
         Stop playback and reset position.
-        
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -627,9 +667,15 @@ class PlaybackService:
             if self._led_controller:
                 self._led_controller.turn_off_all()
             
+            # Send MIDI note_off for all active notes
+            if self._midi_output_enabled and self._midi_output_service:
+                for note in list(self._active_notes.keys()):
+                    self._send_midi_note_off(note)
+            
             self._state = PlaybackState.STOPPED
             self._current_time = 0.0
             self._active_notes.clear()
+            self._midi_notes_sent.clear()
             
             logger.info("Playback stopped")
             self._notify_status_change()
@@ -713,7 +759,7 @@ class PlaybackService:
             self._notify_status_change()
     
     def _process_note_events(self):
-        """Process note events at current time"""
+        """Process note events at current time, including MIDI output"""
         current_time = self._current_time
         
         # Find notes that should start now
@@ -721,6 +767,12 @@ class PlaybackService:
             if abs(event.time - current_time) < 0.02:  # 20ms tolerance
                 if event.note not in self._active_notes:
                     self._active_notes[event.note] = current_time + event.duration
+                    self._midi_notes_sent[event.note] = False  # Mark as not yet sent to MIDI output
+                    
+                    # Send MIDI output if enabled
+                    if self._midi_output_enabled and self._midi_output_service:
+                        self._send_midi_note_on(event.note, event.velocity)
+                    
                     logger.debug(f"Note ON: {event.note} at {current_time:.2f}s")
         
         # Remove notes that should end
@@ -728,10 +780,50 @@ class PlaybackService:
         for note, end_time in self._active_notes.items():
             if current_time >= end_time:
                 notes_to_remove.append(note)
+                
+                # Send MIDI note_off if enabled
+                if self._midi_output_enabled and self._midi_output_service:
+                    self._send_midi_note_off(note)
+                
                 logger.debug(f"Note OFF: {note} at {current_time:.2f}s")
         
         for note in notes_to_remove:
             del self._active_notes[note]
+            if note in self._midi_notes_sent:
+                del self._midi_notes_sent[note]
+    
+    def _send_midi_note_on(self, note: int, velocity: int) -> None:
+        """
+        Send MIDI note_on with velocity adjustment for volume multiplier.
+        
+        Args:
+            note: MIDI note number
+            velocity: Original velocity from MIDI file
+        """
+        try:
+            # Apply volume multiplier to velocity
+            adjusted_velocity = max(1, int(velocity * self._volume_multiplier))
+            adjusted_velocity = min(127, adjusted_velocity)
+            
+            self._midi_output_service.send_note_on(note, adjusted_velocity, channel=0)
+            self._midi_notes_sent[note] = True
+            logger.debug(f"Sent MIDI note_on: note={note}, velocity={adjusted_velocity}")
+        except Exception as e:
+            logger.error(f"Error sending MIDI note_on: {e}")
+    
+    def _send_midi_note_off(self, note: int) -> None:
+        """
+        Send MIDI note_off message.
+        
+        Args:
+            note: MIDI note number
+        """
+        try:
+            if self._midi_notes_sent.get(note, False):
+                self._midi_output_service.send_note_off(note, channel=0)
+                logger.debug(f"Sent MIDI note_off: note={note}")
+        except Exception as e:
+            logger.error(f"Error sending MIDI note_off: {e}")
     
     def _update_leds(self):
         """Update LED display based on active notes"""

@@ -40,6 +40,14 @@
   let uploadedFilesError = '';
   let isLoadingUploadedFiles = false;
 
+  // MIDI output state
+  let midiOutputEnabled = false;
+  let midiOutputDevices: Array<{ name: string; id: number; status: string; is_current: boolean }> = [];
+  let selectedMidiOutputDevice: string | null = null;
+  let midiOutputConnected = false;
+  let loadingMidiDevices = false;
+  let midiOutputError = '';
+
   const statusPollIntervalMs = 3000;
 
   $: playbackDisplayName = playbackOriginalName || deriveOriginalName(playbackFilename);
@@ -138,12 +146,90 @@
     }
   }
 
+  async function loadMidiOutputDevices(): Promise<void> {
+    if (!browser) return;
+    try {
+      loadingMidiDevices = true;
+      midiOutputError = '';
+      const response = await fetch('/api/midi-output/devices');
+      if (!response.ok) {
+        midiOutputError = 'Failed to load MIDI output devices';
+        midiOutputDevices = [];
+        return;
+      }
+
+      const data = await response.json();
+      midiOutputDevices = Array.isArray(data?.devices) ? data.devices : [];
+      midiOutputConnected = data?.is_connected ?? false;
+      selectedMidiOutputDevice = data?.current_device ?? null;
+    } catch (error) {
+      midiOutputError = 'Failed to load MIDI output devices';
+      midiOutputDevices = [];
+    } finally {
+      loadingMidiDevices = false;
+    }
+  }
+
+  async function toggleMidiOutput(enabled: boolean, device?: string): Promise<void> {
+    if (!browser) return;
+    try {
+      midiOutputError = '';
+      const response = await fetch('/api/midi-output/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled,
+          device_name: device || null
+        })
+      });
+
+      if (!response.ok) {
+        midiOutputError = 'Failed to update MIDI output setting';
+        return;
+      }
+
+      const data = await response.json();
+      midiOutputEnabled = data?.midi_output_enabled ?? false;
+      
+      // Reload devices after toggling
+      await loadMidiOutputDevices();
+    } catch (error) {
+      midiOutputError = 'Network error updating MIDI output';
+    }
+  }
+
+  async function connectMidiOutput(device: string): Promise<void> {
+    if (!browser) return;
+    try {
+      midiOutputError = '';
+      const response = await fetch('/api/midi-output/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_name: device })
+      });
+
+      if (!response.ok) {
+        midiOutputError = 'Failed to connect to MIDI output device';
+        return;
+      }
+
+      selectedMidiOutputDevice = device;
+      midiOutputConnected = true;
+      
+      // Enable MIDI output
+      await toggleMidiOutput(true, device);
+    } catch (error) {
+      midiOutputError = 'Network error connecting MIDI output';
+    }
+  }
+
   onMount(() => {
     if (!browser) return;
 
     fetchPlaybackStatus();
     pollingHandle = setInterval(fetchPlaybackStatus, statusPollIntervalMs);
     loadUploadedFiles();
+    loadMidiOutputDevices();
 
     try {
       socketInstance = getSocket();
@@ -538,6 +624,48 @@
         {#if playbackNotice}
           <p class="playback-notice">{playbackNotice}</p>
         {/if}
+
+        <div class="midi-output-section">
+          <div class="midi-output-header">
+            <label for="midi-output-toggle" class="midi-output-label">
+              <input
+                id="midi-output-toggle"
+                type="checkbox"
+                bind:checked={midiOutputEnabled}
+                on:change={(e) => toggleMidiOutput(e.currentTarget.checked)}
+                class="midi-toggle-input"
+              />
+              <span class="midi-toggle-label">Send MIDI to USB Keyboard</span>
+            </label>
+            <span class={`midi-status ${midiOutputConnected ? 'connected' : 'disconnected'}`}>
+              {midiOutputConnected ? '🎹 Connected' : '🔌 Disconnected'}
+            </span>
+          </div>
+
+          {#if midiOutputEnabled}
+            <div class="midi-device-selector">
+              <label for="midi-device-select">Select Output Device:</label>
+              <select
+                id="midi-device-select"
+                bind:value={selectedMidiOutputDevice}
+                on:change={(e) => e.currentTarget.value && connectMidiOutput(e.currentTarget.value)}
+                disabled={loadingMidiDevices}
+                class="device-dropdown"
+              >
+                <option value="">Loading devices...</option>
+                {#each midiOutputDevices as device (device.id)}
+                  <option value={device.name} selected={device.is_current}>
+                    {device.name}
+                  </option>
+                {/each}
+              </select>
+            </div>
+
+            {#if midiOutputError}
+              <p class="midi-error">{midiOutputError}</p>
+            {/if}
+          {/if}
+        </div>
       </section>
 
       <section class="upload-card">
@@ -1027,6 +1155,104 @@
   .list-count.error {
     background: #fee2e2;
     color: #b91c1c;
+  }
+
+  .midi-output-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .midi-output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .midi-output-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .midi-toggle-input {
+    width: 1.25rem;
+    height: 1.25rem;
+    cursor: pointer;
+    accent-color: #0f172a;
+  }
+
+  .midi-toggle-label {
+    font-weight: 500;
+    color: #1f2937;
+  }
+
+  .midi-status {
+    font-size: 0.875rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.375rem;
+    background: #f0fdf4;
+    color: #166534;
+    font-weight: 600;
+  }
+
+  .midi-status.disconnected {
+    background: #fef2f2;
+    color: #991b1b;
+  }
+
+  .midi-device-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .midi-device-selector label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #1f2937;
+  }
+
+  .device-dropdown {
+    padding: 0.625rem 0.875rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.375rem;
+    background: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .device-dropdown:hover:not(:disabled) {
+    border-color: #94a3b8;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.05);
+  }
+
+  .device-dropdown:focus {
+    outline: none;
+    border-color: #0f172a;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+  }
+
+  .device-dropdown:disabled {
+    background: #f8fafc;
+    color: #94a3b8;
+    cursor: not-allowed;
+  }
+
+  .midi-error {
+    margin: 0;
+    padding: 0.75rem;
+    background: #fee2e2;
+    color: #991b1b;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
   }
 
   .visually-hidden {
