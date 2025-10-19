@@ -193,6 +193,7 @@ class MIDIParser:
     def _create_note_sequence(self, events: List[Dict[str, Any]], midi_file) -> List[Dict[str, Any]]:
         """
         Convert MIDI events to a time-ordered sequence with absolute timing.
+        Handles tempo changes within the MIDI file.
         
         Args:
             events: List of note events with tick timing
@@ -204,16 +205,47 @@ class MIDIParser:
         if not MIDO_AVAILABLE:
             raise RuntimeError("mido library not available")
             
-        # Calculate ticks per second for timing conversion
         ticks_per_beat = midi_file.ticks_per_beat
-        tempo = 500000  # Default tempo (120 BPM) in microseconds per beat
+        
+        # Extract all tempo change points from the MIDI file
+        tempo_map = {}  # time_ticks → tempo in microseconds per beat
+        default_tempo = 500000  # 120 BPM
+        
+        for track in midi_file.tracks:
+            current_time = 0
+            for msg in track:
+                current_time += msg.time
+                if msg.type == 'set_tempo':
+                    tempo_map[current_time] = msg.tempo
+                    bpm = int(60_000_000 / msg.tempo)
+                    logger.debug(f"Tempo change at tick {current_time}: {bpm} BPM ({msg.tempo} µs/beat)")
+        
+        # Sort tempo changes by time
+        tempo_times = sorted(tempo_map.keys()) if tempo_map else []
+        current_tempo = tempo_map.get(tempo_times[0], default_tempo) if tempo_times else default_tempo
+        tempo_idx = 1  # Next tempo index to check
+        
+        if tempo_times:
+            initial_bpm = int(60_000_000 / current_tempo)
+            logger.info(f"Starting tempo: {initial_bpm} BPM ({current_tempo} µs/beat)")
+        else:
+            logger.info(f"Using default tempo: 120 BPM ({default_tempo} µs/beat)")
         
         # Convert events to absolute time and map to LEDs
         timed_events = []
         
         for event in events:
-            # Convert ticks to milliseconds
-            time_ms = self._ticks_to_milliseconds(event['time_ticks'], ticks_per_beat, tempo)
+            event_ticks = event['time_ticks']
+            
+            # Update tempo if we've reached a tempo change point
+            while tempo_idx < len(tempo_times) and event_ticks >= tempo_times[tempo_idx]:
+                current_tempo = tempo_map[tempo_times[tempo_idx]]
+                tempo_idx += 1
+                bpm = int(60_000_000 / current_tempo)
+                logger.debug(f"Applied tempo change: {bpm} BPM at tick {event_ticks}")
+            
+            # Convert ticks to milliseconds using current tempo
+            time_ms = self._ticks_to_milliseconds(event_ticks, ticks_per_beat, current_tempo)
             
             # Map MIDI note to LED position
             led_index = self._map_note_to_led(event['note'])
