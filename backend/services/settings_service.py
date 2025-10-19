@@ -190,6 +190,8 @@ class SettingsService:
             'calibration': {
                 'start_led': {'type': 'number', 'default': 0, 'min': 0, 'description': 'First LED index at the beginning of the piano (Set First LED)'},
                 'end_led': {'type': 'number', 'default': 245, 'min': 0, 'description': 'Last LED index at the end of the piano (Set Last LED)'},
+                'trim_left': {'type': 'number', 'default': 0, 'min': 0, 'max': 100, 'description': 'Number of LEDs to trim from the left side of the strip'},
+                'trim_right': {'type': 'number', 'default': 0, 'min': 0, 'max': 100, 'description': 'Number of LEDs to trim from the right side of the strip'},
                 'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key LED offset adjustments {midi_note: offset_value_leds} - manual fine-tuning'},
                 'led_selection_overrides': {'type': 'object', 'default': {}, 'description': 'Per-key LED selection overrides {midi_note: [led_indices]} - manually selected LEDs for each key'},
                 'led_weld_offsets': {'type': 'object', 'default': {}, 'description': 'LED strip weld/joint offsets {led_index: offset_mm} for soldered seams where density rule is violated'},

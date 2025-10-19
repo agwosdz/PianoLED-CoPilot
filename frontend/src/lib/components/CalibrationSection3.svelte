@@ -1,6 +1,7 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
   import { calibrationState, calibrationUI, getKeyLedMappingWithRange, getKeyLedMappingFromPhysicalAnalysis, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset } from '$lib/stores/calibration';
+  import { ledSelectionState, ledSelectionAPI } from '$lib/stores/ledSelection';
   import { onMount } from 'svelte';
 
   // Piano size specifications for different keyboard types
@@ -186,6 +187,13 @@
   let newKeyOffset = 0;
   let showAddForm = false;
 
+  // LED Selection for Individual Keys
+  let selectedLEDsForNewKey: Set<number> = new Set();
+  let availableLEDsForForm: number[] = [];
+  let showLEDGrid = false;
+  let currentKeyLEDAllocation: number[] = []; // Currently assigned LEDs for the selected key
+  let allKeysLEDMapping: Record<number, number[]> = {}; // All keys' LED allocations
+
   function startEditingKeyOffset(midiNote: number, offset: number) {
     editingKeyNote = midiNote;
     editingKeyOffset = offset;
@@ -212,6 +220,8 @@
   function resetAddForm() {
     newKeyMidiNote = '';
     newKeyOffset = 0;
+    selectedLEDsForNewKey = new Set();
+    showLEDGrid = false;
     showAddForm = false;
   }
 
@@ -228,13 +238,113 @@
 
     try {
       await setKeyOffset(midiNote, newKeyOffset);
+      
+      // Also save LED override if LEDs were selected
+      if (selectedLEDsForNewKey.size > 0) {
+        const ledArray = Array.from(selectedLEDsForNewKey).sort((a, b) => a - b);
+        await ledSelectionAPI.setKeyOverride(midiNote, ledArray);
+      }
+      
       resetAddForm();
-      calibrationUI.update(ui => ({ ...ui, success: `Offset added for ${getMidiNoteName(midiNote)}` }));
+      calibrationUI.update(ui => ({ ...ui, success: `Key adjustment added for ${getMidiNoteName(midiNote)}` }));
       setTimeout(() => {
         calibrationUI.update(ui => ({ ...ui, success: null }));
       }, 2000);
     } catch (error) {
       console.error('Failed to add key offset:', error);
+    }
+  }
+
+  function handleMidiNoteInput(midiNoteStr: string) {
+    newKeyMidiNote = midiNoteStr;
+    const midiNote = parseInt(midiNoteStr, 10);
+    
+    if (Number.isFinite(midiNote) && midiNote >= 0 && midiNote <= 127) {
+      // Initialize available LEDs based on valid range
+      let [start, end] = $ledSelectionState.validLEDRange;
+      
+      // Fallback to default range if undefined
+      if (!start || !end || start < 0 || end < start) {
+        start = 4;
+        end = 249;
+      }
+      
+      availableLEDsForForm = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+      console.log(`[handleMidiNoteInput] MIDI ${midiNote}: validLEDRange=${start}-${end}, availableLEDsForForm.length=${availableLEDsForForm.length}`);
+      
+      // Load currently assigned LEDs for this key
+      currentKeyLEDAllocation = ledMapping[midiNote] ?? [];
+      console.log(`[handleMidiNoteInput] MIDI ${midiNote}: currentKeyLEDAllocation=[${currentKeyLEDAllocation.join(',')}]`);
+      console.log(`[handleMidiNoteInput] Full ledMapping keys:`, Object.keys(ledMapping).map(k => `${k}:[${ledMapping[parseInt(k,10)].join(',')}]`));
+      
+      // Load existing override for this key if any
+      const existingOverride = $ledSelectionState.overrides[midiNote];
+      if (existingOverride) {
+        selectedLEDsForNewKey = new Set(existingOverride);
+        console.log(`[handleMidiNoteInput] MIDI ${midiNote}: using existing override [${existingOverride.join(',')}]`);
+      } else {
+        // Pre-populate with currently assigned LEDs if no override exists
+        selectedLEDsForNewKey = new Set(currentKeyLEDAllocation);
+        console.log(`[handleMidiNoteInput] MIDI ${midiNote}: using current allocation [${currentKeyLEDAllocation.join(',')}]`);
+      }
+    } else {
+      console.log(`[handleMidiNoteInput] Invalid MIDI note: "${midiNoteStr}"`);
+    }
+  }
+
+  // Ensure LED allocation is populated when checkbox is checked
+  $: if (showLEDGrid && newKeyMidiNote) {
+    const midiNote = parseInt(newKeyMidiNote, 10);
+    if (Number.isFinite(midiNote) && midiNote >= 0 && midiNote <= 127) {
+      currentKeyLEDAllocation = ledMapping[midiNote] ?? [];
+      // Initialize selectedLEDsForNewKey with all current allocations (default to green/ON)
+      selectedLEDsForNewKey = new Set(currentKeyLEDAllocation);
+      console.log(`[Reactive] showLEDGrid toggled: MIDI ${midiNote}, currentKeyLEDAllocation=[${currentKeyLEDAllocation.join(',')}], selectedLEDs=[${Array.from(selectedLEDsForNewKey).join(',')}]`);
+    }
+  }
+
+  function toggleLED(ledIndex: number) {
+    if (selectedLEDsForNewKey.has(ledIndex)) {
+      selectedLEDsForNewKey.delete(ledIndex);
+    } else {
+      selectedLEDsForNewKey.add(ledIndex);
+    }
+    selectedLEDsForNewKey = selectedLEDsForNewKey; // Trigger reactivity
+  }
+
+  function handleReallocateLED(ledIndex: number) {
+    // When clicking an assigned LED, remove it and reallocate to adjacent key
+    const midiNote = parseInt(newKeyMidiNote, 10);
+    
+    if (!selectedLEDsForNewKey.has(ledIndex)) {
+      return; // LED not currently selected, ignore
+    }
+
+    // Remove LED from current key
+    selectedLEDsForNewKey.delete(ledIndex);
+    selectedLEDsForNewKey = selectedLEDsForNewKey;
+
+    // Determine which adjacent key to add it to
+    // If LED index is on left side of range, add to previous key
+    // If LED index is on right side of range, add to next key
+    const currentRange = currentKeyLEDAllocation;
+    const midpoint = currentRange.length > 0 
+      ? (currentRange[0] + currentRange[currentRange.length - 1]) / 2
+      : ledIndex;
+
+    const targetMidi = ledIndex < midpoint ? midiNote - 1 : midiNote + 1;
+
+    // Only reallocate if target MIDI is valid
+    if (targetMidi >= 0 && targetMidi <= 127) {
+      // Show feedback that LED will be reallocated
+      calibrationUI.update(ui => ({
+        ...ui,
+        info: `LED ${ledIndex} reallocated to ${getMidiNoteName(targetMidi)}`
+      }));
+      
+      setTimeout(() => {
+        calibrationUI.update(ui => ({ ...ui, info: null }));
+      }, 2000);
     }
   }
 
@@ -970,20 +1080,21 @@
     </div>
   {/if}
 
-  <!-- Individual Key Offsets -->
+  <!-- Individual Key Adjustments -->
   <div class="per-key-offsets-container">
     <div class="offsets-header">
       <h4>
         <span class="offsets-title-icon">🔑</span>
-        Individual Key Offsets
+        Per-Key Adjustments
         {#if Object.keys($keyOffsetsList).length > 0}
           <span class="badge">{Object.keys($keyOffsetsList).length}</span>
         {/if}
       </h4>
+      <p class="offsets-description">Adjust timing and LED allocation for specific keys</p>
       <button
         class="btn-add-offset"
         on:click={() => (showAddForm = !showAddForm)}
-        title="Add a new key offset"
+        title="Add a new key adjustment"
       >
         {showAddForm ? '✕ Cancel' : '⊕ Add'}
       </button>
@@ -998,11 +1109,13 @@
             type="number"
             min="0"
             max="127"
-            bind:value={newKeyMidiNote}
+            on:input={(e) => handleMidiNoteInput(e.currentTarget.value)}
+            value={newKeyMidiNote}
             placeholder="e.g., 60 for Middle C"
             class="offset-input"
           />
         </div>
+
         <div class="form-group">
           <label for="offset-value-input">Offset (LEDs):</label>
           <input
@@ -1014,12 +1127,68 @@
             class="offset-input"
           />
         </div>
+
+        {#if newKeyMidiNote}
+          <div class="form-group">
+            <label class="led-selection-label">
+              <input
+                type="checkbox"
+                bind:checked={showLEDGrid}
+              />
+              Customize LED allocation for this key
+            </label>
+          </div>
+
+          {#if showLEDGrid}
+            <div class="led-selection-section">
+              <div class="led-info">
+                <span>Valid LED Range: {$ledSelectionState.validLEDRange[0]} - {$ledSelectionState.validLEDRange[1]}</span>
+                <span class="led-count">Modified: {currentKeyLEDAllocation.length - selectedLEDsForNewKey.size} LED{(currentKeyLEDAllocation.length - selectedLEDsForNewKey.size) !== 1 ? 's' : ''}</span>
+              </div>
+
+              <!-- Current Allocation Display -->
+              <div class="current-allocation">
+                <div class="allocation-header">
+                  <span class="allocation-title">Currently Assigned LEDs:</span>
+                  <span class="allocation-count">{selectedLEDsForNewKey.size} LED{selectedLEDsForNewKey.size !== 1 ? 's' : ''}</span>
+                </div>
+                {#if currentKeyLEDAllocation.length > 0}
+                  <div class="led-grid-current">
+                    {#each currentKeyLEDAllocation as ledIndex (ledIndex)}
+                      <button
+                        class="led-button-assigned"
+                        class:unassigned={!selectedLEDsForNewKey.has(ledIndex)}
+                        on:click={() => {
+                          const newSet = new Set(selectedLEDsForNewKey);
+                          if (newSet.has(ledIndex)) {
+                            newSet.delete(ledIndex);
+                          } else {
+                            newSet.add(ledIndex);
+                          }
+                          selectedLEDsForNewKey = newSet;
+                          console.log(`[LED Click] MIDI ${newKeyMidiNote}: LED ${ledIndex}, selected=${selectedLEDsForNewKey.has(ledIndex)}, total=${selectedLEDsForNewKey.size}`);
+                        }}
+                        type="button"
+                        title="Click to toggle LED {ledIndex} assignment"
+                      >
+                        <span>{ledIndex}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="no-allocation">No LED allocation for this key</p>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        {/if}
+
         <button
           class="btn-save-offset"
           on:click={handleAddKeyOffset}
           disabled={!newKeyMidiNote}
         >
-          ✓ Add Offset
+          ✓ Add Adjustment
         </button>
       </div>
     {/if}
@@ -1029,6 +1198,7 @@
         {#each $keyOffsetsList as offsetItem (offsetItem.midiNote)}
           {@const midiNote = offsetItem.midiNote}
           {@const offset = offsetItem.offset}
+          {@const hasLedOverride = $ledSelectionState.overrides[midiNote]}
           {#if editingKeyNote === midiNote}
             <div class="offset-item editing">
               <div class="offset-info">
@@ -1060,21 +1230,28 @@
           {:else}
             <div class="offset-item">
               <div class="offset-info">
-                <span class="offset-note">{getMidiNoteName(midiNote)}</span>
-                <span class="offset-value">{offset} LEDs</span>
+                <div class="offset-main">
+                  <span class="offset-note">{getMidiNoteName(midiNote)}</span>
+                  <span class="offset-value">{offset} LEDs offset</span>
+                </div>
+                {#if hasLedOverride}
+                  <div class="led-override-badge">
+                    <span>LEDs: [{hasLedOverride.join(', ')}]</span>
+                  </div>
+                {/if}
               </div>
               <div class="offset-actions">
                 <button
                   class="btn-edit"
                   on:click={() => startEditingKeyOffset(midiNote, offset)}
-                  title="Edit offset"
+                  title="Edit adjustment"
                 >
                   ✎
                 </button>
                 <button
                   class="btn-delete"
                   on:click={() => handleDeleteKeyOffset(midiNote)}
-                  title="Delete offset"
+                  title="Delete adjustment"
                 >
                   🗑
                 </button>
@@ -1085,7 +1262,7 @@
       </div>
     {:else if !showAddForm}
       <p class="empty-state">
-        No custom offsets configured. Add one to fine-tune timing for specific keys.
+        No adjustments configured. Add one to customize timing and LED allocation for specific keys.
       </p>
     {/if}
   </div>
@@ -2371,27 +2548,50 @@
     box-shadow: 0 2px 8px rgba(102, 187, 106, 0.15);
   }
 
-  .offset-item.editing {
-    background: #f1f8e9;
-    border-color: #2e7d32;
-  }
-
   .offset-info {
     display: flex;
-    align-items: center;
-    gap: 1rem;
+    flex-direction: column;
+    gap: 0.5rem;
     flex: 1;
   }
 
+  .offset-main {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
   .offset-note {
-    font-weight: 600;
+    font-weight: 700;
     color: #1b5e20;
-    min-width: 50px;
+    min-width: 60px;
   }
 
   .offset-value {
     color: #558b2f;
+    font-size: 0.9rem;
+  }
+
+  .led-override-badge {
+    background: #e8f5e9;
+    border-left: 3px solid #66bb6a;
+    padding: 0.5rem 0.75rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: #2e7d32;
     font-family: monospace;
+    overflow-x: auto;
+  }
+
+  .offsets-description {
+    margin: 0;
+    color: #666;
+    font-size: 0.85rem;
+  }
+
+  .offset-item.editing {
+    background: #f1f8e9;
+    border-color: #2e7d32;
   }
 
   .offset-edit-input {
@@ -2407,6 +2607,198 @@
   .offset-edit-input:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+  }
+
+  /* LED Selection Styles */
+  .led-selection-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #1b5e20;
+  }
+
+  .led-selection-label input[type='checkbox'] {
+    cursor: pointer;
+    width: 18px;
+    height: 18px;
+  }
+
+  .led-selection-section {
+    background: #f1f8e9;
+    border: 1px solid #c8e6c9;
+    border-radius: 6px;
+    padding: 1rem;
+    gap: 0.75rem;
+  }
+
+  .led-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: #558b2f;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #c8e6c9;
+  }
+
+  .led-count {
+    font-weight: 600;
+    color: #2e7d32;
+  }
+
+  /* Current Allocation Section */
+  .current-allocation {
+    background: white;
+    border: 2px solid #81c784;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .allocation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #66bb6a;
+  }
+
+  .allocation-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #1b5e20;
+  }
+
+  .allocation-count {
+    background: #c8e6c9;
+    color: #1b5e20;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .led-grid-current {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
+    gap: 6px;
+    margin-bottom: 0.75rem;
+  }
+
+  .led-button-assigned {
+    aspect-ratio: 1 / 1;
+    border: 2px solid #66bb6a;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(102, 187, 106, 0.3);
+  }
+
+  .led-button-assigned:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 8px rgba(102, 187, 106, 0.4);
+  }
+
+  .led-button-assigned.unassigned {
+    background: linear-gradient(135deg, #bdbdbd 0%, #9e9e9e 100%);
+    border-color: #757575;
+    box-shadow: 0 2px 4px rgba(93, 93, 93, 0.3);
+  }
+
+  .led-button-assigned.unassigned:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 8px rgba(93, 93, 93, 0.4);
+  }
+
+  .allocation-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: #558b2f;
+    font-style: italic;
+  }
+
+  .no-allocation {
+    margin: 0;
+    padding: 0.75rem;
+    font-size: 0.85rem;
+    color: #666;
+    background: #f5f5f5;
+    border-radius: 4px;
+    text-align: center;
+    font-style: italic;
+  }
+
+  .full-grid-header {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2e7d32;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed #81c784;
+  }
+
+  .led-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(35px, 1fr));
+    gap: 4px;
+    margin-bottom: 0.75rem;
+  }
+
+  .led-button-compact {
+    aspect-ratio: 1 / 1;
+    border: 2px solid #81c784;
+    border-radius: 4px;
+    background: white;
+    color: #558b2f;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .led-button-compact:hover {
+    background: #e8f5e9;
+    border-color: #66bb6a;
+    transform: scale(1.05);
+  }
+
+  .led-button-compact.selected {
+    background: #66bb6a;
+    color: white;
+    border-color: #2e7d32;
+  }
+
+  .led-button-compact.current {
+    background: #fff9c4;
+    border-color: #f57f17;
+    color: #f57f17;
+    font-weight: 700;
+  }
+
+  .led-button-compact.selected .checkmark {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    font-size: 0.5rem;
+    font-weight: bold;
   }
 
   .offset-actions {

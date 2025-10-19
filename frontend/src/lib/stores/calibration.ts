@@ -13,6 +13,8 @@ export interface CalibrationState {
   calibration_enabled: boolean;
   start_led: number;
   end_led: number;
+  trim_left: number;
+  trim_right: number;
   key_offsets: Record<number, number>;
   calibration_mode: 'none' | 'assisted' | 'manual';
   last_calibration: string | null;
@@ -60,6 +62,8 @@ const defaultCalibrationState: CalibrationState = {
   calibration_enabled: false,
   start_led: 0,
   end_led: 245,
+  trim_left: 0,
+  trim_right: 0,
   key_offsets: {},
   calibration_mode: 'none',
   last_calibration: null
@@ -172,6 +176,8 @@ class CalibrationService {
         calibration_enabled: data.calibration_enabled ?? false,
         start_led: data.start_led ?? 0,
         end_led: data.end_led ?? 245,
+        trim_left: data.trim_left ?? 0,
+        trim_right: data.trim_right ?? 0,
         key_offsets: this.normalizeKeyOffsets(data.key_offsets ?? {}),
         calibration_mode: data.calibration_mode ?? 'none',
         last_calibration: data.last_calibration ?? null
@@ -300,6 +306,54 @@ class CalibrationService {
         });
       } catch (ledError) {
         console.warn('Failed to light LED for visualization:', ledError);
+      }
+
+      await this.loadStatus();
+      calibrationUI.update(ui => ({ ...ui, isLoading: false }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      calibrationUI.update(ui => ({ ...ui, isLoading: false, error: message }));
+      throw error;
+    }
+  }
+
+  async setTrimLeft(trimLeft: number): Promise<void> {
+    const clamped = Math.max(0, Math.min(100, Math.floor(trimLeft)));
+    calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
+    
+    try {
+      const response = await fetch(`${this.baseUrl}/trim-left`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trim_left: clamped })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      await this.loadStatus();
+      calibrationUI.update(ui => ({ ...ui, isLoading: false }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      calibrationUI.update(ui => ({ ...ui, isLoading: false, error: message }));
+      throw error;
+    }
+  }
+
+  async setTrimRight(trimRight: number): Promise<void> {
+    const clamped = Math.max(0, Math.min(100, Math.floor(trimRight)));
+    calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
+    
+    try {
+      const response = await fetch(`${this.baseUrl}/trim-right`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trim_right: clamped })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       await this.loadStatus();
@@ -560,6 +614,8 @@ export const enableCalibration = (): Promise<void> => calibrationService.enableC
 export const disableCalibration = (): Promise<void> => calibrationService.disableCalibration();
 export const setStartLed = (ledIndex: number): Promise<void> => calibrationService.setStartLed(ledIndex);
 export const setEndLed = (ledIndex: number): Promise<void> => calibrationService.setEndLed(ledIndex);
+export const setTrimLeft = (trimLeft: number): Promise<void> => calibrationService.setTrimLeft(trimLeft);
+export const setTrimRight = (trimRight: number): Promise<void> => calibrationService.setTrimRight(trimRight);
 export const setKeyOffset = (midiNote: number, offset: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset);
 export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyOffset(midiNote);
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();

@@ -5,6 +5,7 @@
 
 import { writable, derived, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
+import { calibrationState } from './calibration';
 
 // MIDI note to note name mapping
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -65,6 +66,18 @@ const defaultUIState: LEDSelectionUI = {
 // Main stores
 export const ledSelectionState: Writable<LEDSelectionState> = writable(defaultSelectionState);
 export const ledSelectionUI: Writable<LEDSelectionUI> = writable(defaultUIState);
+
+// Subscribe to calibration state and update validLEDRange in ledSelectionState
+if (browser) {
+  calibrationState.subscribe(($cal) => {
+    const start = $cal.start_led ?? 4;
+    const end = $cal.end_led ?? 249;
+    ledSelectionState.update(state => ({
+      ...state,
+      validLEDRange: [start, end]
+    }));
+  });
+}
 
 // Derived: Get override for a specific key
 export const getKeyOverride = (midiNote: number) =>

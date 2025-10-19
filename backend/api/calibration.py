@@ -130,6 +130,8 @@ def get_calibration_status():
             'mode': settings_service.get_setting('calibration', 'calibration_mode', 'none'),
             'start_led': settings_service.get_setting('calibration', 'start_led', 0),
             'end_led': settings_service.get_setting('calibration', 'end_led', 245),
+            'trim_left': settings_service.get_setting('calibration', 'trim_left', 0),
+            'trim_right': settings_service.get_setting('calibration', 'trim_right', 0),
             'key_offsets': settings_service.get_setting('calibration', 'key_offsets', {}),
             'last_calibration': settings_service.get_setting('calibration', 'last_calibration', ''),
             'mapping_base_offset': settings_service.get_setting('led', 'mapping_base_offset', 0),
@@ -287,6 +289,102 @@ def set_end_led():
         return jsonify({
             'error': 'Internal Server Error',
             'message': 'Failed to set end LED'
+        }), 500
+
+
+@calibration_bp.route('/trim-left', methods=['PUT'])
+def set_trim_left():
+    """Set the number of LEDs to trim from the left side"""
+    try:
+        data = request.get_json()
+        if not data or 'trim_left' not in data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Request must include "trim_left" field'
+            }), 400
+        
+        trim_left = data['trim_left']
+        
+        # Validate trim_left is a non-negative integer
+        try:
+            trim_left = int(trim_left)
+            if trim_left < 0 or trim_left > 100:
+                return jsonify({
+                    'error': 'Validation Error',
+                    'message': 'trim_left must be between 0 and 100'
+                }), 400
+        except (TypeError, ValueError):
+            return jsonify({
+                'error': 'Validation Error',
+                'message': 'trim_left must be an integer'
+            }), 400
+        
+        settings_service = get_settings_service()
+        settings_service.set_setting('calibration', 'trim_left', trim_left)
+        settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
+        
+        # Broadcast trim_left change
+        socketio = get_socketio()
+        socketio.emit('trim_left_changed', {'trim_left': trim_left})
+        
+        logger.info(f"Trim left set to {trim_left}")
+        return jsonify({
+            'message': 'Trim left updated',
+            'trim_left': trim_left
+        }), 200
+    except Exception as e:
+        logger.error(f"Error setting trim left: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to set trim left'
+        }), 500
+
+
+@calibration_bp.route('/trim-right', methods=['PUT'])
+def set_trim_right():
+    """Set the number of LEDs to trim from the right side"""
+    try:
+        data = request.get_json()
+        if not data or 'trim_right' not in data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Request must include "trim_right" field'
+            }), 400
+        
+        trim_right = data['trim_right']
+        
+        # Validate trim_right is a non-negative integer
+        try:
+            trim_right = int(trim_right)
+            if trim_right < 0 or trim_right > 100:
+                return jsonify({
+                    'error': 'Validation Error',
+                    'message': 'trim_right must be between 0 and 100'
+                }), 400
+        except (TypeError, ValueError):
+            return jsonify({
+                'error': 'Validation Error',
+                'message': 'trim_right must be an integer'
+            }), 400
+        
+        settings_service = get_settings_service()
+        settings_service.set_setting('calibration', 'trim_right', trim_right)
+        settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
+        
+        # Broadcast trim_right change
+        socketio = get_socketio()
+        socketio.emit('trim_right_changed', {'trim_right': trim_right})
+        
+        logger.info(f"Trim right set to {trim_right}")
+        return jsonify({
+            'message': 'Trim right updated',
+            'trim_right': trim_right
+        }), 200
+    except Exception as e:
+        logger.error(f"Error setting trim right: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to set trim right'
         }), 500
         return jsonify({
             'error': 'Internal Server Error',
