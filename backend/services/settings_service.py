@@ -191,6 +191,7 @@ class SettingsService:
                 'start_led': {'type': 'number', 'default': 0, 'min': 0, 'description': 'First LED index at the beginning of the piano (Set First LED)'},
                 'end_led': {'type': 'number', 'default': 245, 'min': 0, 'description': 'Last LED index at the end of the piano (Set Last LED)'},
                 'key_offsets': {'type': 'object', 'default': {}, 'description': 'Per-key LED offset adjustments {midi_note: offset_value_leds} - manual fine-tuning'},
+                'led_selection_overrides': {'type': 'object', 'default': {}, 'description': 'Per-key LED selection overrides {midi_note: [led_indices]} - manually selected LEDs for each key'},
                 'led_weld_offsets': {'type': 'object', 'default': {}, 'description': 'LED strip weld/joint offsets {led_index: offset_mm} for soldered seams where density rule is violated'},
                 'led_soldering_joints': {'type': 'object', 'default': {}, 'description': 'Soldering joints with width and offset {led_index: {width_mm: float, offset_mm: float, description?: str}}'},
                 'calibration_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable per-key calibration offsets'},

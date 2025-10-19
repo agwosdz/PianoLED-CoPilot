@@ -1002,6 +1002,10 @@ app.register_blueprint(calibration_bp, url_prefix='/api/calibration')
 app.register_blueprint(weld_bp)
 app.register_blueprint(joint_bp)
 
+# Register LED selection blueprint
+from backend.api.led_selection import led_selection_bp
+app.register_blueprint(led_selection_bp)
+
 # Hardware test endpoint moved to /api/hardware-test blueprint for better organization
 
 @app.route('/api/led-test-sequence', methods=['POST'])

@@ -1752,6 +1752,15 @@ def get_canonical_led_mapping(settings_service=None):
             weld_offsets=weld_offsets
         )
         
+        # Apply LED selection overrides (per-LED customization)
+        from backend.services.led_selection_service import LEDSelectionService
+        selection_service = LEDSelectionService(settings_service)
+        final_mapping = selection_service.apply_overrides_to_mapping(
+            final_mapping,
+            start_led=start_led,
+            end_led=end_led
+        )
+        
         return {
             'success': True,
             'mapping': final_mapping,
