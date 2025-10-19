@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
-  import { calibrationState, calibrationUI, getKeyLedMappingWithRange, getKeyLedMappingFromPhysicalAnalysis, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset } from '$lib/stores/calibration';
+  import { calibrationState, calibrationUI, getKeyLedMappingWithRange, getKeyLedMappingFromPhysicalAnalysis, keyOffsetsList, getMidiNoteName, setKeyOffset, deleteKeyOffset, clearAllTrims } from '$lib/stores/calibration';
   import { ledSelectionState, ledSelectionAPI } from '$lib/stores/ledSelection';
   import { onMount } from 'svelte';
 
@@ -223,6 +223,24 @@
       setTimeout(() => {
         calibrationUI.update(ui => ({ ...ui, success: null }));
       }, 2000);
+    }
+  }
+
+  async function handleClearAllTrims() {
+    if (confirm('Clear ALL LED trim adjustments? This cannot be undone.')) {
+      try {
+        const cleared = await clearAllTrims();
+        
+        // Reload the LED mapping to reflect the changes
+        await updateLedMapping();
+        
+        calibrationUI.update(ui => ({ ...ui, success: `${cleared} LED trim${cleared !== 1 ? 's' : ''} cleared` }));
+        setTimeout(() => {
+          calibrationUI.update(ui => ({ ...ui, success: null }));
+        }, 2000);
+      } catch (error) {
+        console.error('Error clearing trims:', error);
+      }
     }
   }
 
@@ -1258,38 +1276,48 @@
                 {/if}
               </div>
             </div>
-
-            <!-- Add Adjustment Button -->
-            <div class="led-action-buttons">
-              {#if newKeyMidiNote}
-                {@const midiNoteNum = parseInt(newKeyMidiNote, 10)}
-                {@const alreadyExists = Number.isFinite(midiNoteNum) && Object.keys($keyOffsetsList).some(k => parseInt(k, 10) === midiNoteNum)}
-                <button
-                  class="btn-save-offset"
-                  on:click={handleAddKeyOffset}
-                  disabled={alreadyExists}
-                  title={alreadyExists ? "Delete existing adjustment first" : "Save offset with LED customizations"}
-                >
-                  ✓ Add Adjustment
-                </button>
-              {:else}
-                <button
-                  class="btn-save-offset"
-                  on:click={handleAddKeyOffset}
-                  disabled={true}
-                  title="Enter a MIDI note first"
-                >
-                  ✓ Add Adjustment
-                </button>
-              {/if}
-            </div>
           {/if}
+
+          <!-- Add Adjustment Button - Always visible when a MIDI note is selected -->
+          <div class="led-action-buttons">
+            {#if newKeyMidiNote}
+              {@const midiNoteNum = parseInt(newKeyMidiNote, 10)}
+              {@const alreadyExists = Number.isFinite(midiNoteNum) && Object.keys($keyOffsetsList).some(k => parseInt(k, 10) === midiNoteNum)}
+              <button
+                class="btn-save-offset"
+                on:click={handleAddKeyOffset}
+                disabled={alreadyExists}
+                title={alreadyExists ? "Delete existing adjustment first" : "Save offset with LED customizations"}
+              >
+                ✓ Add Adjustment
+              </button>
+            {:else}
+              <button
+                class="btn-save-offset"
+                on:click={handleAddKeyOffset}
+                disabled={true}
+                title="Enter a MIDI note first"
+              >
+                ✓ Add Adjustment
+              </button>
+            {/if}
+          </div>
         {/if}
       </div>
     {/if}
 
     {#if $keyOffsetsList.length > 0}
       <div class="offsets-list">
+        <div class="offsets-list-header">
+          <h4>Per-Adjustments</h4>
+          <button
+            class="btn-clear-all-trims"
+            on:click={handleClearAllTrims}
+            title="Clear all LED trim adjustments"
+          >
+            Clear All Trims
+          </button>
+        </div>
         {#each $keyOffsetsList as offsetItem (offsetItem.midiNote)}
           {@const midiNote = offsetItem.midiNote}
           {@const offset = offsetItem.offset}
@@ -3004,6 +3032,44 @@
 
   .btn-cancel:hover {
     background: #d32f2f;
+  }
+
+  .offsets-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .offsets-list-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1b5e20;
+  }
+
+  .btn-clear-all-trims {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #b45309;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .btn-clear-all-trims:hover {
+    background: #fde047;
+    border-color: #f59e0b;
+  }
+
+  .btn-clear-all-trims:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .empty-state {

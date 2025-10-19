@@ -543,9 +543,10 @@ def delete_key_offset(midi_note):
         
         settings_service = get_settings_service()
         
-        # Get current offsets and trims
+        # Get current offsets, trims, and LED overrides
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {}) or {}
         key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {}) or {}
+        led_selection_overrides = settings_service.get_setting('calibration', 'led_selection_overrides', {}) or {}
         
         # Remove offset for this key if it exists
         if str(midi_note) in key_offsets:
@@ -562,6 +563,14 @@ def delete_key_offset(midi_note):
             # Save updated trims
             settings_service.set_setting('calibration', 'key_led_trims', key_led_trims)
             logger.info(f"Key LED trim for MIDI note {midi_note} deleted")
+        
+        # Also remove any LED selection overrides for this key
+        if str(midi_note) in led_selection_overrides:
+            del led_selection_overrides[str(midi_note)]
+            
+            # Save updated overrides
+            settings_service.set_setting('calibration', 'led_selection_overrides', led_selection_overrides)
+            logger.info(f"LED selection override for MIDI note {midi_note} deleted")
         
         # Update last calibration timestamp
         settings_service.set_setting('calibration', 'last_calibration', datetime.now().isoformat())
@@ -673,7 +682,7 @@ def set_all_key_offsets():
 
 @calibration_bp.route('/reset', methods=['POST'])
 def reset_calibration():
-    """Reset all calibration offsets to defaults"""
+    """Reset all calibration offsets and trims to defaults"""
     try:
         settings_service = get_settings_service()
         led_count = settings_service.get_setting('led', 'led_count', 246)
@@ -681,6 +690,7 @@ def reset_calibration():
         settings_service.set_setting('calibration', 'start_led', 0)
         settings_service.set_setting('calibration', 'end_led', led_count - 1)
         settings_service.set_setting('calibration', 'key_offsets', {})
+        settings_service.set_setting('calibration', 'key_led_trims', {})
         settings_service.set_setting('calibration', 'calibration_enabled', False)
         settings_service.set_setting('calibration', 'calibration_mode', 'none')
         
@@ -690,6 +700,7 @@ def reset_calibration():
             'start_led': 0,
             'end_led': led_count - 1,
             'key_offsets': {},
+            'key_led_trims': {},
             'enabled': False
         })
         

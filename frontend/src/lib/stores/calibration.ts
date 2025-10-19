@@ -427,6 +427,29 @@ class CalibrationService {
     }
   }
 
+  async clearAllTrims(): Promise<number> {
+    calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
+    
+    try {
+      const response = await fetch(`${this.baseUrl}/key-led-trims/clear`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      await this.loadStatus();
+      calibrationUI.update(ui => ({ ...ui, isLoading: false }));
+      return data.cleared || 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      calibrationUI.update(ui => ({ ...ui, isLoading: false, error: message }));
+      throw error;
+    }
+  }
+
   async batchUpdateKeyOffsets(offsets: Record<number, number>): Promise<void> {
     calibrationUI.update(ui => ({ ...ui, isLoading: true, error: null }));
     
@@ -635,6 +658,7 @@ export const setTrimLeft = (trimLeft: number): Promise<void> => calibrationServi
 export const setTrimRight = (trimRight: number): Promise<void> => calibrationService.setTrimRight(trimRight);
 export const setKeyOffset = (midiNote: number, offset: number, leftTrim?: number, rightTrim?: number): Promise<void> => calibrationService.setKeyOffset(midiNote, offset, leftTrim, rightTrim);
 export const deleteKeyOffset = (midiNote: number): Promise<void> => calibrationService.deleteKeyOffset(midiNote);
+export const clearAllTrims = (): Promise<number> => calibrationService.clearAllTrims();
 export const resetCalibration = (): Promise<void> => calibrationService.resetCalibration();
 export const getKeyLedMapping = (): Promise<Record<number, number[]>> => calibrationService.getKeyLedMapping();
 export const getKeyLedMappingWithRange = (): Promise<{ mapping: Record<number, number[]>; start_led: number; end_led: number; led_count: number }> => calibrationService.getKeyLedMappingWithRange();
