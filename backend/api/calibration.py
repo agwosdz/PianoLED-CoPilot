@@ -703,6 +703,36 @@ def reset_calibration():
         }), 500
 
 
+@calibration_bp.route('/key-led-trims/clear', methods=['POST'])
+def clear_all_key_led_trims():
+    """Clear all LED trim adjustments"""
+    try:
+        settings_service = get_settings_service()
+        current_trims = settings_service.get_setting('calibration', 'key_led_trims', {})
+        cleared_count = len(current_trims)
+        
+        settings_service.set_setting('calibration', 'key_led_trims', {})
+        
+        # Broadcast clear event
+        socketio = get_socketio()
+        socketio.emit('key_led_trims_cleared', {
+            'cleared_count': cleared_count,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        logger.info(f"Cleared {cleared_count} LED trim adjustments")
+        return jsonify({
+            'message': 'All LED trims cleared',
+            'cleared': cleared_count
+        }), 200
+    except Exception as e:
+        logger.error(f"Error clearing LED trims: {e}")
+        return jsonify({
+            'error': 'Internal Server Error',
+            'message': 'Failed to clear LED trims'
+        }), 500
+
+
 @calibration_bp.route('/export', methods=['GET'])
 def export_calibration():
     """Export calibration data"""
