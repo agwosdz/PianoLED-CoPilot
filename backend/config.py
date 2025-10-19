@@ -1794,6 +1794,7 @@ def get_canonical_led_mapping(settings_service=None):
         start_led = settings_service.get_setting('calibration', 'start_led', 4)
         end_led = settings_service.get_setting('calibration', 'end_led', 249)
         key_offsets = settings_service.get_setting('calibration', 'key_offsets', {})
+        key_led_trims = settings_service.get_setting('calibration', 'key_led_trims', {})
         weld_offsets = settings_service.get_setting('calibration', 'led_weld_offsets', {})
         distribution_mode = settings_service.get_setting('calibration', 'distribution_mode', 'Piano Based (with overlap)')
         allow_led_sharing = settings_service.get_setting('calibration', 'allow_led_sharing', True)
@@ -1858,12 +1859,25 @@ def get_canonical_led_mapping(settings_service=None):
                 except (ValueError, TypeError):
                     pass
         
-        # Apply calibration offsets and weld compensations
+        # Convert trim keys from MIDI notes to key indices (for consistency with offsets)
+        converted_trims = {}
+        if key_led_trims:
+            for midi_note_str, trim_value in key_led_trims.items():
+                try:
+                    midi_note = int(midi_note_str) if isinstance(midi_note_str, str) else midi_note_str
+                    key_index = midi_note - 21
+                    if 0 <= key_index < 88:
+                        converted_trims[key_index] = trim_value
+                except (ValueError, TypeError):
+                    pass
+        
+        # Apply calibration offsets, trims, and weld compensations
         final_mapping = apply_calibration_offsets_to_mapping(
             mapping=base_mapping,
             start_led=start_led,
             end_led=end_led,
             key_offsets=converted_offsets,
+            key_led_trims=converted_trims,
             led_count=led_count,
             weld_offsets=weld_offsets
         )
