@@ -41,8 +41,9 @@ def get_midi_notes():
         
         # Security: prevent path traversal
         filename = Path(filename).name
-        midi_dir = Path(current_app.config.get('UPLOADED_MIDI_DIR', './uploaded_midi'))
-        file_path = midi_dir / filename
+        # Use the same UPLOAD_FOLDER as the main app for consistency
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', './backend/uploads')
+        file_path = Path(upload_folder) / filename
         
         if not file_path.exists():
             return jsonify({'error': 'File not found'}), 404
@@ -50,7 +51,10 @@ def get_midi_notes():
         # Use MIDI parser to extract notes
         from backend.midi_parser import MIDIParser
         
-        parser = MIDIParser(current_app.settings_service)
+        # Get settings service from app config
+        settings_service = current_app.config.get('settings_service')
+        
+        parser = MIDIParser(settings_service=settings_service)
         parsed_data = parser.parse_file(str(file_path))
         
         if not parsed_data:
@@ -107,13 +111,17 @@ def play():
         
         # Security: prevent path traversal
         filename = Path(filename).name
-        midi_dir = Path(current_app.config.get('UPLOADED_MIDI_DIR', './uploaded_midi'))
-        file_path = midi_dir / filename
+        # Use the same UPLOAD_FOLDER as the main app for consistency
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', './backend/uploads')
+        file_path = Path(upload_folder) / filename
         
         if not file_path.exists():
             return jsonify({'error': 'File not found'}), 404
         
-        playback_service = current_app.playback_service
+        playback_service = current_app.config.get('playback_service')
+        if not playback_service:
+            return jsonify({'error': 'Playback service not available'}), 500
+        
         playback_service.play(str(file_path))
         
         return jsonify({'success': True})

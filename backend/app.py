@@ -147,6 +147,10 @@ playback_service = PlaybackService(led_controller=led_controller, midi_parser=mi
 midi_input_manager = MIDIInputManager(websocket_callback=socketio.emit, led_controller=led_controller, settings_service=settings_service) if MIDIInputManager else None
 usb_midi_service = midi_input_manager._usb_service if midi_input_manager else None  # Reference manager's service
 
+# Store services in app config for access from blueprints
+app.config['playback_service'] = playback_service
+app.config['settings_service'] = settings_service
+
 # Initialize MIDI input manager services
 if midi_input_manager:
     midi_input_manager.initialize_services()
