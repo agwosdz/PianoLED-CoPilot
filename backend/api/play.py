@@ -60,20 +60,38 @@ def get_midi_notes():
         if not parsed_data:
             return jsonify({'error': 'Failed to parse MIDI file'}), 400
         
-        # Convert note events to visualization format
+        # Convert MIDI events (on/off pairs) to note visualization format
+        # The parser returns events with 'type' of 'on' or 'off'
         notes = []
-        for event in parsed_data.get('note_events', []):
-            notes.append({
-                'note': event['note'],
-                'startTime': event['time'],
-                'duration': event['duration'],
-                'velocity': event['velocity']
-            })
+        note_on_map = {}  # Maps note number to (start_time, velocity)
+        
+        for event in parsed_data.get('events', []):
+            note_num = event['note']
+            event_time = event['time']
+            
+            if event['type'] == 'on':
+                # Store note_on event
+                note_on_map[note_num] = (event_time, event['velocity'])
+            elif event['type'] == 'off' and note_num in note_on_map:
+                # Match with note_on and create a complete note
+                start_time, velocity = note_on_map[note_num]
+                duration = event_time - start_time
+                
+                notes.append({
+                    'note': note_num,
+                    'startTime': start_time / 1000.0,  # Convert ms to seconds
+                    'duration': duration / 1000.0,
+                    'velocity': velocity
+                })
+                del note_on_map[note_num]
+        
+        # Sort notes by start time
+        notes.sort(key=lambda x: x['startTime'])
         
         return jsonify({
             'notes': notes,
-            'tempo': parsed_data.get('tempo', 120),
-            'total_duration': parsed_data.get('duration', 0)
+            'tempo': 120,  # Default tempo if not specified
+            'total_duration': parsed_data.get('duration', 0) / 1000.0  # Convert ms to seconds
         })
     except Exception as e:
         current_app.logger.error(f"Error extracting MIDI notes: {e}")
