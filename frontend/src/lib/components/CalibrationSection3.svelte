@@ -1304,7 +1304,7 @@
                     <span class="indices-value">
                       {adjustedIndices[0]}
                       {#if adjustedIndices.length > 1}
-                        -{adjustedIndices[adjustedIndices.length - 1]}
+                        - {adjustedIndices[adjustedIndices.length - 1]}
                       {/if}
                     </span>
                   </div>
