@@ -909,6 +909,9 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
     invalid_entries_count = 0
     trimmed_count = 0
     
+    # First pass: Apply offsets and collect trims for redistribution
+    trim_redistributions = {}  # {midi_note: {'left': [leds], 'right': [leds]}}
+    
     for midi_note, led_indices in mapping.items():
         adjusted_indices = []
         
@@ -993,16 +996,26 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
                             f"weld_compensation={weld_compensation} LEDs, "
                             f"contributing_offsets={contributing_offsets}, clamped={was_clamped})")
         
-        # Apply LED trims AFTER offsets: if key has custom trims, slice the adjusted indices
+        # Apply LED trims AFTER offsets: collect trimmed LEDs for redistribution
         if adjusted_indices and midi_note_int in normalized_key_led_trims:
             trim_spec = normalized_key_led_trims[midi_note_int]
             left_trim = trim_spec.get('left_trim', 0)
             right_trim = trim_spec.get('right_trim', 0)
             
             if left_trim > 0 or right_trim > 0:
-                # Apply trim by slicing: [left_trim : len - right_trim]
                 original_len = len(adjusted_indices)
+                trimmed_left = []
+                trimmed_right = []
                 
+                # Collect left-trimmed LEDs (will go to previous key)
+                if left_trim > 0:
+                    trimmed_left = adjusted_indices[:left_trim]
+                
+                # Collect right-trimmed LEDs (will go to next key)
+                if right_trim > 0:
+                    trimmed_right = adjusted_indices[-right_trim:]
+                
+                # Apply trim by slicing
                 if right_trim > 0:
                     trimmed_indices = adjusted_indices[left_trim:-right_trim]
                 else:
@@ -1011,9 +1024,16 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
                 if trimmed_indices:  # Only apply if result is non-empty
                     adjusted_indices = trimmed_indices
                     trimmed_count += 1
-                    logger.debug(f"Note {midi_note_int}: Applied trim L{left_trim}/R{right_trim} "
-                                f"→ {original_len} LEDs became {len(adjusted_indices)} LEDs "
-                                f"(LEDs: {adjusted_indices})")
+                    logger.info(f"Note {midi_note_int}: Applied trim L{left_trim}/R{right_trim} "
+                                f"→ {original_len} LEDs became {len(adjusted_indices)} LEDs. "
+                                f"Redistributing: {len(trimmed_left)} left to prev, {len(trimmed_right)} right to next")
+                    
+                    # Store trimmed LEDs for redistribution pass
+                    if trimmed_left or trimmed_right:
+                        trim_redistributions[midi_note_int] = {
+                            'left': trimmed_left,
+                            'right': trimmed_right
+                        }
                 else:
                     # Trim result is empty - log warning but keep original
                     logger.warning(f"Note {midi_note_int}: Trim L{left_trim}/R{right_trim} would eliminate all LEDs, "
@@ -1022,13 +1042,50 @@ def apply_calibration_offsets_to_mapping(mapping, start_led=0, end_led=None, key
         if adjusted_indices:
             adjusted[midi_note] = adjusted_indices
     
+    # Second pass: Redistribute trimmed LEDs to adjacent keys
+    if trim_redistributions:
+        logger.info(f"Second pass: Redistributing trimmed LEDs from {len(trim_redistributions)} keys")
+        
+        for midi_note_with_trim, trims in trim_redistributions.items():
+            left_trimmed = trims['left']
+            right_trimmed = trims['right']
+            
+            # Redistribute left-trimmed LEDs to previous key
+            if left_trimmed and midi_note_with_trim > 0:
+                prev_note = midi_note_with_trim - 1
+                
+                # Find the actual previous note in the adjusted mapping
+                # (might not be exactly midi_note_with_trim - 1 if some notes were missing)
+                prev_notes = sorted([n for n in adjusted.keys() if (isinstance(n, int) or isinstance(n, str) and n.isdigit()) and int(n) < midi_note_with_trim])
+                
+                if prev_notes:
+                    actual_prev_note = max(prev_notes)
+                    if actual_prev_note in adjusted:
+                        # Add left-trimmed LEDs to the END of previous key's list
+                        adjusted[actual_prev_note].extend(left_trimmed)
+                        logger.info(f"Redistributed {len(left_trimmed)} left-trimmed LEDs from MIDI {midi_note_with_trim} "
+                                  f"to MIDI {actual_prev_note} (now has {len(adjusted[actual_prev_note])} LEDs)")
+            
+            # Redistribute right-trimmed LEDs to next key
+            if right_trimmed and midi_note_with_trim < 127:
+                # Find the actual next note in the adjusted mapping
+                next_notes = sorted([n for n in adjusted.keys() if (isinstance(n, int) or isinstance(n, str) and n.isdigit()) and int(n) > midi_note_with_trim])
+                
+                if next_notes:
+                    actual_next_note = min(next_notes)
+                    if actual_next_note in adjusted:
+                        # Add right-trimmed LEDs to the BEGINNING of next key's list
+                        adjusted[actual_next_note] = right_trimmed + adjusted[actual_next_note]
+                        logger.info(f"Redistributed {len(right_trimmed)} right-trimmed LEDs from MIDI {midi_note_with_trim} "
+                                  f"to MIDI {actual_next_note} (now has {len(adjusted[actual_next_note])} LEDs)")
+    
     if invalid_entries_count > 0:
         logger.warning(f"Skipped {invalid_entries_count} invalid mapping entries (non-integer MIDI notes)")
     
     logger.info(f"Offset and trim application complete. Adjusted {len(adjusted)} notes. "
                f"Clamped {clamped_count} LED indices (bounds: {start_led}-{end_led}). "
                f"Applied {len(normalized_key_offsets)} LED offsets, "
-               f"{trimmed_count} LED trims, "
+               f"{trimmed_count} LED trims (with redistribution), "
                f"and {len(normalized_weld_offsets)} weld compensations. "
                f"Adjusted mapping now has {sum(len(v) if isinstance(v, list) else 1 for v in adjusted.values())} total LED assignments")
     
