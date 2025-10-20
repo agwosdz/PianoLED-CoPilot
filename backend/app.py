@@ -1479,14 +1479,16 @@ def get_midi_devices():
             }), 503
         
         raw_devices = midi_input_manager.get_available_devices()
+        logger.debug(f"Raw devices from manager: {raw_devices}")
         
         # Get current device (if any is being listened to)
         current_device = None
-        if hasattr(midi_input_manager, '_usb_service') and midi_input_manager._usb_service:
-            try:
+        try:
+            if hasattr(midi_input_manager, '_usb_service') and midi_input_manager._usb_service:
                 current_device = getattr(midi_input_manager._usb_service, 'current_device', None)
-            except Exception:
-                pass
+                logger.debug(f"USB service current_device: {current_device}")
+        except Exception as e:
+            logger.debug(f"Error getting USB current device: {e}")
         
         if not current_device and hasattr(midi_input_manager, '_rtpmidi_service') and midi_input_manager._rtpmidi_service:
             try:
@@ -1494,45 +1496,71 @@ def get_midi_devices():
                 if active_sessions:
                     first_session = list(active_sessions.values())[0]
                     current_device = getattr(first_session, 'name', None)
-            except Exception:
-                pass
+                    logger.debug(f"rtpMIDI current_device: {current_device}")
+            except Exception as e:
+                logger.debug(f"Error getting rtpMIDI current device: {e}")
         
         # Format USB devices
         formatted_usb_devices = []
-        for device in raw_devices.get('usb_devices', []):
-            formatted_usb_devices.append({
-                'name': device.name,
-                'id': device.id,
-                'type': getattr(device, 'type', 'usb'),
-                'status': device.status,
-                'is_current': device.name == current_device if current_device else False
-            })
+        usb_devices_raw = raw_devices.get('usb_devices', [])
+        logger.debug(f"USB devices count: {len(usb_devices_raw)}")
+        
+        for device in usb_devices_raw:
+            try:
+                # Device is already a dict from get_available_devices()
+                device_name = device.get('name') if isinstance(device, dict) else getattr(device, 'name', 'Unknown')
+                device_id = device.get('id') if isinstance(device, dict) else getattr(device, 'id', None)
+                device_type = device.get('type', 'usb') if isinstance(device, dict) else getattr(device, 'type', 'usb')
+                device_status = device.get('status') if isinstance(device, dict) else getattr(device, 'status', 'available')
+                
+                formatted_device = {
+                    'name': device_name,
+                    'id': device_id,
+                    'type': device_type,
+                    'status': device_status,
+                    'is_current': device_name == current_device if current_device else False
+                }
+                formatted_usb_devices.append(formatted_device)
+                logger.debug(f"Added USB device: {formatted_device['name']}")
+            except Exception as e:
+                logger.error(f"Error formatting USB device: {e}", exc_info=True)
         
         # Format rtpMIDI sessions
         formatted_rtpmidi_sessions = []
-        for session in raw_devices.get('rtpmidi_sessions', []):
-            session_name = session.get('name', session.get('ip_address', 'Unknown'))
-            formatted_rtpmidi_sessions.append({
-                'name': session_name,
-                'id': hash(session_name) % (2**31),  # Generate consistent ID from name
-                'type': 'network',
-                'status': session.get('status', 'available'),
-                'is_current': session_name == current_device if current_device else False
-            })
+        rtpmidi_sessions_raw = raw_devices.get('rtpmidi_sessions', [])
+        logger.debug(f"rtpMIDI sessions count: {len(rtpmidi_sessions_raw)}")
         
-        return jsonify({
+        for session in rtpmidi_sessions_raw:
+            try:
+                session_name = session.get('name', session.get('ip_address', 'Unknown'))
+                formatted_session = {
+                    'name': session_name,
+                    'id': hash(session_name) % (2**31),  # Generate consistent ID from name
+                    'type': 'network',
+                    'status': session.get('status', 'available'),
+                    'is_current': session_name == current_device if current_device else False
+                }
+                formatted_rtpmidi_sessions.append(formatted_session)
+                logger.debug(f"Added rtpMIDI session: {formatted_session['name']}")
+            except Exception as e:
+                logger.error(f"Error formatting rtpMIDI session: {e}", exc_info=True)
+        
+        response = {
             'status': 'success',
             'usb_devices': formatted_usb_devices,
             'rtpmidi_sessions': formatted_rtpmidi_sessions,
             'current_device': current_device,
             'total_count': len(formatted_usb_devices) + len(formatted_rtpmidi_sessions)
-        }), 200
+        }
+        logger.debug(f"Final response: {response}")
+        
+        return jsonify(response), 200
         
     except Exception as e:
-        logger.error(f"Error getting MIDI devices: {e}")
+        logger.error(f"Error getting MIDI devices: {e}", exc_info=True)
         return jsonify({
             'error': 'Internal Server Error',
-            'message': 'An unexpected error occurred while getting MIDI devices'
+            'message': f'An unexpected error occurred: {str(e)}'
         }), 500
 
 @app.route('/api/midi-input/start', methods=['POST'])
