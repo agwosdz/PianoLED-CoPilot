@@ -269,141 +269,176 @@
 	<div class="page-content">
 		<h1>MIDI Playback</h1>
 
-		<!-- File Selection -->
-		<div class="section">
-			<h2>Select File to Play</h2>
-			{#if isLoadingFiles}
-				<div class="loading">Loading files...</div>
-			{:else if filesError}
-				<div class="error-message">{filesError}</div>
-			{:else}
-				<UploadedFileList 
-					files={uploadedFiles}
-					selectedPath={selectedFile}
-					on:select={handleFileSelect}
-					on:play={handleFilePlay}
-					on:delete={() => {}}
-				/>
-			{/if}
-		</div>
+		<div class="main-grid">
+			<!-- Playback Card -->
+			<section class="playback-card grid-section">
+			<div class="playback-top">
+				<div class="now-playing">
+					<span class="label">Now Playing</span>
+					<h2 class="track-title" title={selectedFile ? selectedFile.split('/').pop() : 'No file loaded'}>
+						{selectedFile ? selectedFile.split('/').pop() : 'No file loaded'}
+					</h2>
+					{#if selectedFile}
+						<div class="track-meta">
+							<span>{isPlaying ? 'Playing' : 'Paused'}</span>
+						</div>
+					{/if}
+				</div>
+				<span class={`connection-indicator ${midiInputConnected ? 'connected' : 'disconnected'}`}>
+					{midiInputConnected ? 'Connected' : 'Disconnected'}
+				</span>
+			</div>
 
-		<!-- Playback Controls -->
-		<div class="section">
-			<div class="controls-group">
+			<div class="playback-controls">
 				<button
-					class="btn btn-play"
+					class={`control-button primary ${isPlaying ? 'active' : ''}`}
 					on:click={handlePlayPause}
 					disabled={!selectedFile}
-					type="button"
 				>
-					{isPlaying ? '⏸ Pause' : '▶ Play'}
+					<span class="visually-hidden">{isPlaying ? 'Pause playback' : 'Start playback'}</span>
+					<span aria-hidden="true">{isPlaying ? '⏸' : '▶'}</span>
 				</button>
 				<button
-					class="btn btn-stop"
+					class="control-button"
 					on:click={handleStop}
 					disabled={!selectedFile}
-					type="button"
 				>
-					⏹ Stop
+					<span class="visually-hidden">Stop playback</span>
+					<span aria-hidden="true">■</span>
 				</button>
+			</div>
 
-				<div class="time-display">
+			<div class="timeline">
+				<div class="timeline-track">
+					<div class="timeline-fill" style={`width: ${playbackStatus.progress_percentage}%`}></div>
+				</div>
+				<div class="timeline-meta">
 					<span>{formatTime(currentTime)}</span>
-					<span>/</span>
 					<span>{formatTime(totalDuration)}</span>
 				</div>
 			</div>
 
-			<!-- Progress Bar -->
-			<div class="progress-bar">
-				<div class="progress-fill" style="width: {playbackStatus.progress_percentage}%"></div>
-			</div>
-
 			{#if playbackStatus.error_message}
-				<div class="error-message">{playbackStatus.error_message}</div>
+				<p class="playback-notice">{playbackStatus.error_message}</p>
 			{/if}
-		</div>
 
-		<!-- Now Playing & MIDI Input -->
-		{#if selectedFile}
-			<div class="section">
-				<h2>Now Playing</h2>
-				<p class="now-playing-file">
-					<strong>{selectedFile.split('/').pop()}</strong>
-				</p>
-				<p class="now-playing-status">
-					Status: <strong>{isPlaying ? '🎵 Playing' : 'Paused'}</strong>
-				</p>
+			<div class="midi-input-section">
+				<div class="midi-input-header">
+					<label for="midi-input-toggle" class="midi-input-label">
+						<input
+							id="midi-input-toggle"
+							type="checkbox"
+							bind:checked={midiInputEnabled}
+							on:change={(e) => toggleMidiInput(e.currentTarget.checked)}
+							class="midi-toggle-input"
+						/>
+						<span class="midi-toggle-label">Receive MIDI from USB Keyboard</span>
+					</label>
+					<span class={`midi-status ${midiInputConnected ? 'connected' : 'disconnected'}`}>
+						{midiInputConnected ? '🎹 Connected' : '🔌 Disconnected'}
+					</span>
+				</div>
 
-				<div class="midi-input-section">
-					<div class="midi-input-header">
-						<label for="midi-input-toggle" class="midi-input-label">
-							<input
-								id="midi-input-toggle"
-								type="checkbox"
-								bind:checked={midiInputEnabled}
-								on:change={(e) => toggleMidiInput(e.currentTarget.checked)}
-								class="midi-toggle-input"
-							/>
-							<span class="midi-toggle-label">Receive MIDI from USB Keyboard</span>
-						</label>
-						<span class={`midi-status ${midiInputConnected ? 'connected' : 'disconnected'}`}>
-							{midiInputConnected ? '🎹 Connected' : '🔌 Disconnected'}
-						</span>
+				{#if midiInputEnabled}
+					<div class="midi-device-selector">
+						<div class="device-selector-row">
+							<label for="midi-device-select">Select Input Device:</label>
+							<button
+								class="refresh-button"
+								on:click={loadMidiInputDevices}
+								disabled={loadingMidiDevices}
+								title="Refresh device list"
+							>
+								🔄 Refresh
+							</button>
+						</div>
+						<select
+							id="midi-device-select"
+							bind:value={selectedMidiInputDevice}
+							on:change={(e) => e.currentTarget.value && connectMidiInput(e.currentTarget.value)}
+							disabled={loadingMidiDevices}
+							class="device-dropdown"
+						>
+							{#if loadingMidiDevices}
+								<option value="">Loading devices...</option>
+							{:else if midiInputDevices.length === 0}
+								<option value="">No devices found</option>
+							{:else}
+								<option value="">Select a device...</option>
+								{#each midiInputDevices as device (device.id)}
+									<option value={device.name} selected={device.is_current}>
+										{device.name}
+									</option>
+								{/each}
+							{/if}
+						</select>
 					</div>
 
-					{#if midiInputEnabled}
-						<div class="midi-device-selector">
-							<div class="device-selector-row">
-								<label for="midi-device-select">Select Input Device:</label>
-								<button
-									class="refresh-button"
-									on:click={loadMidiInputDevices}
-									disabled={loadingMidiDevices}
-									title="Refresh device list"
-								>
-									🔄 Refresh
-								</button>
-							</div>
-							<select
-								id="midi-device-select"
-								bind:value={selectedMidiInputDevice}
-								on:change={(e) => e.currentTarget.value && connectMidiInput(e.currentTarget.value)}
-								disabled={loadingMidiDevices}
-								class="device-dropdown"
-							>
-								{#if loadingMidiDevices}
-									<option value="">Loading devices...</option>
-								{:else if midiInputDevices.length === 0}
-									<option value="">No devices found</option>
-								{:else}
-									<option value="">Select a device...</option>
-									{#each midiInputDevices as device (device.id)}
-										<option value={device.name} selected={device.is_current}>
-											{device.name}
-										</option>
-									{/each}
-								{/if}
-							</select>
-						</div>
-
-						{#if midiInputConnected}
-							<button
-								class="disconnect-button"
-								on:click={disconnectMidiInput}
-								title="Disconnect from device"
-							>
-								✕ Disconnect
-							</button>
-						{/if}
-
-						{#if midiInputError}
-							<p class="midi-error">{midiInputError}</p>
-						{/if}
+					{#if midiInputConnected}
+						<button
+							class="disconnect-button"
+							on:click={disconnectMidiInput}
+							title="Disconnect from device"
+						>
+							✕ Disconnect
+						</button>
 					{/if}
-				</div>
+
+					{#if midiInputError}
+						<p class="midi-error">{midiInputError}</p>
+					{/if}
+				{/if}
 			</div>
+		</section>
+
+		<!-- Options Card (Placeholder) -->
+		<section class="options-card grid-section">
+			<header class="options-header">
+				<h3>Playback Options</h3>
+				<p>Configure playback settings and preferences.</p>
+			</header>
+			
+			<div class="options-content">
+				<div class="option-item">
+					<label for="loop-toggle">Loop Playback</label>
+					<input type="checkbox" id="loop-toggle" disabled title="Coming soon">
+				</div>
+				<div class="option-item">
+					<label for="speed-control">Playback Speed</label>
+					<input type="range" id="speed-control" min="0.5" max="2" step="0.1" value="1" disabled title="Coming soon">
+				</div>
+				<p class="placeholder-note">More options coming soon...</p>
+			</div>
+		</section>
+
+		</div>
+
+		<!-- MIDI Song List -->
+		<section class="song-list-card">
+		<div class="song-list-header">
+			<div>
+				<h2>MIDI Song List</h2>
+				<p>All songs available for playback</p>
+			</div>
+			<span class="song-count">{uploadedFiles.length} songs</span>
+		</div>
+
+		{#if isLoadingFiles}
+			<div class="loading">Loading files...</div>
+		{:else if filesError}
+			<div class="error-message">{filesError}</div>
+		{:else if uploadedFiles.length === 0}
+			<p class="no-files">No MIDI files uploaded yet. Use the Listen page to upload files.</p>
+		{:else}
+			<UploadedFileList 
+				files={uploadedFiles}
+				selectedPath={selectedFile}
+				on:select={handleFileSelect}
+				on:play={handleFilePlay}
+				on:delete={() => {}}
+			/>
 		{/if}
+	</section>
 	</div>
 </div>
 
@@ -411,15 +446,16 @@
 	.page-wrapper {
 		background: #ffffff;
 		min-height: 100vh;
-		display: flex;
 	}
 
 	.page-content {
-		flex: 1;
 		padding: 2.5rem 1rem 3rem;
-		max-width: 900px;
+		max-width: 1200px;
 		margin: 0 auto;
 		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 2rem;
 	}
 
 	h1 {
@@ -451,117 +487,156 @@
 		padding: 2rem;
 	}
 
-	.controls-group {
+	.playback-card {
 		display: flex;
-		gap: 1rem;
-		align-items: center;
-		flex-wrap: wrap;
-		margin-bottom: 1rem;
+		flex-direction: column;
+		gap: 1.5rem;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		padding: 1.75rem;
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 	}
 
-	.btn {
-		padding: 0.75rem 1.5rem;
-		font-size: 1rem;
+	.playback-top {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.now-playing .label {
+		display: inline-block;
+		padding: 0.25rem 0.65rem;
+		border-radius: 999px;
+		background: #eff6ff;
+		color: #1d4ed8;
+		font-size: 0.75rem;
 		font-weight: 600;
-		border: none;
-		border-radius: 8px;
-		cursor: pointer;
-		transition: all 0.2s ease;
+		margin-bottom: 0.5rem;
+	}
+
+	.track-title {
+		margin: 0;
+		font-size: 1.9rem;
+		font-weight: 700;
+		color: #0f172a;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.btn-play {
-		background: linear-gradient(90deg, #2563eb, #3b82f6);
-		color: white;
+	.track-meta {
+		margin-top: 0.3rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.9rem;
+		color: #475569;
 	}
 
-	.btn-play:hover:not(:disabled) {
-		box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-		transform: translateY(-2px);
+	.connection-indicator {
+		padding: 0.35rem 0.85rem;
+		border-radius: 999px;
+		font-weight: 600;
+		font-size: 0.85rem;
+		white-space: nowrap;
 	}
 
-	.btn-play:active:not(:disabled) {
-		transform: translateY(0);
+	.connection-indicator.connected {
+		background: #dcfce7;
+		color: #166534;
 	}
 
-	.btn-stop {
+	.connection-indicator.connecting {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	.connection-indicator.error {
+		background: #fee2e2;
+		color: #b91c1c;
+	}
+
+	.connection-indicator.disconnected {
+		background: #dbeafe;
+		color: #1d4ed8;
+	}
+
+	.playback-controls {
+		display: inline-flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.control-button {
+		width: 3.25rem;
+		height: 3.25rem;
+		border-radius: 999px;
+		border: none;
 		background: #e2e8f0;
 		color: #0f172a;
-	}
-
-	.btn-stop:hover:not(:disabled) {
-		background: #cbd5e1;
-		transform: translateY(-2px);
-	}
-
-	.btn-stop:active:not(:disabled) {
-		transform: translateY(0);
-	}
-
-	.btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.time-display {
-		display: flex;
-		gap: 0.5rem;
-		font-size: 0.95rem;
-		font-weight: 600;
-		color: #1e293b;
-		margin-left: auto;
-	}
-
-	.progress-bar {
-		height: 6px;
-		background: #e2e8f0;
-		border-radius: 3px;
-		overflow: hidden;
+		font-size: 1.25rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		cursor: pointer;
+		transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+		box-shadow: 0 8px 16px rgba(15, 23, 42, 0.15);
 	}
 
-	.progress-fill {
+	.control-button.primary {
+		background: linear-gradient(135deg, #2563eb, #1d4ed8);
+		color: #ffffff;
+	}
+
+	.control-button.primary.active {
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+	}
+
+	.control-button:hover:not(:disabled) {
+		transform: translateY(-1px);
+		box-shadow: 0 12px 22px rgba(15, 23, 42, 0.18);
+	}
+
+	.control-button:disabled {
+		cursor: not-allowed;
+		opacity: 0.6;
+		box-shadow: none;
+	}
+
+	.timeline {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.timeline-track {
+		width: 100%;
+		height: 12px;
+		background: #e2e8f0;
+		border-radius: 999px;
+		overflow: hidden;
+	}
+
+	.timeline-fill {
 		height: 100%;
 		background: linear-gradient(90deg, #2563eb, #3b82f6);
-		transition: width 0.05s linear;
+		transition: width 0.2s ease;
 	}
 
-	.error-message {
-		color: #dc2626;
-		font-size: 0.9rem;
-		margin-top: 0.75rem;
+	.timeline-meta {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.85rem;
+		color: #475569;
 	}
 
-	.selected-file-info {
-		font-size: 0.95rem;
-		color: #1e293b;
+	.playback-notice {
 		margin: 0;
-		word-break: break-word;
-		overflow-wrap: break-word;
-		hyphens: auto;
-		max-width: 100%;
-	}
-
-	.status-info {
 		font-size: 0.95rem;
 		color: #1e293b;
-		margin: 0.5rem 0 0 0;
-	}
-
-	.now-playing-file {
-		font-size: 0.95rem;
-		color: #1e293b;
-		margin: 0;
-		word-break: break-word;
-		overflow-wrap: break-word;
-		hyphens: auto;
-		max-width: 100%;
-	}
-
-	.now-playing-status {
-		font-size: 0.95rem;
-		color: #1e293b;
-		margin: 0.5rem 0 1.5rem 0;
 	}
 
 	.midi-input-section {
@@ -719,9 +794,141 @@
 		font-size: 0.875rem;
 	}
 
-	@media (max-width: 768px) {
-		.page-content {
-			padding: 1.5rem 1rem 2rem;
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	/* Grid layout for responsive sections */
+	.main-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+		gap: 1.75rem;
+	}
+
+	.grid-section {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.options-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		padding: 1.75rem;
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+	}
+
+	.options-card h3 {
+		font-size: 1rem;
+		font-weight: 600;
+		color: #0f172a;
+		margin: 0 0 1rem;
+	}
+
+	.options-content {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.option-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.option-item label {
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: #1f2937;
+	}
+
+	.option-item input[type='checkbox'],
+	.option-item input[type='range'] {
+		cursor: pointer;
+		opacity: 0.6;
+	}
+
+	.option-item input:disabled {
+		cursor: not-allowed;
+	}
+
+	.placeholder-note {
+		margin: 0.5rem 0 0;
+		font-size: 0.85rem;
+		color: #94a3b8;
+		font-style: italic;
+	}
+
+	.song-list-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		padding: 1.75rem;
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+	}
+
+	.song-list-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1.5rem;
+	}
+
+	.song-list-header div h2 {
+		margin: 0;
+	}
+
+	.song-list-header div p {
+		margin: 0.25rem 0 0;
+		color: #64748b;
+		font-size: 0.9rem;
+	}
+
+	.song-count {
+		display: inline-block;
+		padding: 0.4rem 0.875rem;
+		background: #e0e7ff;
+		color: #3730a3;
+		border-radius: 0.375rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+
+	.no-files {
+		margin: 0;
+		padding: 1.5rem;
+		text-align: center;
+		color: #64748b;
+		font-size: 0.95rem;
+	}
+
+	.error-message {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		background: #fee2e2;
+		color: #991b1b;
+		border-radius: 0.375rem;
+		font-size: 0.9rem;
+	}
+
+	@media (max-width: 960px) {
+		.main-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.page-wrapper {
+			padding: 1.75rem 0.75rem 2.25rem;
 		}
 
 		h1 {
@@ -729,26 +936,24 @@
 			margin-bottom: 1.5rem;
 		}
 
-		.section {
-			padding: 1.25rem;
-			margin-bottom: 1rem;
+		.playback-card,
+		.options-card,
+		.song-list-card {
+			padding: 1.5rem;
 		}
 
-		.controls-group {
+		.playback-controls {
 			gap: 0.75rem;
-			margin-bottom: 0.75rem;
 		}
 
-		.btn {
-			padding: 0.65rem 1.25rem;
-			font-size: 0.9rem;
+		.control-button {
+			width: 3rem;
+			height: 3rem;
 		}
 
-		.time-display {
-			flex-basis: 100%;
-			justify-content: center;
-			margin-left: 0;
-			font-size: 0.9rem;
+		.song-list-header {
+			flex-direction: column;
+			align-items: flex-start;
 		}
 	}
 </style>
