@@ -853,31 +853,24 @@ class PlaybackService:
         """
         Record that a MIDI note was played by a specific hand during learning mode.
         
-        Stores note with timestamp in a queue. Older notes are cleaned up automatically.
+        Stores note with PLAYBACK timestamp (not wall clock time!) in a queue.
+        Uses playback time to match against expected notes in the MIDI file.
+        Older notes are cleaned up automatically.
         
         Args:
             note: MIDI note number (0-127)
             hand: 'left' or 'right'
         """
-        current_time = time.time()
+        # CRITICAL: Use playback time, NOT wall clock time!
+        # This must match self._current_time used in _check_learning_mode_pause()
+        playback_time = self._current_time
         
         if hand == 'left':
-            self._left_hand_notes_queue.append((note, current_time))
-            # Periodic cleanup of old notes (older than 5 seconds)
-            if current_time - self._last_queue_cleanup > 1.0:  # Cleanup every 1 second
-                while (self._left_hand_notes_queue and 
-                       current_time - self._left_hand_notes_queue[0][1] > 5.0):
-                    self._left_hand_notes_queue.popleft()
-            logger.info(f"Learning mode: Left hand played note {note}, queue size: {len(self._left_hand_notes_queue)}")
+            self._left_hand_notes_queue.append((note, playback_time))
+            logger.info(f"Learning mode: Left hand played note {note} at playback time {playback_time:.2f}s, queue size: {len(self._left_hand_notes_queue)}")
         elif hand == 'right':
-            self._right_hand_notes_queue.append((note, current_time))
-            # Periodic cleanup of old notes (older than 5 seconds)
-            if current_time - self._last_queue_cleanup > 1.0:  # Cleanup every 1 second
-                while (self._right_hand_notes_queue and 
-                       current_time - self._right_hand_notes_queue[0][1] > 5.0):
-                    self._right_hand_notes_queue.popleft()
-                self._last_queue_cleanup = current_time
-            logger.info(f"Learning mode: Right hand played note {note}, queue size: {len(self._right_hand_notes_queue)}")
+            self._right_hand_notes_queue.append((note, playback_time))
+            logger.info(f"Learning mode: Right hand played note {note} at playback time {playback_time:.2f}s, queue size: {len(self._right_hand_notes_queue)}")
     
     def _check_learning_mode_pause(self) -> bool:
         """
