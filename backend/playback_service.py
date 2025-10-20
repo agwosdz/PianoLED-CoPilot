@@ -1039,6 +1039,10 @@ class PlaybackService:
             error_message=None if self._state != PlaybackState.ERROR else "Playback error occurred"
         )
     
+    def is_playback_active(self) -> bool:
+        """Check if playback is currently active (playing, not paused or idle)"""
+        return self._state == PlaybackState.PLAYING
+    
     def get_extended_status(self) -> Dict[str, Any]:
         """Get extended playback status including new controls"""
         basic_status = self.get_status()

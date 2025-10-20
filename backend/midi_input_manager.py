@@ -102,6 +102,9 @@ class MIDIInputManager:
         self._led_controller = led_controller
         self.settings_service = settings_service
         
+        # Playback status callback - used to check if MIDI file playback is active
+        self._playback_status_callback: Optional[Callable[[], bool]] = None
+        
         # Load configuration
         self.enable_usb = get_config('midi_enable_usb', True)
         self.enable_rtpmidi = get_config('midi_enable_rtpmidi', True)
@@ -158,6 +161,30 @@ class MIDIInputManager:
     def is_listening(self) -> bool:
         """Check if manager is actively listening for MIDI input"""
         return self._running
+    
+    def set_playback_status_callback(self, callback: Optional[Callable[[], bool]]) -> None:
+        """
+        Set a callback to check if MIDI file playback is active.
+        
+        Args:
+            callback: Function that returns True if playback is active, False otherwise.
+                     Will be called to determine if USB MIDI input should be ignored.
+        """
+        self._playback_status_callback = callback
+        logger.debug("Playback status callback registered")
+        
+        # Propagate callback to USB service if available
+        if self._usb_service and hasattr(self._usb_service, 'set_playback_status_callback'):
+            self._usb_service.set_playback_status_callback(callback)
+    
+    def is_playback_active(self) -> bool:
+        """Check if MIDI file playback is currently active."""
+        if self._playback_status_callback:
+            try:
+                return self._playback_status_callback()
+            except Exception as e:
+                logger.debug(f"Error checking playback status: {e}")
+        return False
     
     def update_led_controller(self, led_controller) -> None:
         """Update the LED controller reference and propagate to services."""

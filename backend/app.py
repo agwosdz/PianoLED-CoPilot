@@ -155,6 +155,12 @@ app.config['settings_service'] = settings_service
 if midi_input_manager:
     midi_input_manager.initialize_services()
 
+# Register playback status callback with MIDI input manager
+# When MIDI file playback is active, USB keyboard input will not update LEDs
+if midi_input_manager and playback_service:
+    midi_input_manager.set_playback_status_callback(playback_service.is_playback_active)
+    logger.info("Registered playback status callback - USB MIDI LEDs will be suppressed during MIDI file playback")
+
 ALLOWED_MIDI_EXTENSIONS = {'.mid', '.midi'}
 
 

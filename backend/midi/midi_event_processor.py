@@ -104,18 +104,29 @@ class MidiEventProcessor:
             self.mapping_mode,
         )
 
-    def handle_message(self, msg, timestamp: Optional[float] = None) -> List[ProcessedMIDIEvent]:
-        """Process a mido message and return processed note events."""
+    def handle_message(self, msg, timestamp: Optional[float] = None, update_leds: bool = True) -> List[ProcessedMIDIEvent]:
+        """
+        Process a mido message and return processed note events.
+        
+        Args:
+            msg: MIDI message to process
+            timestamp: Timestamp of the message (default: current time)
+            update_leds: Whether to update LEDs for this message (default: True).
+                        Set to False when MIDI file playback is active to ignore keyboard input LEDs.
+        
+        Returns:
+            List of processed MIDI events
+        """
         timestamp = timestamp if timestamp is not None else time.time()
         processed_events: List[ProcessedMIDIEvent] = []
 
         msg_type = getattr(msg, 'type', None)
         if msg_type == 'note_on' and getattr(msg, 'velocity', 0) > 0:
-            event = self._handle_note_on(msg.note, msg.velocity, getattr(msg, 'channel', 0), timestamp)
+            event = self._handle_note_on(msg.note, msg.velocity, getattr(msg, 'channel', 0), timestamp, update_leds=update_leds)
             if event:
                 processed_events.append(event)
         elif msg_type in ('note_off', 'polytouch') or (msg_type == 'note_on' and getattr(msg, 'velocity', 0) == 0):
-            event = self._handle_note_off(msg.note, getattr(msg, 'channel', 0), timestamp)
+            event = self._handle_note_off(msg.note, getattr(msg, 'channel', 0), timestamp, update_leds=update_leds)
             if event:
                 processed_events.append(event)
         elif msg_type == 'control_change':
@@ -312,7 +323,7 @@ class MidiEventProcessor:
         if isinstance(controller_orientation, str) and controller_orientation:
             self.led_orientation = controller_orientation
 
-    def _handle_note_on(self, note: int, velocity: int, channel: int, timestamp: float) -> Optional[ProcessedMIDIEvent]:
+    def _handle_note_on(self, note: int, velocity: int, channel: int, timestamp: float, update_leds: bool = True) -> Optional[ProcessedMIDIEvent]:
         led_indices = self._map_note_to_leds(note)
         if not led_indices:
             return None
@@ -321,7 +332,8 @@ class MidiEventProcessor:
         brightness = self._velocity_to_brightness(velocity)
         final_color = tuple(int(component * brightness) for component in color)
 
-        if self._led_controller:
+        # Only update LEDs if update_leds is True (ignore keyboard input during playback)
+        if self._led_controller and update_leds:
             # Log which processor instance is updating LEDs (for debugging duplication)
             logger.info(
                 "MIDI_PROCESSOR[%s]: NOTE_ON note=%d velocity=%d led_count=%d leds=%s",
@@ -334,6 +346,8 @@ class MidiEventProcessor:
             show_success, error = self._led_controller.show()
             if not show_success and error:
                 logger.debug("LED show failed: %s", error)
+        elif not update_leds:
+            logger.debug("Skipping LED update for note %d (playback active)", note)
 
         self._active_notes[note] = {
             'velocity': velocity,
@@ -352,11 +366,12 @@ class MidiEventProcessor:
             led_indices=list(led_indices),
         )
 
-    def _handle_note_off(self, note: int, channel: int, timestamp: float) -> Optional[ProcessedMIDIEvent]:
+    def _handle_note_off(self, note: int, channel: int, timestamp: float, update_leds: bool = True) -> Optional[ProcessedMIDIEvent]:
         note_info = self._active_notes.pop(note, None)
         led_indices = note_info.get('led_indices') if note_info else []
 
-        if self._led_controller and led_indices:
+        # Only update LEDs if update_leds is True (ignore keyboard input during playback)
+        if self._led_controller and led_indices and update_leds:
             # Log which processor instance is updating LEDs (for debugging duplication)
             logger.info(
                 "MIDI_PROCESSOR[%s]: NOTE_OFF note=%d led_count=%d leds=%s",
@@ -369,6 +384,8 @@ class MidiEventProcessor:
             show_success, error = self._led_controller.show()
             if not show_success and error:
                 logger.debug("LED show failed: %s", error)
+        elif not update_leds and led_indices:
+            logger.debug("Skipping LED update for note %d (playback active)", note)
 
         if not led_indices:
             led_indices = self._map_note_to_leds(note)
