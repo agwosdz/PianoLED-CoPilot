@@ -902,8 +902,13 @@ class PlaybackService:
             return False
         
         # Get the current timing window
+        # Look at notes that are CURRENTLY ACTIVE (already started, not yet ended)
         timing_window_seconds = self._timing_window_ms / 1000.0
-        window_start = self._current_time
+        
+        # Find expected notes that are currently playing or about to play
+        # Include notes that started up to 1 second ago (for overlap/legato)
+        # and notes that start in the next 0.5 seconds
+        window_start = self._current_time - 1.0  # Look back 1 second
         window_end = self._current_time + timing_window_seconds
         
         # Find expected notes in the timing window (from MIDI file)
@@ -911,6 +916,8 @@ class PlaybackService:
         expected_right_notes = set()
         
         for event in self._note_events:
+            # Include notes that START within our window
+            # (They may have already started or be about to start)
             if window_start <= event.time < window_end:
                 if event.note < 60:  # Left hand (below Middle C)
                     expected_left_notes.add(event.note)
@@ -964,8 +971,15 @@ class PlaybackService:
         # Check if all required notes are satisfied
         all_satisfied = left_satisfied and right_satisfied
         
+        # Debug logging for progress
+        has_expected_notes = expected_left_notes or expected_right_notes
+        logger.debug(f"Learning mode check at {self._current_time:.2f}s: "
+                    f"Expected L:{sorted(expected_left_notes)} R:{sorted(expected_right_notes)}, "
+                    f"Played L:{sorted(played_left_notes)} R:{sorted(played_right_notes)}, "
+                    f"Satisfied: {all_satisfied}")
+        
         # If all required notes are satisfied: clear them and proceed
-        if all_satisfied and (expected_left_notes or expected_right_notes):
+        if all_satisfied and has_expected_notes:
             logger.info(f"Learning mode: ✓ All required notes satisfied at {self._current_time:.2f}s. "
                        f"Left: {sorted(expected_left_notes)}, Right: {sorted(expected_right_notes)}")
             
@@ -993,6 +1007,11 @@ class PlaybackService:
             
             # PROCEED TO PLAYBACK: Return False to allow playback to continue
             # This will advance the playback time to the next note
+            return False
+        
+        # If there are no expected notes at all, don't pause (let playback continue)
+        if not has_expected_notes:
+            logger.debug(f"No expected notes at {self._current_time:.2f}s, continuing playback")
             return False
         
         # Pause if not satisfied
