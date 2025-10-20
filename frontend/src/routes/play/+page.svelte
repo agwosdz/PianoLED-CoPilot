@@ -156,7 +156,17 @@
 			const response = await fetch('/api/midi-input/devices');
 			if (response.ok) {
 				const data = await response.json();
-				midiInputDevices = data.devices || [];
+				// Combine USB and rtpMIDI devices into a flat array
+				const usbDevices = (data.usb_devices || []).map((d: any) => ({
+					...d,
+					type: d.type || 'usb'
+				}));
+				const rtpDevices = (data.rtpmidi_sessions || []).map((d: any) => ({
+					...d,
+					type: d.type || 'network'
+				}));
+				midiInputDevices = [...usbDevices, ...rtpDevices];
+				
 				if (midiInputDevices.length > 0 && !selectedMidiInputDevice) {
 					const currentDevice = midiInputDevices.find(d => d.is_current);
 					if (currentDevice) {

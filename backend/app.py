@@ -1522,10 +1522,10 @@ def get_midi_devices():
         
         return jsonify({
             'status': 'success',
-            'devices': formatted_usb_devices + formatted_rtpmidi_sessions,
             'usb_devices': formatted_usb_devices,
             'rtpmidi_sessions': formatted_rtpmidi_sessions,
-            'current_device': current_device
+            'current_device': current_device,
+            'total_count': len(formatted_usb_devices) + len(formatted_rtpmidi_sessions)
         }), 200
         
     except Exception as e:
