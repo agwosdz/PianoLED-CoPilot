@@ -1282,22 +1282,37 @@
 	.color-picker-group {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.color-picker-group label {
-		font-weight: 500;
-		color: #1f2937;
-		font-size: 0.9rem;
+		gap: 0.4rem;
 		white-space: nowrap;
 	}
 
+	.color-picker-group label {
+		font-weight: 600;
+		color: #1f2937;
+		font-size: 0.8rem;
+		white-space: nowrap;
+		margin: 0;
+	}
+
 	.color-input-compact {
-		width: 2.5rem;
-		height: 2.5rem;
-		border: 1px solid #cbd5e1;
+		width: 56px;
+		height: 40px;
+		border: 2px solid #cbd5e1;
 		border-radius: 6px;
 		cursor: pointer;
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.color-input-compact:hover {
+		border-color: #64748b;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+	}
+
+	.color-input-compact:focus {
+		outline: none;
+		border-color: #3b82f6;
+		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 	}
 
 	.color-pair-section {

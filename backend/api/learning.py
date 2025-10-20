@@ -24,7 +24,7 @@ def get_learning_options():
     """Get current learning mode settings.
     
     Returns:
-        JSON with all learning mode settings
+        JSON with per-hand learning mode settings
     """
     try:
         if not _settings_service:
@@ -32,12 +32,17 @@ def get_learning_options():
         
         options = {
             'success': True,
-            'wait_for_notes_enabled': _settings_service.get_setting('learning_mode', 'wait_for_notes_enabled', False),
-            'timing_window_ms': _settings_service.get_setting('learning_mode', 'timing_window_ms', 500),
-            'left_hand_white': _settings_service.get_setting('learning_mode', 'left_hand_white', '#ff6b6b'),
-            'left_hand_black': _settings_service.get_setting('learning_mode', 'left_hand_black', '#ff9999'),
-            'right_hand_white': _settings_service.get_setting('learning_mode', 'right_hand_white', '#4dabf7'),
-            'right_hand_black': _settings_service.get_setting('learning_mode', 'right_hand_black', '#74c0fc')
+            'left_hand': {
+                'wait_for_notes': _settings_service.get_setting('learning_mode', 'left_hand_wait_for_notes', False),
+                'white_color': _settings_service.get_setting('learning_mode', 'left_hand_white_color', '#ff6b6b'),
+                'black_color': _settings_service.get_setting('learning_mode', 'left_hand_black_color', '#c92a2a')
+            },
+            'right_hand': {
+                'wait_for_notes': _settings_service.get_setting('learning_mode', 'right_hand_wait_for_notes', False),
+                'white_color': _settings_service.get_setting('learning_mode', 'right_hand_white_color', '#006496'),
+                'black_color': _settings_service.get_setting('learning_mode', 'right_hand_black_color', '#960064')
+            },
+            'timing_window_ms': _settings_service.get_setting('learning_mode', 'timing_window_ms', 500)
         }
         return jsonify(options)
     except Exception as e:
@@ -50,13 +55,10 @@ def update_learning_options():
     """Update learning mode settings.
     
     Request body:
-        JSON object with any of these fields:
-        - wait_for_notes_enabled (boolean)
+        JSON object with:
+        - left_hand (object): { wait_for_notes, white_color, black_color }
+        - right_hand (object): { wait_for_notes, white_color, black_color }
         - timing_window_ms (number, 100-2000)
-        - left_hand_white (hex color string)
-        - left_hand_black (hex color string)
-        - right_hand_white (hex color string)
-        - right_hand_black (hex color string)
     
     Returns:
         JSON with success status
@@ -70,14 +72,51 @@ def update_learning_options():
         if not isinstance(data, dict):
             return jsonify({'error': 'Invalid request format'}), 400
         
-        # Handle wait_for_notes_enabled
-        if 'wait_for_notes_enabled' in data:
-            value = data['wait_for_notes_enabled']
-            if not isinstance(value, bool):
-                return jsonify({'error': 'wait_for_notes_enabled must be a boolean'}), 400
-            _settings_service.set_setting('learning_mode', 'wait_for_notes_enabled', value)
+        # Handle left hand settings
+        if 'left_hand' in data:
+            left_hand = data['left_hand']
+            if isinstance(left_hand, dict):
+                if 'wait_for_notes' in left_hand:
+                    value = left_hand['wait_for_notes']
+                    if not isinstance(value, bool):
+                        return jsonify({'error': 'left_hand.wait_for_notes must be a boolean'}), 400
+                    _settings_service.set_setting('learning_mode', 'left_hand_wait_for_notes', value)
+                
+                if 'white_color' in left_hand:
+                    color = left_hand['white_color']
+                    if not isinstance(color, str) or not re.match(r'^#[0-9a-fA-F]{6}$', color):
+                        return jsonify({'error': 'left_hand.white_color must be valid hex color (e.g., #ff0000)'}), 400
+                    _settings_service.set_setting('learning_mode', 'left_hand_white_color', color)
+                
+                if 'black_color' in left_hand:
+                    color = left_hand['black_color']
+                    if not isinstance(color, str) or not re.match(r'^#[0-9a-fA-F]{6}$', color):
+                        return jsonify({'error': 'left_hand.black_color must be valid hex color (e.g., #ff0000)'}), 400
+                    _settings_service.set_setting('learning_mode', 'left_hand_black_color', color)
         
-        # Handle timing_window_ms
+        # Handle right hand settings
+        if 'right_hand' in data:
+            right_hand = data['right_hand']
+            if isinstance(right_hand, dict):
+                if 'wait_for_notes' in right_hand:
+                    value = right_hand['wait_for_notes']
+                    if not isinstance(value, bool):
+                        return jsonify({'error': 'right_hand.wait_for_notes must be a boolean'}), 400
+                    _settings_service.set_setting('learning_mode', 'right_hand_wait_for_notes', value)
+                
+                if 'white_color' in right_hand:
+                    color = right_hand['white_color']
+                    if not isinstance(color, str) or not re.match(r'^#[0-9a-fA-F]{6}$', color):
+                        return jsonify({'error': 'right_hand.white_color must be valid hex color (e.g., #ff0000)'}), 400
+                    _settings_service.set_setting('learning_mode', 'right_hand_white_color', color)
+                
+                if 'black_color' in right_hand:
+                    color = right_hand['black_color']
+                    if not isinstance(color, str) or not re.match(r'^#[0-9a-fA-F]{6}$', color):
+                        return jsonify({'error': 'right_hand.black_color must be valid hex color (e.g., #ff0000)'}), 400
+                    _settings_service.set_setting('learning_mode', 'right_hand_black_color', color)
+        
+        # Handle timing window
         if 'timing_window_ms' in data:
             timing = data['timing_window_ms']
             if not isinstance(timing, (int, float)):
@@ -85,22 +124,6 @@ def update_learning_options():
             if timing < 100 or timing > 2000:
                 return jsonify({'error': 'timing_window_ms must be between 100 and 2000'}), 400
             _settings_service.set_setting('learning_mode', 'timing_window_ms', int(timing))
-        
-        # Validate and save colors
-        color_keys = ['left_hand_white', 'left_hand_black', 'right_hand_white', 'right_hand_black']
-        for color_key in color_keys:
-            if color_key in data:
-                color_value = data[color_key]
-                
-                # Validate hex color format
-                if not isinstance(color_value, str):
-                    return jsonify({'error': f'{color_key} must be a string'}), 400
-                
-                # Check hex format (#RRGGBB)
-                if not re.match(r'^#[0-9a-fA-F]{6}$', color_value):
-                    return jsonify({'error': f'{color_key} must be valid hex color (e.g., #ff0000)'}), 400
-                
-                _settings_service.set_setting('learning_mode', color_key, color_value)
         
         logger.info("Learning options updated successfully")
         return jsonify({'success': True, 'message': 'Learning options saved'})
