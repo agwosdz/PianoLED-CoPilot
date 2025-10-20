@@ -148,6 +148,8 @@ class PlaybackService:
         # Wrong note flash timing
         self._last_wrong_flash_time = -1.0  # When the wrong note flash was triggered (initialized to expired time)
         self._wrong_flash_duration = 0.3  # How long wrong notes stay red (seconds)
+        self._wrong_flash_triggered_this_window = False  # Flag to prevent rapid timer resets on consecutive wrong notes
+        self._last_expected_notes: set = set()  # Track expected notes to detect window changes
         
         # Load MIDI output settings
         self._load_midi_output_settings()
@@ -978,11 +980,19 @@ class PlaybackService:
                 else:  # Right hand (Middle C and above)
                     expected_right_notes.add(event.note)
         
+        # Detect window changes to reset flash state
+        # When we move to a new set of expected notes, reset the flash trigger flag
+        current_expected = expected_left_notes | expected_right_notes
+        if current_expected != self._last_expected_notes:
+            self._wrong_flash_triggered_this_window = False
+            self._last_expected_notes = current_expected
+        
         # Extract notes from queues that fall within the EXPECTED timing window
         # CRITICAL FIX: Use same window as expected notes to avoid dead zones
         # Notes must be within [window_start, window_end] to be considered "played"
-        played_left_notes = set()
-        played_right_notes = set()
+        # Use LISTS to preserve consecutive identical notes (not sets!)
+        played_left_notes = []
+        played_right_notes = []
         
         # Use the SAME timing window for acceptance as for expected notes
         # This eliminates the "dead zone" where notes are expected but not accepted
@@ -991,39 +1001,46 @@ class PlaybackService:
         
         for note, timestamp in self._left_hand_notes_queue:
             if acceptance_start <= timestamp <= acceptance_end:
-                played_left_notes.add(note)
+                played_left_notes.append(note)
         
         for note, timestamp in self._right_hand_notes_queue:
             if acceptance_start <= timestamp <= acceptance_end:
-                played_right_notes.add(note)
+                played_right_notes.append(note)
         
         # Debug: Show current state every ~500ms (not every frame!)
         if int(self._current_time * 2) != int((self._current_time - 0.01) * 2):  # Every ~500ms
             logger.info(f"📊 Learning mode check at {self._current_time:.2f}s:"
                        f" Expected L:{sorted(expected_left_notes)} R:{sorted(expected_right_notes)} |"
-                       f" Played L:{sorted(played_left_notes)} R:{sorted(played_right_notes)} |"
+                       f" Played L:{played_left_notes} R:{played_right_notes} |"
                        f" L.queue:{len(self._left_hand_notes_queue)} R.queue:{len(self._right_hand_notes_queue)}")
+        
+        # Convert played note lists to sets for comparison (deduplicates for subset check)
+        played_left_set = set(played_left_notes)
+        played_right_set = set(played_right_notes)
         
         # Check if all expected notes have been played
         left_satisfied = True
         right_satisfied = True
         
         if self._left_hand_wait_for_notes and expected_left_notes:
-            left_satisfied = expected_left_notes.issubset(played_left_notes)
+            left_satisfied = expected_left_notes.issubset(played_left_set)
         
         if self._right_hand_wait_for_notes and expected_right_notes:
-            right_satisfied = expected_right_notes.issubset(played_right_notes)
+            right_satisfied = expected_right_notes.issubset(played_right_set)
         
         # Detect wrong notes and provide feedback
-        wrong_left_notes = played_left_notes - expected_left_notes
-        wrong_right_notes = played_right_notes - expected_right_notes
+        wrong_left_notes = played_left_set - expected_left_notes
+        wrong_right_notes = played_right_set - expected_right_notes
         
         if wrong_left_notes or wrong_right_notes:
             all_wrong = wrong_left_notes | wrong_right_notes
             logger.warning(f"❌ Wrong notes played: {sorted(all_wrong)}")
             self._highlight_wrong_notes(all_wrong)
-            # Record when the wrong flash was triggered (for timer)
-            self._last_wrong_flash_time = self._current_time
+            # Record when the wrong flash was triggered, but only once per timing window
+            # This prevents rapid timer resets when multiple wrong notes are played in quick succession
+            if not self._wrong_flash_triggered_this_window:
+                self._last_wrong_flash_time = self._current_time
+                self._wrong_flash_triggered_this_window = True
         
         # Check if all required notes are satisfied
         all_satisfied = left_satisfied and right_satisfied
@@ -1112,7 +1129,7 @@ class PlaybackService:
             logger.error(f"Error sending MIDI note_off: {e}")
     
     def _highlight_expected_notes(self, expected_left: set, expected_right: set, 
-                                  played_left: set, played_right: set) -> None:
+                                  played_left, played_right) -> None:
         """
         Highlight expected notes on LEDs to show user which notes to play.
         
@@ -1125,11 +1142,17 @@ class PlaybackService:
         Args:
             expected_left: Set of expected MIDI notes for left hand
             expected_right: Set of expected MIDI notes for right hand
-            played_left: Set of notes already played by left hand
-            played_right: Set of notes already played by right hand
+            played_left: List or set of notes already played by left hand
+            played_right: List or set of notes already played by right hand
         """
         if not self._led_controller:
             return
+        
+        # Convert played notes to sets if they're lists (for membership checking)
+        if isinstance(played_left, list):
+            played_left = set(played_left)
+        if isinstance(played_right, list):
+            played_right = set(played_right)
         
         # Check if wrong note flash is still active
         flash_elapsed = self._current_time - self._last_wrong_flash_time
