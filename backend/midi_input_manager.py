@@ -197,7 +197,10 @@ class MIDIInputManager:
             playback_service: PlaybackService instance to track played notes during learning mode
         """
         self._playback_service = playback_service
-        logger.debug("Playback service reference registered for learning mode")
+        if playback_service:
+            logger.info("✓ Playback service reference registered for learning mode integration")
+        else:
+            logger.warning("✗ Playback service reference set to None")
     
     def update_led_controller(self, led_controller) -> None:
         """Update the LED controller reference and propagate to services."""
@@ -566,9 +569,11 @@ class MIDIInputManager:
                         # Determine hand based on note range (simple heuristic)
                         hand = 'left' if event.note < 60 else 'right'  # Middle C = 60
                         self._playback_service.record_midi_note_played(event.note, hand)
-                        logger.debug(f"Learning mode: Recorded {hand} hand note {event.note}")
+                        logger.info(f"[LEARNING MODE] {hand.upper()} hand note {event.note} recorded for playback service")
                     except Exception as e:
-                        logger.debug(f"Error recording MIDI note for learning mode: {e}")
+                        logger.error(f"ERROR recording MIDI note for learning mode: {e}")
+                elif self._playback_service is None:
+                    logger.debug(f"MIDI note {event.note} played but playback service not connected")
                         
             elif event.event_type == 'note_off' or (event.event_type == 'note_on' and event.velocity == 0):
                 if event.note in self._active_notes:
