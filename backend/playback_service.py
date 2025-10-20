@@ -137,11 +137,14 @@ class PlaybackService:
         self._left_hand_wait_for_notes = False
         self._right_hand_wait_for_notes = False
         # Timestamped queues: [(note, timestamp), ...] - tracks notes with when they were played
-        self._left_hand_notes_queue: deque = deque()
-        self._right_hand_notes_queue: deque = deque()
+        # Bounded deques prevent unbounded memory growth (max 5000 notes each, FIFO)
+        self._left_hand_notes_queue: deque = deque(maxlen=5000)
+        self._right_hand_notes_queue: deque = deque(maxlen=5000)
         self._timing_window_ms = 500
         self._expected_notes: Dict[str, set] = {'left': set(), 'right': set()}  # Expected notes for current time window
         self._last_queue_cleanup = time.time()  # For periodic queue cleanup
+        self._queue_cleanup_interval = 1.0  # Cleanup old notes every 1 second
+        self._queue_max_age_seconds = 5.0  # Keep notes for up to 5 seconds
         
         # Load MIDI output settings
         self._load_midi_output_settings()
@@ -849,6 +852,48 @@ class PlaybackService:
             if note in self._midi_notes_sent:
                 del self._midi_notes_sent[note]
     
+    def _cleanup_old_queued_notes(self) -> None:
+        """
+        Periodically clean up old notes from learning mode queues.
+        
+        This prevents unbounded memory growth by removing notes that are too old
+        to be relevant for the current timing window. Called approximately every
+        second when learning mode is active.
+        
+        Notes older than _queue_max_age_seconds are removed.
+        """
+        current_time = time.time()
+        if current_time - self._last_queue_cleanup < self._queue_cleanup_interval:
+            return  # Not time for cleanup yet
+        
+        self._last_queue_cleanup = current_time
+        
+        # Calculate cutoff time: keep notes from last N seconds
+        cutoff_time = self._current_time - self._queue_max_age_seconds
+        
+        # Filter out old notes from left hand queue
+        old_left_count = len(self._left_hand_notes_queue)
+        self._left_hand_notes_queue = deque(
+            ((note, ts) for note, ts in self._left_hand_notes_queue
+             if ts >= cutoff_time),
+            maxlen=5000
+        )
+        left_removed = old_left_count - len(self._left_hand_notes_queue)
+        
+        # Filter out old notes from right hand queue
+        old_right_count = len(self._right_hand_notes_queue)
+        self._right_hand_notes_queue = deque(
+            ((note, ts) for note, ts in self._right_hand_notes_queue
+             if ts >= cutoff_time),
+            maxlen=5000
+        )
+        right_removed = old_right_count - len(self._right_hand_notes_queue)
+        
+        if left_removed > 0 or right_removed > 0:
+            logger.debug(f"Queue cleanup at {self._current_time:.2f}s: "
+                        f"removed {left_removed} left, {right_removed} right notes "
+                        f"(older than {self._queue_max_age_seconds}s)")
+    
     def record_midi_note_played(self, note: int, hand: str) -> None:
         """
         Record that a MIDI note was played by a specific hand during learning mode.
@@ -897,6 +942,9 @@ class PlaybackService:
         """
         if not self._learning_mode_enabled:
             return False
+        
+        # Periodically clean up old notes to prevent unbounded memory growth
+        self._cleanup_old_queued_notes()
         
         # If neither hand requires notes, don't pause
         if not self._left_hand_wait_for_notes and not self._right_hand_wait_for_notes:
