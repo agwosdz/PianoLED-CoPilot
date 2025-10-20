@@ -145,6 +145,9 @@ class PlaybackService:
         self._last_queue_cleanup = time.time()  # For periodic queue cleanup
         self._queue_cleanup_interval = 1.0  # Cleanup old notes every 1 second
         self._queue_max_age_seconds = 5.0  # Keep notes for up to 5 seconds
+        # Wrong note flash timing
+        self._last_wrong_flash_time = 0.0  # When the wrong note flash was triggered (playback time)
+        self._wrong_flash_duration = 0.3  # How long wrong notes stay red (seconds)
         
         # Load MIDI output settings
         self._load_midi_output_settings()
@@ -973,15 +976,16 @@ class PlaybackService:
                 else:  # Right hand (Middle C and above)
                     expected_right_notes.add(event.note)
         
-        # Extract notes from queues that fall within the CURRENT timing window
-        # A note counts if it was played within a reasonable range of the window
+        # Extract notes from queues that fall within the EXPECTED timing window
+        # CRITICAL FIX: Use same window as expected notes to avoid dead zones
+        # Notes must be within [window_start, window_end] to be considered "played"
         played_left_notes = set()
         played_right_notes = set()
         
-        # Use a slightly wider window for acceptance (±500ms for user reaction time)
-        acceptance_window_seconds = max(timing_window_seconds, 0.5)
-        acceptance_start = self._current_time - acceptance_window_seconds
-        acceptance_end = self._current_time + timing_window_seconds
+        # Use the SAME timing window for acceptance as for expected notes
+        # This eliminates the "dead zone" where notes are expected but not accepted
+        acceptance_start = window_start
+        acceptance_end = window_end
         
         for note, timestamp in self._left_hand_notes_queue:
             if acceptance_start <= timestamp <= acceptance_end:
@@ -1016,6 +1020,8 @@ class PlaybackService:
             all_wrong = wrong_left_notes | wrong_right_notes
             logger.warning(f"❌ Wrong notes played: {sorted(all_wrong)}")
             self._highlight_wrong_notes(all_wrong)
+            # Record when the wrong flash was triggered (for timer)
+            self._last_wrong_flash_time = self._current_time
         
         # Check if all required notes are satisfied
         all_satisfied = left_satisfied and right_satisfied
@@ -1111,6 +1117,9 @@ class PlaybackService:
         Unsatisfied expected notes are shown in yellow/green (per-hand colors with reduced brightness).
         Already-played notes are shown in bright color (indicating success).
         
+        If a wrong note flash is still active (within 300ms of trigger), shows red instead.
+        After the flash timeout expires, returns to normal highlighting.
+        
         Args:
             expected_left: Set of expected MIDI notes for left hand
             expected_right: Set of expected MIDI notes for right hand
@@ -1120,6 +1129,14 @@ class PlaybackService:
         if not self._led_controller:
             return
         
+        # Check if wrong note flash is still active
+        flash_elapsed = self._current_time - self._last_wrong_flash_time
+        if flash_elapsed < self._wrong_flash_duration:
+            # Flash is still active, don't update highlights yet
+            logger.debug(f"Wrong note flash active ({flash_elapsed:.3f}s / {self._wrong_flash_duration}s)")
+            return
+        
+        # Flash has expired, show normal highlighting
         try:
             led_data = {}
             
