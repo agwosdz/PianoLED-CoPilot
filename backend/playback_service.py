@@ -886,6 +886,10 @@ class PlaybackService:
         Uses timestamped note queues to filter notes within the current timing window.
         Only counts notes that were played within the expected time range.
         Visualizes expected notes on LEDs during pause.
+        When all required notes are played correctly:
+        1. Visualizes the satisfied notes on LEDs
+        2. Clears pressed keys from memory
+        3. Advances to playback of the next note(s)
         
         Returns:
             bool: True if should pause, False if should continue
@@ -957,8 +961,42 @@ class PlaybackService:
             # Light up wrong notes in red
             self._highlight_wrong_notes(all_wrong)
         
+        # Check if all required notes are satisfied
+        all_satisfied = left_satisfied and right_satisfied
+        
+        # If all required notes are satisfied: clear them and proceed
+        if all_satisfied and (expected_left_notes or expected_right_notes):
+            logger.info(f"Learning mode: ✓ All required notes satisfied at {self._current_time:.2f}s. "
+                       f"Left: {sorted(expected_left_notes)}, Right: {sorted(expected_right_notes)}")
+            
+            # Show satisfied notes on LEDs briefly (bright colors)
+            self._highlight_expected_notes(expected_left_notes, expected_right_notes,
+                                          played_left_notes, played_right_notes)
+            
+            # CLEAR PRESSED KEYS: Remove notes from queues that are now satisfied
+            # This prevents them from carrying over to the next measure
+            notes_to_clear = expected_left_notes | expected_right_notes
+            
+            # Remove cleared notes from queues
+            self._left_hand_notes_queue = deque(
+                (note, ts) for note, ts in self._left_hand_notes_queue
+                if note not in notes_to_clear
+            )
+            self._right_hand_notes_queue = deque(
+                (note, ts) for note, ts in self._right_hand_notes_queue
+                if note not in notes_to_clear
+            )
+            
+            logger.info(f"Learning mode: Cleared satisfied notes from queues. "
+                       f"Remaining left queue: {len(self._left_hand_notes_queue)}, "
+                       f"Remaining right queue: {len(self._right_hand_notes_queue)}")
+            
+            # PROCEED TO PLAYBACK: Return False to allow playback to continue
+            # This will advance the playback time to the next note
+            return False
+        
         # Pause if not satisfied
-        should_pause = not (left_satisfied and right_satisfied)
+        should_pause = not all_satisfied
         
         # Visualize expected notes on LEDs when pausing
         if should_pause and (expected_left_notes or expected_right_notes):
