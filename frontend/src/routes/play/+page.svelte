@@ -43,6 +43,17 @@
 	let loadingMidiDevices = false;
 	let midiInputError = '';
 
+	// Learning mode state (per-hand configuration)
+	let leftHandWaitForNotes = false;
+	let leftHandWhiteColor = '#ff6b6b'; // Coral-red
+	let leftHandBlackColor = '#c92a2a'; // Deep rose
+	let rightHandWaitForNotes = false;
+	let rightHandWhiteColor = '#006496'; // Deep teal/cyan
+	let rightHandBlackColor = '#960064'; // Deep magenta/purple
+	let timingWindow = 500;
+	let learningOptionsError = '';
+	let isSavingLearningOptions = false;
+
 
 	async function loadUploadedFiles() {
 		try {
@@ -260,8 +271,79 @@
 		}
 	}
 
+	async function loadLearningOptions(): Promise<void> {
+		try {
+			learningOptionsError = '';
+			const response = await fetch('/api/learning/options');
+			if (response.ok) {
+				const data = await response.json();
+				// Load per-hand settings
+				const leftHand = data.left_hand ?? {};
+				const rightHand = data.right_hand ?? {};
+				
+				leftHandWaitForNotes = leftHand.wait_for_notes ?? false;
+				leftHandWhiteColor = leftHand.white_color ?? '#ff6b6b';
+				leftHandBlackColor = leftHand.black_color ?? '#c92a2a';
+				
+				rightHandWaitForNotes = rightHand.wait_for_notes ?? false;
+				rightHandWhiteColor = rightHand.white_color ?? '#006496';
+				rightHandBlackColor = rightHand.black_color ?? '#960064';
+				
+				timingWindow = data.timing_window_ms ?? 500;
+			}
+		} catch (error) {
+			console.error('Failed to load learning options:', error);
+			// Use defaults if API not available
+		}
+	}
+
+	async function saveLearningOptions(): Promise<void> {
+		try {
+			isSavingLearningOptions = true;
+			learningOptionsError = '';
+			const response = await fetch('/api/learning/options', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					left_hand: {
+						wait_for_notes: leftHandWaitForNotes,
+						white_color: leftHandWhiteColor,
+						black_color: leftHandBlackColor
+					},
+					right_hand: {
+						wait_for_notes: rightHandWaitForNotes,
+						white_color: rightHandWhiteColor,
+						black_color: rightHandBlackColor
+					},
+					timing_window_ms: timingWindow
+				})
+			});
+
+			if (!response.ok) {
+				learningOptionsError = 'Failed to save learning options';
+			}
+		} catch (error) {
+			console.error('Failed to save learning options:', error);
+			learningOptionsError = 'Network error saving learning options';
+		} finally {
+			isSavingLearningOptions = false;
+		}
+	}
+
+	function resetToDefaults(): void {
+		leftHandWaitForNotes = false;
+		leftHandWhiteColor = '#ff6b6b';
+		leftHandBlackColor = '#c92a2a';
+		rightHandWaitForNotes = false;
+		rightHandWhiteColor = '#006496';
+		rightHandBlackColor = '#960064';
+		timingWindow = 500;
+		saveLearningOptions();
+	}
+
 	onMount(() => {
 		loadUploadedFiles();
+		loadLearningOptions();
 		const statusInterval = setInterval(fetchPlaybackStatus, 100);
 		const filesInterval = setInterval(loadUploadedFiles, 5000);
 		const midiStatusInterval = setInterval(checkMidiInputStatus, 1000);
@@ -277,7 +359,7 @@
 
 <div class="page-wrapper">
 	<div class="page-content">
-		<h1>MIDI Playback</h1>
+		<h1>Play and Learn</h1>
 
 		<div class="main-grid">
 			<!-- Playback Card -->
@@ -401,23 +483,171 @@
 			</div>
 		</section>
 
-		<!-- Options Card (Placeholder) -->
-		<section class="options-card grid-section">
-			<header class="options-header">
-				<h3>Playback Options</h3>
-				<p>Configure playback settings and preferences.</p>
+		<!-- Learning Options Card -->
+		<section class="learning-options-card grid-section">
+			<header class="card-header">
+				<h3>Learning Options</h3>
+				<p>Configure hand-specific settings for learning mode.</p>
 			</header>
 			
-			<div class="options-content">
-				<div class="option-item">
-					<label for="loop-toggle">Loop Playback</label>
-					<input type="checkbox" id="loop-toggle" disabled title="Coming soon">
+			<div class="learning-content">
+				<!-- Left Hand Settings -->
+				<div class="hand-section">
+					<div class="hand-header">
+						<h4 class="hand-title">🎹 Left Hand</h4>
+						<span class="hand-label amber">Golden Amber</span>
+					</div>
+
+					<!-- Left Hand: Wait for Notes -->
+					<div class="setting-group checkbox-group">
+						<label class="checkbox-wrapper">
+							<input 
+								type="checkbox" 
+								bind:checked={leftHandWaitForNotes}
+								on:change={saveLearningOptions}
+								class="checkbox-input"
+								title="Pause playback until you play left hand notes"
+							/>
+							<span class="checkbox-label">
+								Wait for MIDI Notes
+								<span class="checkbox-description">Playback pauses until you play the correct notes</span>
+							</span>
+						</label>
+					</div>
+
+					<!-- Left Hand Colors -->
+					<div class="color-pair-section">
+						<div class="field">
+							<label for="left-white" class="field-label">White Keys</label>
+							<div class="color-input-wrapper">
+								<input 
+									type="color" 
+									id="left-white" 
+									bind:value={leftHandWhiteColor}
+									on:change={saveLearningOptions}
+									class="color-selector"
+									title="Color for left hand white keys"
+								/>
+								<div class="color-swatch" style="background-color: {leftHandWhiteColor};"></div>
+								<span class="color-hex">{leftHandWhiteColor}</span>
+							</div>
+						</div>
+						<div class="field">
+							<label for="left-black" class="field-label">Black Keys</label>
+							<div class="color-input-wrapper">
+								<input 
+									type="color" 
+									id="left-black" 
+									bind:value={leftHandBlackColor}
+									on:change={saveLearningOptions}
+									class="color-selector"
+									title="Color for left hand black keys"
+								/>
+								<div class="color-swatch" style="background-color: {leftHandBlackColor};"></div>
+								<span class="color-hex">{leftHandBlackColor}</span>
+							</div>
+						</div>
+					</div>
 				</div>
-				<div class="option-item">
-					<label for="speed-control">Playback Speed</label>
-					<input type="range" id="speed-control" min="0.5" max="2" step="0.1" value="1" disabled title="Coming soon">
+
+				<div class="divider"></div>
+
+				<!-- Right Hand Settings -->
+				<div class="hand-section">
+					<div class="hand-header">
+						<h4 class="hand-title">🎹 Right Hand</h4>
+						<span class="hand-label teal">Teal & Magenta</span>
+					</div>
+
+					<!-- Right Hand: Wait for Notes -->
+					<div class="setting-group checkbox-group">
+						<label class="checkbox-wrapper">
+							<input 
+								type="checkbox" 
+								bind:checked={rightHandWaitForNotes}
+								on:change={saveLearningOptions}
+								class="checkbox-input"
+								title="Pause playback until you play right hand notes"
+							/>
+							<span class="checkbox-label">
+								Wait for MIDI Notes
+								<span class="checkbox-description">Playback pauses until you play the correct notes</span>
+							</span>
+						</label>
+					</div>
+
+					<!-- Right Hand Colors -->
+					<div class="color-pair-section">
+						<div class="field">
+							<label for="right-white" class="field-label">White Keys</label>
+							<div class="color-input-wrapper">
+								<input 
+									type="color" 
+									id="right-white" 
+									bind:value={rightHandWhiteColor}
+									on:change={saveLearningOptions}
+									class="color-selector"
+									title="Color for right hand white keys"
+								/>
+								<div class="color-swatch" style="background-color: {rightHandWhiteColor};"></div>
+								<span class="color-hex">{rightHandWhiteColor}</span>
+							</div>
+						</div>
+						<div class="field">
+							<label for="right-black" class="field-label">Black Keys</label>
+							<div class="color-input-wrapper">
+								<input 
+									type="color" 
+									id="right-black" 
+									bind:value={rightHandBlackColor}
+									on:change={saveLearningOptions}
+									class="color-selector"
+									title="Color for right hand black keys"
+								/>
+								<div class="color-swatch" style="background-color: {rightHandBlackColor};"></div>
+								<span class="color-hex">{rightHandBlackColor}</span>
+							</div>
+						</div>
+					</div>
 				</div>
-				<p class="placeholder-note">More options coming soon...</p>
+
+				<div class="divider"></div>
+
+				<!-- Timing Window (Global) -->
+				<div class="timing-section">
+					<div class="field field-slider">
+						<label for="timing-window" class="field-label">
+							Note Timing Tolerance: <span class="timing-value">{timingWindow} ms</span>
+						</label>
+						<input 
+							type="range" 
+							id="timing-window" 
+							min="100" 
+							max="2000" 
+							step="100" 
+							bind:value={timingWindow}
+							on:change={saveLearningOptions}
+							class="timing-slider"
+							title="Time window for matching played notes"
+						/>
+						<div class="field-hint">How much time tolerance for playing notes (100-2000 ms)</div>
+					</div>
+				</div>
+
+				<div class="action-row">
+					<button 
+						class="btn-reset" 
+						on:click={resetToDefaults}
+						disabled={isSavingLearningOptions}
+						title="Reset all settings to defaults"
+					>
+						🔄 Reset to Defaults
+					</button>
+				</div>
+
+				{#if learningOptionsError}
+					<p class="error-message">{learningOptionsError}</p>
+				{/if}
 			</div>
 		</section>
 
@@ -928,6 +1158,347 @@
 		color: #991b1b;
 		border-radius: 0.375rem;
 		font-size: 0.9rem;
+	}
+
+	/* Learning Options Card Styles - Matching Settings Page */
+	.learning-options-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 12px;
+		padding: 0;
+		box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+		overflow: hidden;
+	}
+
+	.card-header {
+		padding: 1.75rem 2rem;
+		border-bottom: 1px solid #e2e8f0;
+	}
+
+	.card-header h3 {
+		margin: 0;
+		font-size: 1.4rem;
+		color: #0f172a;
+		font-weight: 600;
+	}
+
+	.card-header p {
+		margin: 0.25rem 0 0;
+		color: #475569;
+		font-size: 0.95rem;
+	}
+
+	.learning-content {
+		display: flex;
+		flex-direction: column;
+		padding: 1.75rem 2rem;
+		gap: 1.75rem;
+	}
+
+	.hand-section {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.hand-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.hand-title {
+		margin: 0;
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: #1f2937;
+	}
+
+	.hand-label {
+		display: inline-block;
+		font-size: 0.8rem;
+		font-weight: 600;
+		padding: 0.35rem 0.75rem;
+		border-radius: 999px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.hand-label.amber {
+		background: #fef3c7;
+		color: #92400e;
+	}
+
+	.hand-label.teal {
+		background: #ccf0ff;
+		color: #004d7a;
+	}
+
+	.hand-label.blue {
+		background: #dbeafe;
+		color: #0c2d6b;
+	}
+
+	.setting-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.checkbox-group {
+		background: #ffffff;
+		padding: 0.75rem;
+		border-radius: 8px;
+		border: 1px solid #e2e8f0;
+	}
+
+	.checkbox-wrapper {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.checkbox-input {
+		width: 1.25rem;
+		height: 1.25rem;
+		margin-top: 0.2rem;
+		cursor: pointer;
+		accent-color: #2563eb;
+		flex-shrink: 0;
+	}
+
+	.checkbox-label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.checkbox-label {
+		font-weight: 500;
+		color: #1f2937;
+		font-size: 0.95rem;
+	}
+
+	.checkbox-description {
+		font-size: 0.85rem;
+		color: #64748b;
+		font-weight: normal;
+	}
+
+	.color-pair-section {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 1rem;
+	}
+
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.field-label {
+		font-weight: 600;
+		color: #1f2937;
+		font-size: 0.9rem;
+	}
+
+	.color-input-wrapper {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		background: #ffffff;
+		padding: 0.75rem;
+		border: 1px solid #d1d5db;
+		border-radius: 8px;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.color-input-wrapper:hover {
+		border-color: #9ca3af;
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+	}
+
+	.color-input-wrapper:focus-within {
+		border-color: #2563eb;
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+	}
+
+	.color-selector {
+		width: 3rem;
+		height: 2.75rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s;
+		flex-shrink: 0;
+	}
+
+	.color-selector:hover {
+		box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+	}
+
+	.color-selector:focus {
+		outline: none;
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+	}
+
+	.color-swatch {
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: 6px;
+		border: 1px solid #cbd5e1;
+		flex-shrink: 0;
+	}
+
+	.color-hex {
+		font-family: 'Monaco', 'Courier New', monospace;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #475569;
+		letter-spacing: 0.05em;
+	}
+
+	.divider {
+		height: 1px;
+		background: linear-gradient(to right, transparent, #e2e8f0, transparent);
+		margin: 0.5rem 0;
+	}
+
+	.timing-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.field-slider {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.field-slider .field-label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.timing-value {
+		font-size: 0.875rem;
+		font-weight: 700;
+		color: #2563eb;
+		background: #eff6ff;
+		padding: 0.35rem 0.65rem;
+		border-radius: 4px;
+	}
+
+	.timing-slider {
+		width: 100%;
+		height: 6px;
+		border-radius: 999px;
+		background: #e5e7eb;
+		outline: none;
+		-webkit-appearance: none;
+		appearance: none;
+		cursor: pointer;
+	}
+
+	.timing-slider::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 1.5rem;
+		height: 1.5rem;
+		border-radius: 999px;
+		background: linear-gradient(135deg, #2563eb, #1d4ed8);
+		cursor: pointer;
+		box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+		transition: all 0.2s;
+		border: 2px solid #ffffff;
+	}
+
+	.timing-slider::-webkit-slider-thumb:hover {
+		transform: scale(1.15);
+		box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+	}
+
+	.timing-slider::-moz-range-thumb {
+		width: 1.5rem;
+		height: 1.5rem;
+		border-radius: 999px;
+		background: linear-gradient(135deg, #2563eb, #1d4ed8);
+		cursor: pointer;
+		box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+		border: 2px solid #ffffff;
+		transition: all 0.2s;
+	}
+
+	.timing-slider::-moz-range-thumb:hover {
+		transform: scale(1.15);
+		box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+	}
+
+	.timing-slider::-moz-range-track {
+		background: transparent;
+		border: none;
+	}
+
+	.field-hint {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #64748b;
+	}
+
+	.action-row {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.75rem;
+		padding-top: 1rem;
+		border-top: 1px solid #e2e8f0;
+	}
+
+	.btn-reset {
+		padding: 0.7rem 1.5rem;
+		border: 1px solid #d1d5db;
+		border-radius: 8px;
+		background: #ffffff;
+		color: #1f2937;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-reset:hover:not(:disabled) {
+		background: #f3f4f6;
+		border-color: #9ca3af;
+		box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+	}
+
+	.btn-reset:active:not(:disabled) {
+		transform: translateY(1px);
+	}
+
+	.btn-reset:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.error-message {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		background: #fee2e2;
+		color: #991b1b;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		border: 1px solid #fecaca;
+	}
+
+	.reset-button:active {
+		transform: scale(0.95);
 	}
 
 	@media (max-width: 960px) {

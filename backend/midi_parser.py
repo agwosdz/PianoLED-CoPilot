@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 from backend.logging_config import get_logger
 
@@ -102,6 +102,147 @@ class MIDIParser:
             '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72}
         }
         return specs.get(piano_size, specs['88-key'])
+    
+    def _detect_track_hand(self, track_name: Optional[str], note_range: Tuple[int, int], track_channels: set, track_index: int, total_tracks: int) -> Tuple[str, float, str]:
+        """
+        Detect if a track is for left hand, right hand, both, or unknown.
+        
+        Returns:
+            Tuple of (hand, confidence, detection_method)
+            hand: 'right', 'left', 'both', or 'unknown'
+            confidence: 0.0-1.0
+            detection_method: 'name', 'channel', 'range', 'order', or 'unknown'
+        """
+        
+        # Pattern 1: Check track name (highest priority, highest confidence)
+        if track_name:
+            name_lower = track_name.lower().strip()
+            
+            # Right hand patterns
+            if any(pat in name_lower for pat in ['right hand', 'right', 'rh ', 'treble', 'melody', 'soprano']):
+                logger.debug(f"Track {track_index} detected as RIGHT by name: '{track_name}'")
+                return ('right', 0.95, 'name')
+            
+            # Left hand patterns
+            if any(pat in name_lower for pat in ['left hand', 'left', 'lh ', 'bass', 'bass line', 'alto']):
+                logger.debug(f"Track {track_index} detected as LEFT by name: '{track_name}'")
+                return ('left', 0.95, 'name')
+            
+            # Both patterns
+            if any(pat in name_lower for pat in ['piano', 'both', 'combined', 'full']):
+                logger.debug(f"Track {track_index} detected as BOTH by name: '{track_name}'")
+                return ('both', 0.90, 'name')
+        
+        # Pattern 2: Check note range (high confidence)
+        min_note, max_note = note_range
+        middle_c = 60  # MIDI note for Middle C
+        
+        # Clear left hand (all notes well below middle C)
+        if max_note < 48:  # Everything below C3
+            logger.debug(f"Track {track_index} detected as LEFT by range: {min_note}-{max_note}")
+            return ('left', 0.85, 'range')
+        
+        # Clear right hand (all notes well above middle C)
+        if min_note > 72:  # Everything above C5
+            logger.debug(f"Track {track_index} detected as RIGHT by range: {min_note}-{max_note}")
+            return ('right', 0.85, 'range')
+        
+        # Likely left hand (mostly in lower range)
+        if max_note <= middle_c and min_note < 48:
+            logger.debug(f"Track {track_index} detected as LEFT by range: {min_note}-{max_note} (mostly lower)")
+            return ('left', 0.75, 'range')
+        
+        # Likely right hand (mostly in upper range)
+        if min_note >= middle_c and max_note > 72:
+            logger.debug(f"Track {track_index} detected as RIGHT by range: {min_note}-{max_note} (mostly upper)")
+            return ('right', 0.75, 'range')
+        
+        # Pattern 3: Check MIDI channels (lower priority)
+        if track_channels:
+            channels_list = sorted(list(track_channels))
+            # This is less reliable but can help
+            primary_channel = channels_list[0]
+            # Channel convention varies, so low confidence
+            if primary_channel in [0, 1]:  # Common for right hand
+                logger.debug(f"Track {track_index} tentatively RIGHT by channel: {channels_list}")
+                return ('right', 0.5, 'channel')
+            elif primary_channel in [2, 3]:  # Sometimes left hand
+                logger.debug(f"Track {track_index} tentatively LEFT by channel: {channels_list}")
+                return ('left', 0.5, 'channel')
+        
+        # Pattern 4: Track order as last resort (lowest priority, lowest confidence)
+        if total_tracks == 2:
+            if track_index == 0:
+                logger.debug(f"Track {track_index} guessed as RIGHT by order (first of 2 tracks)")
+                return ('right', 0.3, 'order')
+            elif track_index == 1:
+                logger.debug(f"Track {track_index} guessed as LEFT by order (second of 2 tracks)")
+                return ('left', 0.3, 'order')
+        
+        # Unable to determine
+        logger.debug(f"Track {track_index} hand detection inconclusive, marking as unknown")
+        return ('unknown', 0.0, 'unknown')
+    
+    def _analyze_tracks(self, midi_file) -> List[Dict[str, Any]]:
+        """
+        Analyze all tracks in MIDI file to determine hand assignments.
+        
+        Returns:
+            List of track info dictionaries with hand detection
+        """
+        track_info = []
+        
+        for track_idx, track in enumerate(midi_file.tracks):
+            # Extract track name from metadata
+            track_name = None
+            track_channels = set()
+            all_notes = []
+            
+            for msg in track:
+                if msg.type == 'track_name':
+                    track_name = msg.name
+                
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    all_notes.append(msg.note)
+                    track_channels.add(msg.channel)
+                elif msg.type == 'note_off':
+                    all_notes.append(msg.note)
+                    track_channels.add(msg.channel)
+            
+            # Calculate statistics
+            if all_notes:
+                min_note = min(all_notes)
+                max_note = max(all_notes)
+                note_count = len(all_notes)
+            else:
+                min_note = 0
+                max_note = 0
+                note_count = 0
+            
+            # Detect hand
+            hand, confidence, detection_method = self._detect_track_hand(
+                track_name, 
+                (min_note, max_note), 
+                track_channels,
+                track_idx,
+                len(midi_file.tracks)
+            )
+            
+            info = {
+                'index': track_idx,
+                'name': track_name or f'Track {track_idx}',
+                'channels': sorted(list(track_channels)) if track_channels else [],
+                'hand': hand,
+                'confidence': confidence,
+                'detection_method': detection_method,
+                'note_count': note_count,
+                'note_range': [min_note, max_note] if all_notes else [0, 0]
+            }
+            
+            track_info.append(info)
+            logger.info(f"Track {track_idx}: {info['name']} | Hand: {hand} (conf: {confidence:.2f}, method: {detection_method}) | Notes: {note_count} | Range: {min_note}-{max_note}")
+        
+        return track_info
         
     def parse_file(self, file_path: str) -> Dict[str, Any]:
         """
@@ -128,8 +269,11 @@ class MIDIParser:
             midi_file = mido.MidiFile(file_path)
             logger.info(f"Loaded MIDI file: {file_path} with {len(midi_file.tracks)} tracks")
             
+            # Analyze tracks for hand detection
+            track_info = self._analyze_tracks(midi_file)
+            
             # Extract all note events from all tracks
-            all_events = self._extract_note_events(midi_file)
+            all_events = self._extract_note_events(midi_file, track_info)
             
             # Convert to timed sequence
             note_sequence = self._create_note_sequence(all_events, midi_file)
@@ -138,7 +282,7 @@ class MIDIParser:
             duration = max([event['time'] for event in note_sequence], default=0)
             
             # Extract metadata
-            metadata = self._extract_metadata(midi_file)
+            metadata = self._extract_metadata(midi_file, track_info)
             
             return {
                 'duration': duration,
@@ -150,15 +294,16 @@ class MIDIParser:
             logger.error(f"Error parsing MIDI file {file_path}: {str(e)}")
             raise ValueError(f"Invalid MIDI file: {str(e)}")
     
-    def _extract_note_events(self, midi_file) -> List[Dict[str, Any]]:
+    def _extract_note_events(self, midi_file, track_info: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Extract note on/off events from all tracks in the MIDI file.
         
         Args:
             midi_file: Loaded MIDI file object
+            track_info: List of track info dictionaries with hand classification
             
         Returns:
-            List of note events with timing information
+            List of note events with timing information and hand classification
         """
         if not MIDO_AVAILABLE:
             raise RuntimeError("mido library not available")
@@ -167,6 +312,8 @@ class MIDIParser:
         
         for track_idx, track in enumerate(midi_file.tracks):
             current_time = 0
+            track_hand = track_info[track_idx]['hand'] if track_idx < len(track_info) else 'unknown'
+            track_name = track_info[track_idx]['name'] if track_idx < len(track_info) else f'Track {track_idx}'
             
             for msg in track:
                 current_time += msg.time
@@ -178,7 +325,9 @@ class MIDIParser:
                         'note': msg.note,
                         'velocity': msg.velocity,
                         'type': 'on',
-                        'track': track_idx
+                        'track': track_idx,
+                        'track_name': track_name,
+                        'hand': track_hand
                     })
                 
                 # Process note off events (including note_on with velocity 0)
@@ -188,10 +337,12 @@ class MIDIParser:
                         'note': msg.note,
                         'velocity': 0,
                         'type': 'off',
-                        'track': track_idx
+                        'track': track_idx,
+                        'track_name': track_name,
+                        'hand': track_hand
                     })
         
-        logger.info(f"Extracted {len(events)} note events from {len(midi_file.tracks)} tracks")
+        logger.info(f"Extracted {len(events)} note events from {len(midi_file.tracks)} tracks with hand classification")
         return events
     
     def _create_note_sequence(self, events: List[Dict[str, Any]], midi_file) -> List[Dict[str, Any]]:
@@ -261,7 +412,10 @@ class MIDIParser:
                     'note': event['note'],
                     'velocity': event['velocity'],
                     'type': event['type'],
-                    'led_index': led_index
+                    'led_index': led_index,
+                    'track': event['track'],
+                    'track_name': event['track_name'],
+                    'hand': event['hand']
                 })
         
         # Sort events by time
@@ -340,15 +494,16 @@ class MIDIParser:
         
         return logical_index
     
-    def _extract_metadata(self, midi_file) -> Dict[str, Any]:
+    def _extract_metadata(self, midi_file, track_info: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Extract metadata from MIDI file.
         
         Args:
             midi_file: Loaded MIDI file object
+            track_info: List of track info dictionaries with hand classification
             
         Returns:
-            Dictionary containing metadata
+            Dictionary containing metadata with track analysis
         """
         if not MIDO_AVAILABLE:
             raise RuntimeError("mido library not available")
@@ -358,7 +513,8 @@ class MIDIParser:
             'ticks_per_beat': midi_file.ticks_per_beat,
             'type': midi_file.type,
             'title': None,
-            'tempo': 120  # Default BPM
+            'tempo': 120,  # Default BPM
+            'track_info': track_info  # NEW: Include track analysis with hand detection
         }
         
         # Extract title and tempo from meta messages
