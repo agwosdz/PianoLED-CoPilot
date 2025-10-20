@@ -1028,9 +1028,12 @@ class PlaybackService:
         if self._right_hand_wait_for_notes and expected_right_notes:
             right_satisfied = expected_right_notes.issubset(played_right_set)
         
-        # Detect wrong notes and provide feedback
+        # CRITICAL: Check for WRONG notes first - these take priority over satisfaction!
+        # If user plays any wrong notes, we must PAUSE and force them to correct before continuing
         wrong_left_notes = played_left_set - expected_left_notes
         wrong_right_notes = played_right_set - expected_right_notes
+        
+        has_expected_notes = expected_left_notes or expected_right_notes
         
         if wrong_left_notes or wrong_right_notes:
             all_wrong = wrong_left_notes | wrong_right_notes
@@ -1041,12 +1044,20 @@ class PlaybackService:
             if not self._wrong_flash_triggered_this_window:
                 self._last_wrong_flash_time = self._current_time
                 self._wrong_flash_triggered_this_window = True
+            
+            # CRITICAL: Show expected notes on LEDs to guide user
+            if has_expected_notes:
+                self._highlight_expected_notes(expected_left_notes, expected_right_notes,
+                                              played_left_notes, played_right_notes)
+            
+            logger.debug(f"Learning mode PAUSING - user played wrong notes, must correct before proceeding")
+            # RETURN TRUE HERE: Pause playback until wrong notes are corrected
+            # Do NOT clear queue - we need to keep the wrong notes for visual feedback
+            # Do NOT proceed to satisfaction check - wrong notes take absolute priority
+            return True
         
-        # Check if all required notes are satisfied
+        # Only if NO wrong notes: check if all required notes are satisfied
         all_satisfied = left_satisfied and right_satisfied
-        
-        # Debug logging for progress
-        has_expected_notes = expected_left_notes or expected_right_notes
         
         # If all required notes are satisfied: clear them and proceed
         if all_satisfied and has_expected_notes:
@@ -1084,16 +1095,15 @@ class PlaybackService:
             logger.debug(f"No expected notes at {self._current_time:.2f}s, continuing playback")
             return False
         
-        # Pause if not satisfied
-        should_pause = not all_satisfied
+        # Not all required notes satisfied yet - show guidance and pause
+        logger.debug(f"Learning mode PAUSING - waiting for all required notes")
         
-        # Visualize expected notes on LEDs when pausing
-        if should_pause and (expected_left_notes or expected_right_notes):
-            self._highlight_expected_notes(expected_left_notes, expected_right_notes, 
-                                          played_left_notes, played_right_notes)
-            logger.debug(f"Learning mode pausing at {self._current_time:.2f}s")
+        # Visualize expected notes on LEDs to show user what's needed
+        self._highlight_expected_notes(expected_left_notes, expected_right_notes, 
+                                      played_left_notes, played_right_notes)
         
-        return should_pause
+        # Return True: Pause playback until all notes are played correctly
+        return True
     
     def _send_midi_note_on(self, note: int, velocity: int) -> None:
         """
