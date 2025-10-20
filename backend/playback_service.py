@@ -131,8 +131,20 @@ class PlaybackService:
         self._midi_output_enabled = False
         self._midi_notes_sent: Dict[int, bool] = {}  # Track which MIDI notes are currently on
         
+        # Learning mode configuration
+        self._learning_mode_enabled = False
+        self._left_hand_wait_for_notes = False
+        self._right_hand_wait_for_notes = False
+        self._left_hand_notes_played: set = set()
+        self._right_hand_notes_played: set = set()
+        self._timing_window_ms = 500
+        self._expected_notes: Dict[str, set] = {'left': set(), 'right': set()}  # Expected notes for current time window
+        
         # Load MIDI output settings
         self._load_midi_output_settings()
+        
+        # Load learning mode settings
+        self._load_learning_mode_settings()
         
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
@@ -219,6 +231,30 @@ class PlaybackService:
             logger.error(f"Error loading MIDI output settings: {e}")
             self._midi_output_enabled = False
 
+    def _load_learning_mode_settings(self) -> None:
+        """Load learning mode configuration from settings service."""
+        if not self._settings_service:
+            self._learning_mode_enabled = False
+            return
+
+        try:
+            get_setting = getattr(self._settings_service, 'get_setting', None)
+            if callable(get_setting):
+                self._left_hand_wait_for_notes = get_setting('learning_mode', 'left_hand_wait_for_notes', False)
+                self._right_hand_wait_for_notes = get_setting('learning_mode', 'right_hand_wait_for_notes', False)
+                self._timing_window_ms = get_setting('learning_mode', 'timing_window_ms', 500)
+                
+                # Learning mode is enabled if either hand has wait_for_notes enabled
+                self._learning_mode_enabled = self._left_hand_wait_for_notes or self._right_hand_wait_for_notes
+                
+                if self._learning_mode_enabled:
+                    logger.info(f"Learning mode enabled - Left hand: {self._left_hand_wait_for_notes}, Right hand: {self._right_hand_wait_for_notes}, Timing: {self._timing_window_ms}ms")
+            else:
+                self._learning_mode_enabled = False
+        except Exception as e:
+            logger.error(f"Error loading learning mode settings: {e}")
+            self._learning_mode_enabled = False
+
     def _load_settings_from_config(self, num_leds_override: Optional[int] = None) -> None:
         """Fallback configuration loading from static config values."""
         piano_size = get_config('piano_size', '88-key')
@@ -247,6 +283,7 @@ class PlaybackService:
 
         self._precomputed_mapping = self._generate_key_mapping()
         self._load_midi_output_settings()
+        self._load_learning_mode_settings()
         logger.debug(
             "Playback service settings refreshed: num_leds=%s orientation=%s mapping_mode=%s",
             self.num_leds,
@@ -692,6 +729,10 @@ class PlaybackService:
             last_status_update = 0
             last_led_update = 0
             
+            # Reload learning mode settings at start of playback
+            if self._learning_mode_enabled:
+                self._load_learning_mode_settings()
+            
             while not self._stop_event.is_set():
                 current_loop_time = time.time()
                 
@@ -699,6 +740,13 @@ class PlaybackService:
                 if self._pause_event.is_set():
                     time.sleep(0.05)  # Reduced pause check interval
                     continue
+                
+                # Handle learning mode pause
+                if self._learning_mode_enabled:
+                    should_pause = self._check_learning_mode_pause()
+                    if should_pause:
+                        time.sleep(0.05)  # Brief sleep before checking again
+                        continue
                 
                 # Update current time with tempo adjustment
                 self._current_time = (current_loop_time - self._start_time) * self._tempo_multiplier
@@ -824,6 +872,69 @@ class PlaybackService:
                 logger.debug(f"Sent MIDI note_off: note={note}")
         except Exception as e:
             logger.error(f"Error sending MIDI note_off: {e}")
+    
+    def record_midi_note_played(self, note: int, hand: str) -> None:
+        """
+        Record that a MIDI note was played by a specific hand during learning mode.
+        
+        Args:
+            note: MIDI note number that was played
+            hand: 'left' or 'right' hand
+        """
+        if hand == 'left':
+            self._left_hand_notes_played.add(note)
+        elif hand == 'right':
+            self._right_hand_notes_played.add(note)
+    
+    def _check_learning_mode_pause(self) -> bool:
+        """
+        Check if playback should pause in learning mode waiting for MIDI input.
+        Returns True if playback should pause, False otherwise.
+        """
+        # Find notes that should be playing in the current timing window
+        current_time = self._current_time
+        window_start = current_time
+        window_end = current_time + (self._timing_window_ms / 1000.0)
+        
+        left_expected = set()
+        right_expected = set()
+        
+        # Get hand assignment from settings if available
+        # For now, use a simple split: lower half (C0-C4) = left, upper half (C4-C8) = right
+        left_cutoff = 60  # Middle C
+        
+        for event in self._note_events:
+            if window_start <= event.time <= window_end:
+                if event.note < left_cutoff:
+                    left_expected.add(event.note)
+                else:
+                    right_expected.add(event.note)
+        
+        # Check if we should wait for left hand
+        if self._left_hand_wait_for_notes and left_expected:
+            # Check if all expected left hand notes have been played
+            if not left_expected.issubset(self._left_hand_notes_played):
+                logger.debug(f"Learning mode: Waiting for left hand notes. Expected: {left_expected}, Played: {self._left_hand_notes_played}")
+                return True
+        
+        # Check if we should wait for right hand
+        if self._right_hand_wait_for_notes and right_expected:
+            # Check if all expected right hand notes have been played
+            if not right_expected.issubset(self._right_hand_notes_played):
+                logger.debug(f"Learning mode: Waiting for right hand notes. Expected: {right_expected}, Played: {self._right_hand_notes_played}")
+                return True
+        
+        # Clear notes that are outside the timing window
+        self._left_hand_notes_played = {n for n in self._left_hand_notes_played if current_time - (self._timing_window_ms / 1000.0) <= self._get_note_play_time(n) <= current_time + (self._timing_window_ms / 1000.0)}
+        self._right_hand_notes_played = {n for n in self._right_hand_notes_played if current_time - (self._timing_window_ms / 1000.0) <= self._get_note_play_time(n) <= current_time + (self._timing_window_ms / 1000.0)}
+        
+        return False
+    
+    def _get_note_play_time(self, note: int) -> float:
+        """Get the approximate time when a note was last expected to play."""
+        # This is a helper to track when notes should be played
+        # In a full implementation, you'd track when each played note occurred
+        return self._current_time
     
     def _update_leds(self):
         """Update LED display based on active notes"""

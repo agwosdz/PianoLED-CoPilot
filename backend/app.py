@@ -159,6 +159,8 @@ if midi_input_manager:
 # When MIDI file playback is active, USB keyboard input will not update LEDs
 if midi_input_manager and playback_service:
     midi_input_manager.set_playback_status_callback(playback_service.is_playback_active)
+    # Set reference to playback service for learning mode note tracking
+    midi_input_manager.set_playback_service(playback_service)
     logger.info("Registered playback status callback - USB MIDI LEDs will be suppressed during MIDI file playback")
 
 ALLOWED_MIDI_EXTENSIONS = {'.mid', '.midi'}

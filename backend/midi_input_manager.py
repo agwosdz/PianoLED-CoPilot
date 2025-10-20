@@ -105,6 +105,9 @@ class MIDIInputManager:
         # Playback status callback - used to check if MIDI file playback is active
         self._playback_status_callback: Optional[Callable[[], bool]] = None
         
+        # Reference to playback service for learning mode note tracking
+        self._playback_service = None
+        
         # Load configuration
         self.enable_usb = get_config('midi_enable_usb', True)
         self.enable_rtpmidi = get_config('midi_enable_rtpmidi', True)
@@ -185,6 +188,16 @@ class MIDIInputManager:
             except Exception as e:
                 logger.debug(f"Error checking playback status: {e}")
         return False
+    
+    def set_playback_service(self, playback_service) -> None:
+        """
+        Set reference to the playback service for learning mode note tracking.
+        
+        Args:
+            playback_service: PlaybackService instance to track played notes during learning mode
+        """
+        self._playback_service = playback_service
+        logger.debug("Playback service reference registered for learning mode")
     
     def update_led_controller(self, led_controller) -> None:
         """Update the LED controller reference and propagate to services."""
@@ -546,6 +559,17 @@ class MIDIInputManager:
                 }
                 # Also update the public set
                 self.active_notes.add((event.channel, event.note))
+                
+                # Track note in playback service for learning mode
+                if self._playback_service and hasattr(self._playback_service, 'record_midi_note_played'):
+                    try:
+                        # Determine hand based on note range (simple heuristic)
+                        hand = 'left' if event.note < 60 else 'right'  # Middle C = 60
+                        self._playback_service.record_midi_note_played(event.note, hand)
+                        logger.debug(f"Learning mode: Recorded {hand} hand note {event.note}")
+                    except Exception as e:
+                        logger.debug(f"Error recording MIDI note for learning mode: {e}")
+                        
             elif event.event_type == 'note_off' or (event.event_type == 'note_on' and event.velocity == 0):
                 if event.note in self._active_notes:
                     del self._active_notes[event.note]
