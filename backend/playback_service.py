@@ -855,22 +855,30 @@ class PlaybackService:
         
         Stores note with PLAYBACK timestamp (not wall clock time!) in a queue.
         Uses playback time to match against expected notes in the MIDI file.
-        Older notes are cleaned up automatically.
         
         Args:
             note: MIDI note number (0-127)
             hand: 'left' or 'right'
         """
+        # Only record if learning mode is enabled
+        if not self._learning_mode_enabled:
+            logger.debug(f"Ignoring note {note} - learning mode not enabled")
+            return
+        
         # CRITICAL: Use playback time, NOT wall clock time!
         # This must match self._current_time used in _check_learning_mode_pause()
         playback_time = self._current_time
         
+        logger.info(f"🎵 RECORDING NOTE: {note} ({hand} hand) at playback time {playback_time:.3f}s (enabled={self._learning_mode_enabled})")
+        
         if hand == 'left':
             self._left_hand_notes_queue.append((note, playback_time))
-            logger.info(f"Learning mode: Left hand played note {note} at playback time {playback_time:.2f}s, queue size: {len(self._left_hand_notes_queue)}")
+            logger.info(f"   └─ Left queue now has {len(self._left_hand_notes_queue)} notes: {[(n, f'{t:.2f}s') for n, t in list(self._left_hand_notes_queue)[-3:]]}")
         elif hand == 'right':
             self._right_hand_notes_queue.append((note, playback_time))
-            logger.info(f"Learning mode: Right hand played note {note} at playback time {playback_time:.2f}s, queue size: {len(self._right_hand_notes_queue)}")
+            logger.info(f"   └─ Right queue now has {len(self._right_hand_notes_queue)} notes: {[(n, f'{t:.2f}s') for n, t in list(self._right_hand_notes_queue)[-3:]]}")
+        else:
+            logger.warning(f"Unknown hand: {hand}")
     
     def _check_learning_mode_pause(self) -> bool:
         """
@@ -935,21 +943,22 @@ class PlaybackService:
             if acceptance_start <= timestamp <= acceptance_end:
                 played_right_notes.add(note)
         
+        # Debug: Show current state every ~500ms (not every frame!)
+        if int(self._current_time * 2) != int((self._current_time - 0.01) * 2):  # Every ~500ms
+            logger.info(f"📊 Learning mode check at {self._current_time:.2f}s:"
+                       f" Expected L:{sorted(expected_left_notes)} R:{sorted(expected_right_notes)} |"
+                       f" Played L:{sorted(played_left_notes)} R:{sorted(played_right_notes)} |"
+                       f" L.queue:{len(self._left_hand_notes_queue)} R.queue:{len(self._right_hand_notes_queue)}")
+        
         # Check if all expected notes have been played
         left_satisfied = True
         right_satisfied = True
         
         if self._left_hand_wait_for_notes and expected_left_notes:
             left_satisfied = expected_left_notes.issubset(played_left_notes)
-            if not left_satisfied:
-                logger.info(f"Learning mode: Waiting for left hand at {self._current_time:.2f}s. "
-                           f"Expected: {sorted(expected_left_notes)}, Played: {sorted(played_left_notes)}")
         
         if self._right_hand_wait_for_notes and expected_right_notes:
             right_satisfied = expected_right_notes.issubset(played_right_notes)
-            if not right_satisfied:
-                logger.info(f"Learning mode: Waiting for right hand at {self._current_time:.2f}s. "
-                           f"Expected: {sorted(expected_right_notes)}, Played: {sorted(played_right_notes)}")
         
         # Detect wrong notes and provide feedback
         wrong_left_notes = played_left_notes - expected_left_notes
@@ -957,8 +966,7 @@ class PlaybackService:
         
         if wrong_left_notes or wrong_right_notes:
             all_wrong = wrong_left_notes | wrong_right_notes
-            logger.info(f"Learning mode: Wrong notes played: {sorted(all_wrong)}")
-            # Light up wrong notes in red
+            logger.warning(f"❌ Wrong notes played: {sorted(all_wrong)}")
             self._highlight_wrong_notes(all_wrong)
         
         # Check if all required notes are satisfied
@@ -966,10 +974,6 @@ class PlaybackService:
         
         # Debug logging for progress
         has_expected_notes = expected_left_notes or expected_right_notes
-        logger.debug(f"Learning mode check at {self._current_time:.2f}s: "
-                    f"Expected L:{sorted(expected_left_notes)} R:{sorted(expected_right_notes)}, "
-                    f"Played L:{sorted(played_left_notes)} R:{sorted(played_right_notes)}, "
-                    f"Satisfied: {all_satisfied}")
         
         # If all required notes are satisfied: clear them and proceed
         if all_satisfied and has_expected_notes:
