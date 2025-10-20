@@ -1017,11 +1017,17 @@ from backend.api.hardware_test import hardware_test_bp
 from backend.api.calibration import calibration_bp
 from backend.api.calibration_weld_offsets import weld_bp
 from backend.api.calibration_soldering_joints import joint_bp
+from backend.api.learning import learning_bp
 app.register_blueprint(settings_bp, url_prefix='/api/settings')
 app.register_blueprint(hardware_test_bp)
 app.register_blueprint(calibration_bp, url_prefix='/api/calibration')
 app.register_blueprint(weld_bp)
 app.register_blueprint(joint_bp)
+app.register_blueprint(learning_bp, url_prefix='/api')
+
+# Initialize learning blueprint with settings service
+from backend.api.learning import set_settings_service as set_learning_settings_service
+set_learning_settings_service(settings_service)
 
 # Register LED selection blueprint
 from backend.api.led_selection import led_selection_bp

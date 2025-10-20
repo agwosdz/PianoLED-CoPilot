@@ -254,6 +254,14 @@ class SettingsService:
                 'last_used_device': {'type': 'string', 'default': ''},
                 'navigation_collapsed': {'type': 'boolean', 'default': False}
             },
+            'learning_mode': {
+                'wait_for_notes_enabled': {'type': 'boolean', 'default': False, 'description': 'Enable pause-for-notes learning mode'},
+                'timing_window_ms': {'type': 'number', 'default': 500, 'min': 100, 'max': 2000, 'description': 'Timing tolerance for note matching in milliseconds'},
+                'left_hand_white': {'type': 'string', 'default': '#ff6b6b', 'description': 'Color for left hand white keys (hex format)'},
+                'left_hand_black': {'type': 'string', 'default': '#ff9999', 'description': 'Color for left hand black keys (hex format)'},
+                'right_hand_white': {'type': 'string', 'default': '#4dabf7', 'description': 'Color for right hand white keys (hex format)'},
+                'right_hand_black': {'type': 'string', 'default': '#74c0fc', 'description': 'Color for right hand black keys (hex format)'}
+            },
             'upload': {
                 'auto_upload': {'type': 'boolean', 'default': False},
                 'remember_last_directory': {'type': 'boolean', 'default': True},

@@ -48,8 +48,8 @@
 	let leftHandWhiteColor = '#ff6b6b'; // Coral-red
 	let leftHandBlackColor = '#c92a2a'; // Deep rose
 	let rightHandWaitForNotes = false;
-	let rightHandWhiteColor = '#006496'; // Deep teal/cyan
-	let rightHandBlackColor = '#960064'; // Deep magenta/purple
+	let rightHandWhiteColor = '#006496'; // Blue (0,100,150)
+	let rightHandBlackColor = '#960064'; // Magenta (150,0,100)
 	let timingWindow = 500;
 	let learningOptionsError = '';
 	let isSavingLearningOptions = false;
@@ -495,7 +495,7 @@
 				<div class="hand-section">
 					<div class="hand-header">
 						<h4 class="hand-title">🎹 Left Hand</h4>
-						<span class="hand-label amber">Golden Amber</span>
+						<span class="hand-label coral">Coral & Rose</span>
 					</div>
 
 					<!-- Left Hand: Wait for Notes -->
@@ -516,36 +516,28 @@
 					</div>
 
 					<!-- Left Hand Colors -->
-					<div class="color-pair-section">
-						<div class="field">
-							<label for="left-white" class="field-label">White Keys</label>
-							<div class="color-input-wrapper">
-								<input 
-									type="color" 
-									id="left-white" 
-									bind:value={leftHandWhiteColor}
-									on:change={saveLearningOptions}
-									class="color-selector"
-									title="Color for left hand white keys"
-								/>
-								<div class="color-swatch" style="background-color: {leftHandWhiteColor};"></div>
-								<span class="color-hex">{leftHandWhiteColor}</span>
-							</div>
+					<div class="color-pickers-row">
+						<div class="color-picker-group">
+							<label for="left-white">White:</label>
+							<input 
+								type="color" 
+								id="left-white" 
+								bind:value={leftHandWhiteColor}
+								on:change={saveLearningOptions}
+								class="color-input-compact"
+								title="Color for left hand white keys"
+							/>
 						</div>
-						<div class="field">
-							<label for="left-black" class="field-label">Black Keys</label>
-							<div class="color-input-wrapper">
-								<input 
-									type="color" 
-									id="left-black" 
-									bind:value={leftHandBlackColor}
-									on:change={saveLearningOptions}
-									class="color-selector"
-									title="Color for left hand black keys"
-								/>
-								<div class="color-swatch" style="background-color: {leftHandBlackColor};"></div>
-								<span class="color-hex">{leftHandBlackColor}</span>
-							</div>
+						<div class="color-picker-group">
+							<label for="left-black">Black:</label>
+							<input 
+								type="color" 
+								id="left-black" 
+								bind:value={leftHandBlackColor}
+								on:change={saveLearningOptions}
+								class="color-input-compact"
+								title="Color for left hand black keys"
+							/>
 						</div>
 					</div>
 				</div>
@@ -577,36 +569,28 @@
 					</div>
 
 					<!-- Right Hand Colors -->
-					<div class="color-pair-section">
-						<div class="field">
-							<label for="right-white" class="field-label">White Keys</label>
-							<div class="color-input-wrapper">
-								<input 
-									type="color" 
-									id="right-white" 
-									bind:value={rightHandWhiteColor}
-									on:change={saveLearningOptions}
-									class="color-selector"
-									title="Color for right hand white keys"
-								/>
-								<div class="color-swatch" style="background-color: {rightHandWhiteColor};"></div>
-								<span class="color-hex">{rightHandWhiteColor}</span>
-							</div>
+					<div class="color-pickers-row">
+						<div class="color-picker-group">
+							<label for="right-white">White:</label>
+							<input 
+								type="color" 
+								id="right-white" 
+								bind:value={rightHandWhiteColor}
+								on:change={saveLearningOptions}
+								class="color-input-compact"
+								title="Color for right hand white keys"
+							/>
 						</div>
-						<div class="field">
-							<label for="right-black" class="field-label">Black Keys</label>
-							<div class="color-input-wrapper">
-								<input 
-									type="color" 
-									id="right-black" 
-									bind:value={rightHandBlackColor}
-									on:change={saveLearningOptions}
-									class="color-selector"
-									title="Color for right hand black keys"
-								/>
-								<div class="color-swatch" style="background-color: {rightHandBlackColor};"></div>
-								<span class="color-hex">{rightHandBlackColor}</span>
-							</div>
+						<div class="color-picker-group">
+							<label for="right-black">Black:</label>
+							<input 
+								type="color" 
+								id="right-black" 
+								bind:value={rightHandBlackColor}
+								on:change={saveLearningOptions}
+								class="color-input-compact"
+								title="Color for right hand black keys"
+							/>
 						</div>
 					</div>
 				</div>
@@ -1287,6 +1271,33 @@
 		font-size: 0.85rem;
 		color: #64748b;
 		font-weight: normal;
+	}
+
+	.color-pickers-row {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+	}
+
+	.color-picker-group {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.color-picker-group label {
+		font-weight: 500;
+		color: #1f2937;
+		font-size: 0.9rem;
+		white-space: nowrap;
+	}
+
+	.color-input-compact {
+		width: 2.5rem;
+		height: 2.5rem;
+		border: 1px solid #cbd5e1;
+		border-radius: 6px;
+		cursor: pointer;
 	}
 
 	.color-pair-section {
