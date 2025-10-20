@@ -336,7 +336,7 @@ class USBMIDIInputService:
         return False
 
     def _processing_loop(self) -> None:
-        logger.debug("USB MIDI processing loop started (processor_id=%s)", id(self._event_processor))
+        logger.debug("USB MIDI processing loop started (processor_id=%s, callback=%s)", id(self._event_processor), "set" if self._playback_status_callback else "NOT SET")
         while not self._stop_event.is_set():
             drained = self._port_manager.drain()
             if not drained:
@@ -347,31 +347,37 @@ class USBMIDIInputService:
             
             # Check if MIDI file playback is active - if so, ignore LED updates from USB keyboard
             playback_active = False
+            callback_status = "NOT_SET"
             if self._playback_status_callback:
                 try:
                     playback_active = self._playback_status_callback()
+                    callback_status = "ACTIVE" if playback_active else "INACTIVE"
                 except Exception as e:
                     logger.debug(f"Error checking playback status: {e}")
+                    callback_status = "ERROR"
             
             for msg, msg_timestamp in drained:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        "USB MIDI raw message | type=%s note=%s velocity=%s channel=%s time=%s",
+                        "USB MIDI raw message | type=%s note=%s velocity=%s channel=%s time=%s | callback=%s",
                         getattr(msg, 'type', None),
                         getattr(msg, 'note', None),
                         getattr(msg, 'velocity', None),
                         getattr(msg, 'channel', None),
                         msg_timestamp,
+                        callback_status,
                     )
                 
                 # Skip LED updates when playback is active - only process MIDI events for communication
                 if playback_active:
-                    logger.debug("USB MIDI: Playback active - skipping LED update for MIDI from keyboard")
+                    logger.info("USB MIDI: Playback active (%s) - skipping LED update for MIDI from keyboard", callback_status)
                     # Still process the message to track active notes, but don't update LEDs
                     # We'll create a flag in the event processor to disable LED updates
                     processed_events = self._event_processor.handle_message(msg, msg_timestamp, update_leds=False)
                 else:
                     # Normal operation - update LEDs on keyboard input
+                    if callback_status == "NOT_SET":
+                        logger.debug("USB MIDI: No callback set - updating LEDs normally (default behavior)")
                     processed_events = self._event_processor.handle_message(msg, msg_timestamp)
                 
                 for event in processed_events:

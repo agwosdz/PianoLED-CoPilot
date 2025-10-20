@@ -348,6 +348,10 @@ class MidiEventProcessor:
                 logger.debug("LED show failed: %s", error)
         elif not update_leds:
             logger.debug("Skipping LED update for note %d (playback active)", note)
+        elif not self._led_controller:
+            logger.debug("Cannot update LED for note %d - LED controller is None", note)
+        else:
+            logger.debug("LED update conditions not met for note %d (update_leds=%s, has_controller=%s)", note, update_leds, self._led_controller is not None)
 
         self._active_notes[note] = {
             'velocity': velocity,
@@ -386,6 +390,10 @@ class MidiEventProcessor:
                 logger.debug("LED show failed: %s", error)
         elif not update_leds and led_indices:
             logger.debug("Skipping LED update for note %d (playback active)", note)
+        elif not self._led_controller:
+            logger.debug("Cannot update LED for note %d - LED controller is None", note)
+        else:
+            logger.debug("LED update conditions not met for note %d (update_leds=%s, has_indices=%s, has_controller=%s)", note, update_leds, bool(led_indices), self._led_controller is not None)
 
         if not led_indices:
             led_indices = self._map_note_to_leds(note)
