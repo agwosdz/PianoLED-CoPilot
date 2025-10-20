@@ -885,6 +885,7 @@ class PlaybackService:
         
         Uses timestamped note queues to filter notes within the current timing window.
         Only counts notes that were played within the expected time range.
+        Visualizes expected notes on LEDs during pause.
         
         Returns:
             bool: True if should pause, False if should continue
@@ -953,12 +954,16 @@ class PlaybackService:
         if wrong_left_notes or wrong_right_notes:
             all_wrong = wrong_left_notes | wrong_right_notes
             logger.info(f"Learning mode: Wrong notes played: {sorted(all_wrong)}")
-            # TODO: Light up wrong notes in red via LED controller
+            # Light up wrong notes in red
+            self._highlight_wrong_notes(all_wrong)
         
         # Pause if not satisfied
         should_pause = not (left_satisfied and right_satisfied)
         
+        # Visualize expected notes on LEDs when pausing
         if should_pause and (expected_left_notes or expected_right_notes):
+            self._highlight_expected_notes(expected_left_notes, expected_right_notes, 
+                                          played_left_notes, played_right_notes)
             logger.debug(f"Learning mode pausing at {self._current_time:.2f}s")
         
         return should_pause
@@ -1008,6 +1013,103 @@ class PlaybackService:
             self._left_hand_notes_played.add(note)
         elif hand == 'right':
             self._right_hand_notes_played.add(note)
+    
+    def _highlight_expected_notes(self, expected_left: set, expected_right: set, 
+                                  played_left: set, played_right: set) -> None:
+        """
+        Highlight expected notes on LEDs to show user which notes to play.
+        
+        Unsatisfied expected notes are shown in yellow/green (per-hand colors with reduced brightness).
+        Already-played notes are shown in bright color (indicating success).
+        
+        Args:
+            expected_left: Set of expected MIDI notes for left hand
+            expected_right: Set of expected MIDI notes for right hand
+            played_left: Set of notes already played by left hand
+            played_right: Set of notes already played by right hand
+        """
+        if not self._led_controller:
+            return
+        
+        try:
+            led_data = {}
+            
+            # Load hand colors from settings (for consistency with UI)
+            try:
+                left_white_hex = self._settings_service.get_setting('learning', 'left_hand_white_color') or '#ff6b6b'
+                right_white_hex = self._settings_service.get_setting('learning', 'right_hand_white_color') or '#006496'
+            except:
+                # Fallback to default colors if settings unavailable
+                left_white_hex = '#ff6b6b'
+                right_white_hex = '#006496'
+            
+            # Convert hex to RGB
+            def hex_to_rgb(hex_color):
+                hex_color = hex_color.lstrip('#')
+                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            
+            left_color_bright = hex_to_rgb(left_white_hex)
+            right_color_bright = hex_to_rgb(right_white_hex)
+            
+            # Reduce brightness for unsatisfied notes (50% opacity)
+            left_color_dim = tuple(int(c * 0.5) for c in left_color_bright)
+            right_color_dim = tuple(int(c * 0.5) for c in right_color_bright)
+            
+            # Highlight expected left hand notes
+            for note in expected_left:
+                led_indices = self._map_note_to_leds(note)
+                # Bright color if played, dim if not
+                color = left_color_bright if note in played_left else left_color_dim
+                for led_index in led_indices:
+                    if 0 <= led_index < self.num_leds:
+                        led_data[led_index] = color
+            
+            # Highlight expected right hand notes
+            for note in expected_right:
+                led_indices = self._map_note_to_leds(note)
+                # Bright color if played, dim if not
+                color = right_color_bright if note in played_right else right_color_dim
+                for led_index in led_indices:
+                    if 0 <= led_index < self.num_leds:
+                        led_data[led_index] = color
+            
+            # Turn off all LEDs first, then set learning mode highlights
+            self._led_controller.turn_off_all()
+            
+            if led_data:
+                self._led_controller.set_multiple_leds(led_data, auto_show=True)
+                logger.debug(f"Learning mode: Highlighted {len(led_data)} LEDs for expected notes")
+        
+        except Exception as e:
+            logger.error(f"Error highlighting expected notes: {e}")
+    
+    def _highlight_wrong_notes(self, wrong_notes: set) -> None:
+        """
+        Highlight wrong notes in red to provide immediate feedback.
+        
+        Args:
+            wrong_notes: Set of MIDI notes that were played incorrectly
+        """
+        if not self._led_controller or not wrong_notes:
+            return
+        
+        try:
+            led_data = {}
+            red_color = (255, 0, 0)  # Bright red
+            
+            # Light up wrong notes in red
+            for note in wrong_notes:
+                led_indices = self._map_note_to_leds(note)
+                for led_index in led_indices:
+                    if 0 <= led_index < self.num_leds:
+                        led_data[led_index] = red_color
+            
+            if led_data:
+                self._led_controller.set_multiple_leds(led_data, auto_show=True)
+                logger.info(f"Learning mode: Highlighted {len(led_data)} LEDs in red for wrong notes")
+        
+        except Exception as e:
+            logger.error(f"Error highlighting wrong notes: {e}")
     
     def _update_leds(self):
         """Update LED display based on active notes"""
