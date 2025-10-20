@@ -102,7 +102,17 @@ def get_midi_notes():
 def get_playback_status():
     """Get current playback status."""
     try:
-        playback_service = current_app.playback_service
+        playback_service = current_app.config.get('playback_service')
+        
+        if not playback_service:
+            return jsonify({
+                'state': 'idle',
+                'current_time': 0,
+                'total_duration': 0,
+                'filename': None,
+                'progress_percentage': 0,
+                'error_message': 'Playback service not available'
+            }), 500
         
         return jsonify({
             'state': playback_service.state,
@@ -152,7 +162,11 @@ def play():
 def pause():
     """Pause playback."""
     try:
-        playback_service = current_app.playback_service
+        playback_service = current_app.config.get('playback_service')
+        
+        if not playback_service:
+            return jsonify({'error': 'Playback service not available'}), 500
+        
         playback_service.pause()
         return jsonify({'success': True})
     except Exception as e:
@@ -164,7 +178,11 @@ def pause():
 def stop():
     """Stop playback."""
     try:
-        playback_service = current_app.playback_service
+        playback_service = current_app.config.get('playback_service')
+        
+        if not playback_service:
+            return jsonify({'error': 'Playback service not available'}), 500
+        
         playback_service.stop()
         return jsonify({'success': True})
     except Exception as e:

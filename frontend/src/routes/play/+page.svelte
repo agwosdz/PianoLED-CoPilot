@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import MIDICanvasRenderer from '$lib/components/MIDICanvasRenderer.svelte';
 
 	interface PlaybackStatus {
 		state: string;
@@ -40,12 +41,15 @@
 	let totalDuration = 0;
 	let isLoadingFiles = false;
 	let filesError = '';
+	let useCanvasRenderer = false; // Toggle between DOM and Canvas rendering
+	let pianoWidth = 0; // Track piano container width for pixel calculations
 
 	// Piano constants
 	const MIN_MIDI_NOTE = 21; // A0
 	const MAX_MIDI_NOTE = 108; // C8
 	const TOTAL_WHITE_KEYS = 52; // 88-key piano has 52 white keys
 	const TOTAL_BLACK_KEYS = 36; // 88-key piano has 36 black keys
+	const LOOK_AHEAD_TIME = 4; // Show notes 4 seconds before they play (look-ahead window)
 
 	// Get color for a MIDI note based on its pitch
 	function getNoteColor(note: number): string {
@@ -71,6 +75,20 @@
 	function isWhiteKey(note: number): boolean {
 		const noteInOctave = note % 12;
 		return [0, 2, 4, 5, 7, 9, 11].includes(noteInOctave);
+	}
+
+	// Calculate vertical offset percentage for a note's key position
+	function calculateKeyOffset(note: number): number {
+		let yOffset = 0;
+		// Go through all notes from highest to lowest (top to bottom)
+		for (let i = MAX_MIDI_NOTE; i > note; i--) {
+			if (isWhiteKey(i)) {
+				yOffset += (100 / 52); // White key height
+			} else {
+				yOffset += (60 / 52); // Black key height
+			}
+		}
+		return yOffset;
 	}
 
 	// Calculate white key index for a MIDI note
@@ -114,6 +132,33 @@
 		}
 	}
 
+	// Calculate pixel-based dimensions for proper piano rendering
+	function getKeyDimensions(containerWidth: number, note: number) {
+		const WHITE_KEY_WIDTH = containerWidth / TOTAL_WHITE_KEYS;
+		const BLACK_KEY_WIDTH = WHITE_KEY_WIDTH * 0.65;
+		const BLACK_KEY_HEIGHT = 160 * 0.6; // 60% of container height
+		const WHITE_KEY_HEIGHT = 160;
+
+		if (isWhiteKey(note)) {
+			const whiteKeyIndex = getWhiteKeyIndex(note);
+			return {
+				x: whiteKeyIndex * WHITE_KEY_WIDTH,
+				y: 0,
+				w: WHITE_KEY_WIDTH,
+				h: WHITE_KEY_HEIGHT
+			};
+		} else {
+			// Black keys positioned between white keys with slight offset for overlap
+			const whiteKeyIndex = getWhiteKeyIndex(note) + 1;
+			return {
+				x: whiteKeyIndex * WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2,
+				y: 0,
+				w: BLACK_KEY_WIDTH,
+				h: BLACK_KEY_HEIGHT
+			};
+		}
+	}
+
 	async function loadUploadedFiles() {
 		try {
 			isLoadingFiles = true;
@@ -149,8 +194,11 @@
 			if (response.ok) {
 				const data = await response.json();
 				notes = data.notes || [];
-				console.log(`Loaded ${notes.length} MIDI notes from ${selectedFile}`);
-				console.log('Notes:', notes.slice(0, 5)); // Log first 5 notes for debugging
+				console.log(`✓ Loaded ${notes.length} MIDI notes from ${selectedFile}`);
+				if (notes.length > 0) {
+					console.log(`  First note: MIDI ${notes[0].note} at ${notes[0].startTime}s`);
+					console.log(`  Last note: MIDI ${notes[notes.length - 1].note} at ${notes[notes.length - 1].startTime}s`);
+				}
 			} else {
 				console.error('Failed to load MIDI notes:', response.status);
 				notes = [];
@@ -186,6 +234,19 @@
 		if (!selectedFile) return;
 
 		try {
+			// If we're not currently playing, stop any other file first
+			if (!isPlaying) {
+				console.log(`▶ Playing: ${selectedFile}`);
+				// Stop any other playback first (to ensure only one file plays)
+				try {
+					await fetch('/api/stop', { method: 'POST' });
+				} catch (e) {
+					// Ignore errors when stopping (nothing might be playing)
+				}
+			} else {
+				console.log(`⏸ Pausing`);
+			}
+
 			const method = isPlaying ? 'pause' : 'play';
 			const response = await fetch(`/api/${method}`, {
 				method: 'POST',
@@ -195,6 +256,8 @@
 
 			if (response.ok) {
 				await fetchPlaybackStatus();
+			} else {
+				console.error(`Failed to ${method}: ${response.status}`);
 			}
 		} catch (error) {
 			console.error('Failed to control playback:', error);
@@ -215,22 +278,17 @@
 	}
 
 	async function handleSelectFile(filePath: string) {
+		// Stop any currently playing file first
+		try {
+			await fetch('/api/stop', { method: 'POST' });
+		} catch (error) {
+			console.warn('Failed to stop previous playback:', error);
+		}
+
+		// Select file and load notes, but DON'T auto-play
 		selectedFile = filePath;
 		await loadMIDINotes();
-
-		try {
-			const response = await fetch('/api/play', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ filename: filePath })
-			});
-
-			if (response.ok) {
-				await fetchPlaybackStatus();
-			}
-		} catch (error) {
-			console.error('Failed to play file:', error);
-		}
+		console.log(`✓ Selected ${filePath} - click Play to start`);
 	}
 
 	function formatTime(seconds: number): string {
@@ -249,7 +307,22 @@
 
 	onMount(() => {
 		loadUploadedFiles();
-		const statusInterval = setInterval(fetchPlaybackStatus, 100);
+		let lastLoggedTime = 0;
+		const statusInterval = setInterval(async () => {
+			await fetchPlaybackStatus();
+			// Debug: Log current sync status
+			if (isPlaying && notes.length > 0) {
+				if (currentTime - lastLoggedTime >= 0.5 || lastLoggedTime === 0) {
+					const visibleNotes = notes.filter(n => {
+						const timeUntilNote = n.startTime - currentTime;
+						const timeUntilNoteEnd = (n.startTime + n.duration) - currentTime;
+						return timeUntilNote < LOOK_AHEAD_TIME && timeUntilNoteEnd > -0.5;
+					});
+					console.log(`[${currentTime.toFixed(2)}s] Visible: ${visibleNotes.length}/${notes.length} notes`);
+					lastLoggedTime = currentTime;
+				}
+			}
+		}, 100);
 		const filesInterval = setInterval(loadUploadedFiles, 5000);
 
 		return () => {
@@ -329,45 +402,75 @@
 
 		<!-- Visualization -->
 		<div class="visualization-section">
-			<!-- Timeline -->
-			<div class="timeline-container">
-				<div class="timeline-background">
-					{#each Array.from({ length: Math.ceil(totalDuration) + 1 }) as _, i}
-						<div
-							class="timeline-grid-line"
-							style="left: {totalDuration > 0 ? (i / totalDuration) * 100 : 0}%"
-						></div>
-					{/each}
+			<!-- Debug info -->
+			{#if notes.length > 0}
+				{@const visibleNotes = notes.filter(n => {
+					const timeUntilNote = n.startTime - currentTime;
+					const timeUntilNoteEnd = (n.startTime + n.duration) - currentTime;
+					return timeUntilNote < LOOK_AHEAD_TIME && timeUntilNoteEnd > -0.5;
+				})}
+				{@const firstNote = notes[0]}
+				{@const lastNote = notes[notes.length - 1]}
+				{@const firstVisible = visibleNotes[0]}
+				{@const firstTimeUntil = firstVisible ? (firstVisible.startTime - currentTime) : 0}
+				{@const firstTopPercent = firstVisible ? ((LOOK_AHEAD_TIME - firstTimeUntil) / LOOK_AHEAD_TIME) * 100 : 0}
+				<div style="font-size: 0.75rem; color: #333; padding: 0.75rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin-bottom: 0.5rem; font-family: monospace;">
+					<div>Time: {currentTime.toFixed(2)}s / {totalDuration.toFixed(2)}s | Playing: {isPlaying}</div>
+					<div>Notes: Loaded={notes.length} | Visible={visibleNotes.length} | Lookahead={LOOK_AHEAD_TIME}s</div>
+					{#if firstNote}
+						<div>First note: MIDI {firstNote.note} at {firstNote.startTime.toFixed(2)}s</div>
+					{/if}
+					{#if lastNote}
+						<div>Last note: MIDI {lastNote.note} at {lastNote.startTime.toFixed(2)}s</div>
+					{/if}
+					{#if firstVisible}
+						<div>First visible: MIDI {firstVisible.note} | timeUntil={firstTimeUntil.toFixed(2)}s | topPercent={firstTopPercent.toFixed(1)}% | Should be at {firstVisible.note < 54 ? 'LEFT (orange)' : 'RIGHT (yellow)'}</div>
+					{/if}
+				</div>
+			{/if}
 
-					<!-- Current Position -->
-					<div
-						class="current-position"
-						style="left: {totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0}%"
-					></div>
-
-					<!-- Notes -->
+			<!-- Falling Notes Visualization -->
+			<div class="falling-notes-container">
+				<!-- Notes falling from top to bottom -->
+				<div class="notes-area">
 					{#each notes as note, index (index)}
-						{@const startPercent = totalDuration > 0 ? (note.startTime / totalDuration) * 100 : 0}
-						{@const widthPercent = totalDuration > 0 ? Math.max((note.duration / totalDuration) * 100, 1) : 1}
-						{@const noteColor = getNoteColor(note.note)}
-						<div
-							class="note-bar"
-							style="
-								left: {startPercent}%;
-								width: {widthPercent}%;
-								background-color: {noteColor};
-								opacity: {0.5 + (note.velocity / 127) * 0.5};
-							"
-							title="Note {note.note}: {note.startTime.toFixed(2)}s - {(note.startTime + note.duration).toFixed(2)}s"
-						></div>
+						{@const timeUntilNote = note.startTime - currentTime}
+						{@const timeUntilNoteEnd = (note.startTime + note.duration) - currentTime}
+						<!-- Show notes that are upcoming or currently visible (from look-ahead to slightly past keyboard) -->
+						{#if timeUntilNote < LOOK_AHEAD_TIME && timeUntilNoteEnd > -0.5}
+							{@const xPercent = getNoteXPercent(note.note)}
+							{@const noteWidth = getNoteWidthPercent(note.note)}
+							{@const isLeftHand = note.note < 54}
+							{@const barColor = isLeftHand ? '#FFA500' : '#FFD700'}
+							{@const isCurrentlyPlaying = note.startTime <= currentTime && note.startTime + note.duration > currentTime}
+							{@const isPast = note.startTime + note.duration <= currentTime}
+							
+							<!-- Position: top of screen = far future, bottom = piano keys (now) -->
+							<!-- When timeUntilNote is positive and large (far future) -> top (0%) -->
+							<!-- When timeUntilNote approaches 0 (note about to play) -> bottom (100%) -->
+							{@const noteTopPercent = Math.max(0, (LOOK_AHEAD_TIME - timeUntilNote) / LOOK_AHEAD_TIME * 100)}
+							{@const finalColor = isCurrentlyPlaying ? '#00a8ff' : (isPast ? '#666666' : barColor)}
+							
+							<div
+								class="falling-note-bar"
+								style="
+									left: {xPercent}%;
+									width: {noteWidth}%;
+									top: {Math.min(100, Math.max(-10, noteTopPercent))}%;
+									background-color: {finalColor};
+									opacity: {isCurrentlyPlaying ? 1.0 : (isPast ? 0.3 : 0.8)};
+									height: 40px;
+									border-color: {finalColor};
+								"
+								title="Note {note.note}: {note.startTime.toFixed(2)}s - {(note.startTime + note.duration).toFixed(2)}s"
+							></div>
+						{/if}
 					{/each}
 				</div>
-			</div>
 
-			<!-- Piano Keyboard -->
-			<div class="piano-container">
-				<div class="piano-keyboard">
-					<!-- White Keys -->
+				<!-- Piano Keyboard at the bottom -->
+				<div class="piano-keyboard-bottom" bind:clientWidth={pianoWidth}>
+					<!-- White Keys First (background layer) -->
 					{#each Array.from({ length: 88 }) as _, i}
 						{@const note = MIN_MIDI_NOTE + i}
 						{@const whiteKey = isWhiteKey(note)}
@@ -377,44 +480,56 @@
 								n.startTime <= currentTime &&
 								n.startTime + n.duration >= currentTime
 						)}
-
 						{#if whiteKey}
+							{@const dims = getKeyDimensions(pianoWidth, note)}
 							<div
-								class="key white-key"
+								class="key-bottom white-key"
 								class:active={isActive}
 								style="
-									left: {getNoteXPercent(note)}%;
-									width: {getNoteWidthPercent(note)}%;
-									background-color: {isActive ? getNoteColor(note) : '#f5f5f5'};
+									left: {dims.x}px;
+									width: {dims.w}px;
+									height: {dims.h}px;
+									background-color: {isActive ? '#00a8ff' : '#f5f5f5'};
 								"
+								title="Note {note}"
 							></div>
 						{/if}
 					{/each}
 
-					<!-- Black Keys (layered on top) -->
+					<!-- Black Keys Second (foreground layer) -->
 					{#each Array.from({ length: 88 }) as _, i}
 						{@const note = MIN_MIDI_NOTE + i}
-						{@const blackKey = !isWhiteKey(note)}
+						{@const whiteKey = isWhiteKey(note)}
 						{@const isActive = notes.some(
 							(n) =>
 								n.note === note &&
 								n.startTime <= currentTime &&
 								n.startTime + n.duration >= currentTime
 						)}
-
-						{#if blackKey}
+						{#if !whiteKey}
+							{@const dims = getKeyDimensions(pianoWidth, note)}
 							<div
-								class="key black-key"
+								class="key-bottom black-key"
 								class:active={isActive}
 								style="
-									left: {getNoteXPercent(note)}%;
-									width: {getNoteWidthPercent(note)}%;
-									background-color: {isActive ? getNoteColor(note) : '#1a1a1a'};
+									left: {dims.x}px;
+									width: {dims.w}px;
+									height: {dims.h}px;
+									top: 0;
+									background-color: {isActive ? '#00a8ff' : '#1a1a1a'};
 								"
+								title="Note {note}"
 							></div>
 						{/if}
 					{/each}
 				</div>
+			</div>
+
+			<!-- Time Display -->
+			<div class="time-display-large">
+				<span>{formatTime(currentTime)}</span>
+				<span>/</span>
+				<span>{formatTime(totalDuration)}</span>
 			</div>
 		</div>
 	</div>
@@ -504,6 +619,7 @@
 		word-break: break-word;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 	}
 
@@ -613,122 +729,109 @@
 	.visualization-section {
 		display: flex;
 		flex-direction: column;
-		gap: 0;
+		gap: 1rem;
 	}
 
-	/* Timeline Container */
-	.timeline-container {
-		background: #1f2937;
-		border: 1px solid #e2e8f0;
-		border-radius: 12px 12px 0 0;
-		height: 120px;
-		overflow-x: auto;
-		overflow-y: hidden;
+	/* Falling Notes Container */
+	.falling-notes-container {
+		display: flex;
+		flex-direction: column;
+		background: #0f0f0f;
+		border: 2px solid #d1d5db;
+		border-radius: 12px;
+		height: 600px;
+		overflow: hidden;
 		position: relative;
 	}
 
-	.timeline-background {
+	/* Notes falling area (takes most of the space) */
+	.notes-area {
+		flex: 1;
 		position: relative;
-		height: 100%;
-		min-width: 100%;
-		background: linear-gradient(to bottom, #374151, #1f2937);
+		background: linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.1) 100%);
+		overflow: hidden;
 	}
 
-	.timeline-grid-line {
+	/* Falling note bars - travel from top to bottom */
+	.falling-note-bar {
 		position: absolute;
-		top: 0;
-		height: 100%;
-		width: 1px;
-		background: rgba(255, 255, 255, 0.1);
+		border: 2px solid;
+		border-radius: 4px;
+		transition: top 0.05s linear, background-color 0.2s ease;
+		box-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
 	}
 
-	.current-position {
-		position: absolute;
-		top: 0;
-		height: 100%;
-		width: 2px;
-		background: #2563eb;
-		box-shadow: 0 0 8px rgba(37, 99, 235, 0.6);
-		z-index: 10;
+	.falling-note-bar:hover {
+		filter: brightness(1.3);
+		box-shadow: 0 0 16px rgba(0, 0, 0, 0.6);
 	}
 
-	.note-bar {
-		position: absolute;
-		height: 100%;
-		top: 0;
-		min-width: 2px;
-		border-left: 1px solid rgba(0, 0, 0, 0.2);
-		border-right: 1px solid rgba(0, 0, 0, 0.2);
-		transition: opacity 0.1s ease;
-		cursor: pointer;
-	}
-
-	.note-bar:hover {
-		opacity: 1 !important;
-		filter: brightness(1.2);
-	}
-
-	/* Piano Container */
-	.piano-container {
-		background: #ffffff;
-		border: 1px solid #e2e8f0;
-		border-radius: 0 0 12px 12px;
-		border-top: none;
-		overflow-x: auto;
-		overflow-y: hidden;
-		padding: 0;
-	}
-
-	.piano-keyboard {
+	/* Piano Keyboard at bottom */
+	.piano-keyboard-bottom {
 		position: relative;
 		height: 160px;
 		background: linear-gradient(to bottom, #f9fafb, #f3f4f6);
-		border-top: 1px solid #e5e7eb;
-		min-width: 100%;
+		border-top: 3px solid #d1d5db;
+		width: 100%;
+		display: block;
+		overflow: hidden;
 	}
 
-	.key {
+	.key-bottom {
 		position: absolute;
-		top: 0;
-		height: 100%;
+		bottom: 0;
 		transition: all 0.05s ease;
 		box-sizing: border-box;
 	}
 
-	.white-key {
+	.key-bottom.white-key {
 		background: linear-gradient(to bottom, #ffffff, #f9fafb);
 		border: 1px solid #d1d5db;
 		border-right: 1px solid #9ca3af;
 		box-shadow: inset -1px -1px 3px rgba(0, 0, 0, 0.1);
 	}
 
-	.white-key:hover {
+	.key-bottom.white-key:hover {
 		background: linear-gradient(to bottom, #f3f4f6, #e5e7eb);
 		box-shadow: inset -1px -1px 3px rgba(0, 0, 0, 0.1), 0 0 8px rgba(37, 99, 235, 0.15);
 	}
 
-	.white-key.active {
+	.key-bottom.white-key.active {
 		box-shadow: inset -1px -1px 3px rgba(0, 0, 0, 0.1), 0 0 12px currentColor;
+		background-color: #00a8ff !important;
 	}
 
-	.black-key {
+	.key-bottom.black-key {
 		background: linear-gradient(to bottom, #374151, #1f2937);
 		border: 1px solid #111827;
 		border-right: 2px solid #000000;
-		height: 60%;
-		top: 0;
-		z-index: 5;
 		border-radius: 0 0 6px 6px;
 		box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+		z-index: 10;
 	}
 
-	.black-key:hover {
+	.key-bottom.black-key:hover {
 		background: linear-gradient(to bottom, #4b5563, #374151);
 		box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3), 0 0 12px rgba(37, 99, 235, 0.2);
 	}
 
-	.black-key.active {
+	.key-bottom.black-key.active {
 		box-shadow: inset -1px -1px 2px rgba(0, 0, 0, 0.5), 0 0 12px currentColor;
+		background-color: #00a8ff !important;
+	}
+
+	/* Time display for visualization */
+	.time-display-large {
+		display: flex;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 0.75rem;
+		background: #f0f9ff;
+		border: 1px solid #bfdbfe;
+		border-radius: 8px;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: #1e293b;
 	}
 
 	/* Responsive */
@@ -780,13 +883,8 @@
 			font-size: 0.9rem;
 		}
 
-		.timeline-container {
-			height: 80px;
-			border-radius: 12px 12px 0 0;
-		}
-
-		.piano-keyboard {
-			height: 120px;
+		.falling-notes-container {
+			height: 400px;
 		}
 	}
 </style>
