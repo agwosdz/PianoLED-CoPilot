@@ -115,12 +115,12 @@ def get_playback_status():
             }), 500
         
         return jsonify({
-            'state': playback_service.state,
+            'state': playback_service.state.value if hasattr(playback_service.state, 'value') else str(playback_service.state),
             'current_time': playback_service.current_time,
             'total_duration': playback_service.total_duration,
-            'filename': playback_service.current_file,
-            'progress_percentage': playback_service.progress_percentage,
-            'error_message': playback_service.error_message
+            'filename': playback_service.filename,
+            'progress_percentage': (playback_service.current_time / playback_service.total_duration * 100) if playback_service.total_duration > 0 else 0,
+            'error_message': None
         })
     except Exception as e:
         current_app.logger.error(f"Error getting playback status: {e}")
@@ -150,7 +150,13 @@ def play():
         if not playback_service:
             return jsonify({'error': 'Playback service not available'}), 500
         
-        playback_service.play(str(file_path))
+        # Load the file first
+        if not playback_service.load_midi_file(str(file_path)):
+            return jsonify({'error': 'Failed to load MIDI file'}), 400
+        
+        # Then start playback
+        if not playback_service.start_playback():
+            return jsonify({'error': 'Failed to start playback'}), 400
         
         return jsonify({'success': True})
     except Exception as e:
@@ -160,14 +166,15 @@ def play():
 
 @play_bp.route('/pause', methods=['POST'])
 def pause():
-    """Pause playback."""
+    """Pause or resume playback."""
     try:
         playback_service = current_app.config.get('playback_service')
         
         if not playback_service:
             return jsonify({'error': 'Playback service not available'}), 500
         
-        playback_service.pause()
+        # Toggle pause/resume
+        playback_service.pause_playback()
         return jsonify({'success': True})
     except Exception as e:
         current_app.logger.error(f"Error pausing playback: {e}")
@@ -183,7 +190,7 @@ def stop():
         if not playback_service:
             return jsonify({'error': 'Playback service not available'}), 500
         
-        playback_service.stop()
+        playback_service.stop_playback()
         return jsonify({'success': True})
     except Exception as e:
         current_app.logger.error(f"Error stopping playback: {e}")
