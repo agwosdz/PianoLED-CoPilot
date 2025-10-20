@@ -1478,10 +1478,54 @@ def get_midi_devices():
                 'message': 'MIDI input manager not available'
             }), 503
         
-        devices = midi_input_manager.get_available_devices()
+        raw_devices = midi_input_manager.get_available_devices()
+        
+        # Get current device (if any is being listened to)
+        current_device = None
+        if hasattr(midi_input_manager, '_usb_service') and midi_input_manager._usb_service:
+            try:
+                current_device = getattr(midi_input_manager._usb_service, 'current_device', None)
+            except Exception:
+                pass
+        
+        if not current_device and hasattr(midi_input_manager, '_rtpmidi_service') and midi_input_manager._rtpmidi_service:
+            try:
+                active_sessions = getattr(midi_input_manager._rtpmidi_service, '_active_sessions', {})
+                if active_sessions:
+                    first_session = list(active_sessions.values())[0]
+                    current_device = getattr(first_session, 'name', None)
+            except Exception:
+                pass
+        
+        # Format USB devices
+        formatted_usb_devices = []
+        for device in raw_devices.get('usb_devices', []):
+            formatted_usb_devices.append({
+                'name': device.name,
+                'id': device.id,
+                'type': getattr(device, 'type', 'usb'),
+                'status': device.status,
+                'is_current': device.name == current_device if current_device else False
+            })
+        
+        # Format rtpMIDI sessions
+        formatted_rtpmidi_sessions = []
+        for session in raw_devices.get('rtpmidi_sessions', []):
+            session_name = session.get('name', session.get('ip_address', 'Unknown'))
+            formatted_rtpmidi_sessions.append({
+                'name': session_name,
+                'id': hash(session_name) % (2**31),  # Generate consistent ID from name
+                'type': 'network',
+                'status': session.get('status', 'available'),
+                'is_current': session_name == current_device if current_device else False
+            })
+        
         return jsonify({
             'status': 'success',
-            'devices': devices
+            'devices': formatted_usb_devices + formatted_rtpmidi_sessions,
+            'usb_devices': formatted_usb_devices,
+            'rtpmidi_sessions': formatted_rtpmidi_sessions,
+            'current_device': current_device
         }), 200
         
     except Exception as e:
