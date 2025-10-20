@@ -101,6 +101,23 @@ class PlaybackService:
         self._precomputed_mapping = self._generate_key_mapping()
         self._midi_parser = midi_parser or (MIDIParser(settings_service=settings_service) if MIDIParser else None)
         
+        # OPTIMIZATION: Pre-computed expected notes lookup (Phase 2A)
+        # Dictionary maps (time_bin, hand) -> set(notes) for O(1) lookups instead of O(n) iteration
+        self._expected_notes_by_window: Dict[Tuple[int, str], set] = {}
+        self._expected_notes_window_size = 50  # Time bins in milliseconds for grouping
+        
+        # OPTIMIZATION: Cached color conversions (Phase 2A)
+        self._left_color_bright = None
+        self._right_color_bright = None
+        self._left_color_dim = None
+        self._right_color_dim = None
+        
+        # OPTIMIZATION: Cached note-to-LED lookups (Phase 2A)
+        self._note_to_leds_cache: Dict[int, List[int]] = {}
+        
+        # OPTIMIZATION: Batch LED update state tracking (Phase 2A)
+        self._last_led_state: Dict[int, tuple] = {}
+        
         # Playback state
         self._state = PlaybackState.IDLE
         self._current_time = 0.0
@@ -156,6 +173,16 @@ class PlaybackService:
         
         # Load learning mode settings
         self._load_learning_mode_settings()
+        
+        # OPTIMIZATION: Initialize color cache (Phase 2A)
+        self._refresh_color_cache()
+        
+        # OPTIMIZATION: Pre-build note-to-LED cache (Phase 2A)
+        self._prebuild_note_to_leds_cache()
+        
+        # OPTIMIZATION: Pre-compute expected notes from loaded events (Phase 2A)
+        # This will be called after loading MIDI file, but we initialize here
+        self._precompute_expected_notes()
         
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
@@ -313,6 +340,144 @@ class PlaybackService:
             '25-key': {'keys': 25, 'midi_start': 48, 'midi_end': 72}
         }
         return specs.get(piano_size, specs['88-key'])
+    
+    # ==================== OPTIMIZATION HELPER METHODS (Phase 2A) ====================
+    
+    def _refresh_color_cache(self) -> None:
+        """
+        OPTIMIZATION: Cache color conversions to avoid repeated hex-to-RGB conversions.
+        Called at init time and when settings change.
+        """
+        try:
+            # Get hand colors from settings
+            if self._settings_service:
+                left_white_hex = self._settings_service.get_setting('learning', 'left_hand_white_color') or '#ff6b6b'
+                right_white_hex = self._settings_service.get_setting('learning', 'right_hand_white_color') or '#006496'
+            else:
+                left_white_hex = '#ff6b6b'
+                right_white_hex = '#006496'
+            
+            # Convert hex to RGB once and cache
+            self._left_color_bright = self._hex_to_rgb(left_white_hex)
+            self._right_color_bright = self._hex_to_rgb(right_white_hex)
+            
+            # Pre-compute dim versions (50% brightness)
+            self._left_color_dim = tuple(int(c * 0.5) for c in self._left_color_bright)
+            self._right_color_dim = tuple(int(c * 0.5) for c in self._right_color_bright)
+            
+            logger.debug(f"Color cache refreshed: L={self._left_color_bright}, R={self._right_color_bright}")
+        except Exception as e:
+            logger.error(f"Error refreshing color cache: {e}")
+            # Fallback to defaults
+            self._left_color_bright = (255, 107, 107)
+            self._right_color_bright = (0, 100, 150)
+            self._left_color_dim = (127, 53, 53)
+            self._right_color_dim = (0, 50, 75)
+    
+    def _hex_to_rgb(self, hex_color: str) -> tuple:
+        """Convert hex color string to RGB tuple."""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    
+    def _prebuild_note_to_leds_cache(self) -> None:
+        """
+        OPTIMIZATION: Pre-build cache of note-to-LED mappings for all 88 piano keys.
+        Avoids repeated lookups during playback.
+        """
+        try:
+            self._note_to_leds_cache.clear()
+            for note in range(self.min_midi_note, self.max_midi_note + 1):
+                # Use precomputed mapping if available
+                if note in self._precomputed_mapping:
+                    led_indices = self._precomputed_mapping[note]
+                    valid_indices = [idx for idx in led_indices if 0 <= idx < self.num_leds]
+                    if valid_indices:
+                        self._note_to_leds_cache[note] = valid_indices
+                        continue
+                
+                # Fallback to single LED mapping
+                single_led = self._map_note_to_led(note)
+                if 0 <= single_led < self.num_leds:
+                    self._note_to_leds_cache[note] = [single_led]
+            
+            logger.debug(f"Built note-to-LED cache for {len(self._note_to_leds_cache)} notes")
+        except Exception as e:
+            logger.error(f"Error building note-to-LED cache: {e}")
+    
+    def _precompute_expected_notes(self) -> None:
+        """
+        OPTIMIZATION: Pre-compute expected notes grouped by time windows for O(1) lookup.
+        Called after loading MIDI file.
+        
+        Builds dictionary: {(time_bin, hand): set(notes)}
+        """
+        try:
+            self._expected_notes_by_window.clear()
+            
+            if not self._note_events:
+                return
+            
+            # Group events by time bins (windows) and hand
+            timing_window_seconds = self._timing_window_ms / 1000.0
+            
+            for event in self._note_events:
+                # Determine hand (left < 60, right >= 60)
+                hand = 'left' if event.note < 60 else 'right'
+                
+                # Calculate time bin (integer index based on timing window)
+                time_bin = int(event.time / timing_window_seconds)
+                
+                # Create key and add to dictionary
+                key = (time_bin, hand)
+                if key not in self._expected_notes_by_window:
+                    self._expected_notes_by_window[key] = set()
+                self._expected_notes_by_window[key].add(event.note)
+            
+            logger.info(f"Pre-computed expected notes: {len(self._expected_notes_by_window)} time windows")
+        except Exception as e:
+            logger.error(f"Error pre-computing expected notes: {e}")
+    
+    def _get_expected_notes_fast(self, window_start: float, window_end: float) -> Tuple[set, set]:
+        """
+        OPTIMIZATION: Fast lookup of expected notes using pre-computed dictionary.
+        Replaces O(n) iteration with O(k) where k = number of time bins in range (typically 1-2).
+        
+        Args:
+            window_start: Start time of window
+            window_end: End time of window
+            
+        Returns:
+            Tuple of (expected_left_notes, expected_right_notes)
+        """
+        timing_window_seconds = self._timing_window_ms / 1000.0
+        start_bin = int(window_start / timing_window_seconds)
+        end_bin = int(window_end / timing_window_seconds) + 1  # Include partial bins
+        
+        expected_left = set()
+        expected_right = set()
+        
+        # Collect notes from all relevant time bins
+        for time_bin in range(start_bin, end_bin + 1):
+            if (time_bin, 'left') in self._expected_notes_by_window:
+                expected_left.update(self._expected_notes_by_window[(time_bin, 'left')])
+            if (time_bin, 'right') in self._expected_notes_by_window:
+                expected_right.update(self._expected_notes_by_window[(time_bin, 'right')])
+        
+        return expected_left, expected_right
+    
+    def _map_note_to_leds_cached(self, note: int) -> List[int]:
+        """
+        OPTIMIZATION: Use cached note-to-LED lookups instead of computing each time.
+        
+        Args:
+            note: MIDI note number
+            
+        Returns:
+            List of LED indices for this note
+        """
+        return self._note_to_leds_cache.get(note, [])
+    
+    # ==================== END OPTIMIZATION METHODS ====================
     
     @property
     def state(self) -> PlaybackState:
@@ -512,6 +677,10 @@ class PlaybackService:
                 self._note_events = self._generate_demo_notes()
             
             self._total_duration = max(event.time + event.duration for event in self._note_events) if self._note_events else 0
+            
+            # OPTIMIZATION: Re-build caches after loading new MIDI file (Phase 2A)
+            self._prebuild_note_to_leds_cache()
+            self._precompute_expected_notes()
             
             self._state = PlaybackState.IDLE
             self._current_time = 0.0
@@ -967,18 +1136,24 @@ class PlaybackService:
         window_start = self._current_time - 1.0  # Look back 1 second
         window_end = self._current_time + timing_window_seconds
         
-        # Find expected notes in the timing window (from MIDI file)
-        expected_left_notes = set()
-        expected_right_notes = set()
-        
-        for event in self._note_events:
-            # Include notes that START within our window
-            # (They may have already started or be about to start)
-            if window_start <= event.time < window_end:
-                if event.note < 60:  # Left hand (below Middle C)
-                    expected_left_notes.add(event.note)
-                else:  # Right hand (Middle C and above)
-                    expected_right_notes.add(event.note)
+        # OPTIMIZATION: Use fast lookup (Phase 2A) instead of O(n) iteration
+        # This replaces the loop that checked all events
+        if self._expected_notes_by_window:
+            # Use pre-computed expected notes lookup
+            expected_left_notes, expected_right_notes = self._get_expected_notes_fast(window_start, window_end)
+        else:
+            # Fallback to slow path if caches not ready
+            expected_left_notes = set()
+            expected_right_notes = set()
+            
+            for event in self._note_events:
+                # Include notes that START within our window
+                # (They may have already started or be about to start)
+                if window_start <= event.time < window_end:
+                    if event.note < 60:  # Left hand (below Middle C)
+                        expected_left_notes.add(event.note)
+                    else:  # Right hand (Middle C and above)
+                        expected_right_notes.add(event.note)
         
         # Detect window changes to reset flash state
         # When we move to a new set of expected notes, reset the flash trigger flag
@@ -1175,30 +1350,16 @@ class PlaybackService:
         try:
             led_data = {}
             
-            # Load hand colors from settings (for consistency with UI)
-            try:
-                left_white_hex = self._settings_service.get_setting('learning', 'left_hand_white_color') or '#ff6b6b'
-                right_white_hex = self._settings_service.get_setting('learning', 'right_hand_white_color') or '#006496'
-            except:
-                # Fallback to default colors if settings unavailable
-                left_white_hex = '#ff6b6b'
-                right_white_hex = '#006496'
-            
-            # Convert hex to RGB
-            def hex_to_rgb(hex_color):
-                hex_color = hex_color.lstrip('#')
-                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-            
-            left_color_bright = hex_to_rgb(left_white_hex)
-            right_color_bright = hex_to_rgb(right_white_hex)
-            
-            # Reduce brightness for unsatisfied notes (50% opacity)
-            left_color_dim = tuple(int(c * 0.5) for c in left_color_bright)
-            right_color_dim = tuple(int(c * 0.5) for c in right_color_bright)
+            # OPTIMIZATION: Use cached colors (Phase 2A) instead of re-computing each time
+            left_color_bright = self._left_color_bright or (255, 107, 107)
+            right_color_bright = self._right_color_bright or (0, 100, 150)
+            left_color_dim = self._left_color_dim or (127, 53, 53)
+            right_color_dim = self._right_color_dim or (0, 50, 75)
             
             # Highlight expected left hand notes
             for note in expected_left:
-                led_indices = self._map_note_to_leds(note)
+                # OPTIMIZATION: Use cached note-to-LED lookup (Phase 2A)
+                led_indices = self._map_note_to_leds_cached(note)
                 # Bright color if played, dim if not
                 color = left_color_bright if note in played_left else left_color_dim
                 for led_index in led_indices:
@@ -1207,7 +1368,8 @@ class PlaybackService:
             
             # Highlight expected right hand notes
             for note in expected_right:
-                led_indices = self._map_note_to_leds(note)
+                # OPTIMIZATION: Use cached note-to-LED lookup (Phase 2A)
+                led_indices = self._map_note_to_leds_cached(note)
                 # Bright color if played, dim if not
                 color = right_color_bright if note in played_right else right_color_dim
                 for led_index in led_indices:
