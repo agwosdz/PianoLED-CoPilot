@@ -34,10 +34,33 @@ class USBMIDIPortManager:
         return self._device_name
 
     def list_devices(self) -> List[str]:
+        """
+        List available MIDI input devices, filtering out virtual/loopback ports.
+        Physical devices are returned first, then virtual ports.
+        """
         if not MIDO_AVAILABLE:
             return []
         try:
-            return list(mido.get_input_names())
+            all_devices = list(mido.get_input_names())
+            
+            # Separate physical and virtual devices
+            # Virtual/loopback devices to skip: MIDI Through, RtMidOut, USB-USB, etc.
+            virtual_keywords = ('Through', 'RtMidOut', 'USB-USB', 'Loopback', 'Virtual')
+            
+            physical_devices = [d for d in all_devices 
+                              if not any(keyword in d for keyword in virtual_keywords)]
+            virtual_devices = [d for d in all_devices 
+                             if any(keyword in d for keyword in virtual_keywords)]
+            
+            # Return physical devices first, then virtual devices at the end
+            result = physical_devices + virtual_devices
+            
+            if result != all_devices:
+                logger.debug(f"Filtered MIDI devices: {len(physical_devices)} physical + {len(virtual_devices)} virtual = {len(result)} total")
+                logger.debug(f"Physical devices: {physical_devices}")
+                logger.debug(f"Virtual devices: {virtual_devices}")
+            
+            return result
         except Exception as exc:
             logger.warning("Failed to enumerate MIDI devices: %s", exc)
             return []

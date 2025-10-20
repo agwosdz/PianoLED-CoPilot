@@ -458,8 +458,9 @@
 							{:else}
 								<option value="">Select a device...</option>
 								{#each midiInputDevices as device (device.id)}
-									<option value={device.name} selected={device.is_current}>
+									<option value={device.name}>
 										{device.name}
+										{#if device.is_current}(current){/if}
 									</option>
 								{/each}
 							{/if}
