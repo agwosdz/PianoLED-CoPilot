@@ -763,28 +763,33 @@ def get_playback_status():
     try:
         if not playback_service:
             return jsonify({
-                'error': 'Service Unavailable',
-                'message': 'Playback service not initialized'
-            }), 503
+                'state': 'idle',
+                'current_time': 0,
+                'total_duration': 0,
+                'filename': None,
+                'progress_percentage': 0,
+                'error_message': 'Playback service not available'
+            }), 500
         
         status = playback_service.get_status()
         return jsonify({
-            'status': 'success',
-            'playback': {
-                'state': status.state.value,
-                'current_time': status.current_time,
-                'total_duration': status.total_duration,
-                'progress_percentage': status.progress_percentage,
-                'filename': status.filename,
-                'error_message': status.error_message
-            }
+            'state': status.state.value if hasattr(status.state, 'value') else str(status.state),
+            'current_time': status.current_time,
+            'total_duration': status.total_duration,
+            'progress_percentage': status.progress_percentage,
+            'filename': status.filename,
+            'error_message': status.error_message
         }), 200
     
     except Exception as e:
         logger.error(f"Error in get_playback_status endpoint: {e}")
         return jsonify({
-            'error': 'Internal Server Error',
-            'message': 'An unexpected error occurred while getting status'
+            'state': 'error',
+            'current_time': 0,
+            'total_duration': 0,
+            'filename': None,
+            'progress_percentage': 0,
+            'error_message': 'An unexpected error occurred while getting status'
         }), 500
 
 @app.route('/api/seek', methods=['POST'])

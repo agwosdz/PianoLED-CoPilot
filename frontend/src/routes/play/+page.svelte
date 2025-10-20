@@ -44,6 +44,11 @@
 	let useCanvasRenderer = false; // Toggle between DOM and Canvas rendering
 	let pianoWidth = 0; // Track piano container width for pixel calculations
 
+	// Reactive: Log totalDuration changes for debugging
+	$: if (totalDuration !== undefined) {
+		console.log(`[DEBUG] totalDuration changed to: ${totalDuration}s (isPlaying: ${isPlaying})`);
+	}
+
 	// Piano constants
 	const MIN_MIDI_NOTE = 21; // A0
 	const MAX_MIDI_NOTE = 108; // C8
@@ -94,7 +99,8 @@
 	// Calculate white key index for a MIDI note
 	// Note: MIN_MIDI_NOTE (21/A0) is not a white key in our baseline, so we offset by -1
 	function getWhiteKeyIndex(note: number): number {
-		let whiteKeyIndex = -1; // Start at -1 to account for A0 being "off" the white key baseline
+		// Count how many white keys come before this note
+		let whiteKeyIndex = 0;
 		for (let i = MIN_MIDI_NOTE; i < note; i++) {
 			if (isWhiteKey(i)) {
 				whiteKeyIndex++;
@@ -186,15 +192,24 @@
 	async function loadMIDINotes() {
 		if (!selectedFile) {
 			notes = [];
+			totalDuration = 0;
+			console.log('[DEBUG] loadMIDINotes: No selectedFile');
 			return;
 		}
 
+		console.log(`[DEBUG] loadMIDINotes: Loading notes for ${selectedFile}`);
 		try {
 			const response = await fetch(`/api/midi-notes?filename=${encodeURIComponent(selectedFile)}`);
 			if (response.ok) {
 				const data = await response.json();
 				notes = data.notes || [];
+				// Update totalDuration from the MIDI file data
+				totalDuration = data.total_duration || 0;
+				// Also update the playbackStatus for the progress bar
+				playbackStatus.total_duration = totalDuration;
 				console.log(`✓ Loaded ${notes.length} MIDI notes from ${selectedFile}`);
+				console.log(`  Response total_duration: ${data.total_duration}s`);
+				console.log(`  Frontend totalDuration now: ${totalDuration}s`);
 				if (notes.length > 0) {
 					console.log(`  First note: MIDI ${notes[0].note} at ${notes[0].startTime}s`);
 					console.log(`  Last note: MIDI ${notes[notes.length - 1].note} at ${notes[notes.length - 1].startTime}s`);
@@ -202,28 +217,52 @@
 			} else {
 				console.error('Failed to load MIDI notes:', response.status);
 				notes = [];
+				totalDuration = 0;
+				playbackStatus.total_duration = 0;
 			}
 		} catch (error) {
 			console.error('Failed to load MIDI notes:', error);
 			notes = [];
+			totalDuration = 0;
+			playbackStatus.total_duration = 0;
 		}
 	}
 
 	async function fetchPlaybackStatus() {
 		try {
+			console.log('[DEBUG] fetchPlaybackStatus() called');
 			const response = await fetch('/api/playback-status');
+			console.log(`[DEBUG] playback-status response status: ${response.status}`);
 			if (response.ok) {
 				const data = await response.json();
+				console.log('[DEBUG] playback-status response data:', data);
 				playbackStatus = data;
 				currentTime = data.current_time || 0;
-				totalDuration = data.total_duration || 0;
+				// Only update totalDuration from backend if it's non-zero (file loaded)
+				// Otherwise keep the duration we got from /api/midi-notes
+				const beforeDuration = totalDuration;
+				if (data.total_duration > 0) {
+					totalDuration = data.total_duration;
+					console.log(`[DEBUG] Updated totalDuration from backend: ${data.total_duration}s`);
+				} else if (totalDuration === 0) {
+					console.log(`[DEBUG] Backend total_duration is 0, keeping frontend duration: ${totalDuration}s`);
+				}
 				isPlaying = data.state === 'playing';
+				
+				// Debug: log state comparison
+				if (data.state) {
+					console.log(`[DEBUG] State from API: "${data.state}" (type: ${typeof data.state}), isPlaying: ${isPlaying}`);
+				} else {
+					console.log(`[DEBUG] WARNING: data.state is ${data.state}`);
+				}
 
 				// If a file is playing but not selected, select it and load notes
 				if (data.filename && !selectedFile) {
 					selectedFile = data.filename;
 					await loadMIDINotes();
 				}
+			} else {
+				console.error(`[DEBUG] playback-status response NOT OK: ${response.status}`);
 			}
 		} catch (error) {
 			console.error('Failed to fetch playback status:', error);
@@ -239,25 +278,32 @@
 				console.log(`▶ Playing: ${selectedFile}`);
 				// Stop any other playback first (to ensure only one file plays)
 				try {
-					await fetch('/api/stop', { method: 'POST' });
+					const stopResp = await fetch('/api/stop', { method: 'POST' });
+					console.log(`[DEBUG] Stop request responded with status: ${stopResp.status}`);
 				} catch (e) {
 					// Ignore errors when stopping (nothing might be playing)
+					console.log(`[DEBUG] Stop request error (expected if nothing playing): ${e}`);
 				}
 			} else {
 				console.log(`⏸ Pausing`);
 			}
 
 			const method = isPlaying ? 'pause' : 'play';
+			console.log(`[DEBUG] Sending ${method} request with filename: ${selectedFile}`);
 			const response = await fetch(`/api/${method}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ filename: selectedFile })
 			});
 
+			console.log(`[DEBUG] ${method.toUpperCase()} response status: ${response.status}`);
 			if (response.ok) {
+				const responseBody = await response.json();
+				console.log(`[DEBUG] ${method.toUpperCase()} response body:`, responseBody);
 				await fetchPlaybackStatus();
 			} else {
-				console.error(`Failed to ${method}: ${response.status}`);
+				const errorBody = await response.text();
+				console.error(`Failed to ${method}: ${response.status} - ${errorBody}`);
 			}
 		} catch (error) {
 			console.error('Failed to control playback:', error);
