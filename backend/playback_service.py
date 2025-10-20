@@ -146,7 +146,7 @@ class PlaybackService:
         self._queue_cleanup_interval = 1.0  # Cleanup old notes every 1 second
         self._queue_max_age_seconds = 5.0  # Keep notes for up to 5 seconds
         # Wrong note flash timing
-        self._last_wrong_flash_time = 0.0  # When the wrong note flash was triggered (playback time)
+        self._last_wrong_flash_time = -1.0  # When the wrong note flash was triggered (initialized to expired time)
         self._wrong_flash_duration = 0.3  # How long wrong notes stay red (seconds)
         
         # Load MIDI output settings
@@ -760,6 +760,8 @@ class PlaybackService:
                 if self._learning_mode_enabled:
                     should_pause = self._check_learning_mode_pause()
                     if should_pause:
+                        # Update LEDs even while paused (shows expected notes and flash countdown)
+                        self._update_leds()
                         time.sleep(0.05)  # Brief sleep before checking again
                         continue
                 
