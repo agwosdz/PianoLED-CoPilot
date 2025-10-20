@@ -108,7 +108,7 @@
 
   .file-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.75rem;
     padding: 0.85rem 1rem;
     border-radius: 12px;
@@ -148,9 +148,10 @@
     font-weight: 600;
     font-size: 0.95rem;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    line-height: 1.3;
   }
 
   .file-meta {
@@ -161,6 +162,8 @@
   .row-actions {
     display: inline-flex;
     gap: 0.5rem;
+    flex-shrink: 0;
+    align-self: center;
   }
 
   .icon-button {
