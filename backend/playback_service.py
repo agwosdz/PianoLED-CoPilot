@@ -1055,19 +1055,6 @@ class PlaybackService:
         except Exception as e:
             logger.error(f"Error sending MIDI note_off: {e}")
     
-    def record_midi_note_played(self, note: int, hand: str) -> None:
-        """
-        Record that a MIDI note was played by a specific hand during learning mode.
-        
-        Args:
-            note: MIDI note number that was played
-            hand: 'left' or 'right' hand
-        """
-        if hand == 'left':
-            self._left_hand_notes_played.add(note)
-        elif hand == 'right':
-            self._right_hand_notes_played.add(note)
-    
     def _highlight_expected_notes(self, expected_left: set, expected_right: set, 
                                   played_left: set, played_right: set) -> None:
         """
