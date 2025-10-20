@@ -98,6 +98,17 @@ playback_service.stop_playback()  # ✓ stop_playback() not stop()
    - Progress bar should fill
 5. Notes should fall from top to keyboard
 
+## Additional Fix: Directory Mismatch
+
+### Issue
+- `/uploaded-midi-files` endpoint was looking in `./uploaded_midi/` directory (default value)
+- `/play`, `/pause`, `/stop` endpoints were looking in `./backend/uploads/` directory (from `UPLOAD_FOLDER`)
+- **Result**: Files found by file browser but not found when playing
+
+### Fix Applied
+- Updated `/uploaded-midi-files` to use same `UPLOAD_FOLDER` from app.config
+- Now both endpoints look in the same location: `./backend/uploads/`
+
 ## Testing Checklist
 
 - [ ] Select file → shows as selected

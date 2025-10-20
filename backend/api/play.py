@@ -10,7 +10,8 @@ play_bp = Blueprint('play', __name__)
 def get_uploaded_files():
     """Get list of uploaded MIDI files."""
     try:
-        midi_dir = Path(current_app.config.get('UPLOADED_MIDI_DIR', './uploaded_midi'))
+        # Use same UPLOAD_FOLDER as the main app for consistency
+        midi_dir = Path(current_app.config.get('UPLOAD_FOLDER', './backend/uploads'))
         
         if not midi_dir.exists():
             return jsonify([])
