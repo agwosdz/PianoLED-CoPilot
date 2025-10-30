@@ -10,7 +10,7 @@ import time
 import json
 import os
 from typing import Dict, List, Optional, Callable, Any, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
 from backend.logging_config import get_logger
@@ -72,6 +72,42 @@ class PlaybackStatus:
     filename: Optional[str]
     progress_percentage: float
     error_message: Optional[str] = None
+
+@dataclass
+class LearningDisplayState:
+    """State for rendering learning mode LED display (PHASE A)"""
+    expected_left: set      # Expected notes for left hand
+    expected_right: set     # Expected notes for right hand
+    wrong_notes: set        # Any wrong notes played
+    current_time: float     # Current playback time
+    last_flash_time: float  # When wrong note flash triggered
+    flash_duration: float   # How long flash lasts (0.3s)
+    # Notes that have been played (used to decide bright vs dim rendering)
+    played_left: set = field(default_factory=set)
+    played_right: set = field(default_factory=set)
+    
+    @property
+    def is_flashing(self) -> bool:
+        """Check if wrong note flash is currently active"""
+        elapsed = self.current_time - self.last_flash_time
+        return elapsed < self.flash_duration
+
+@dataclass
+class LearningModeConfig:
+    """Configuration for learning mode (PHASE B)"""
+    enabled: bool = False
+    wait_for_left: bool = False
+    wait_for_right: bool = False
+    timing_window_ms: int = 500
+    queue_max_age: float = 5.0
+    flash_duration: float = 0.3
+
+@dataclass
+class QueuedNote:
+    """A MIDI note played by the user during learning mode (PHASE C)"""
+    note: int           # MIDI note number (0-127)
+    hand: str           # 'left' or 'right'
+    timestamp: float    # When it was played (playback time)
 
 class PlaybackService:
     """Service for coordinating MIDI playback with LED visualization"""
@@ -154,22 +190,24 @@ class PlaybackService:
         self._midi_output_enabled = False
         self._midi_notes_sent: Dict[int, bool] = {}  # Track which MIDI notes are currently on
         
-        # Learning mode configuration
-        self._learning_mode_enabled = False
-        self._left_hand_wait_for_notes = False
-        self._right_hand_wait_for_notes = False
-        # Timestamped queues: [(note, timestamp), ...] - tracks notes with when they were played
-        # Bounded deques prevent unbounded memory growth (max 5000 notes each, FIFO)
-        self._left_hand_notes_queue: deque = deque(maxlen=5000)
-        self._right_hand_notes_queue: deque = deque(maxlen=5000)
-        self._timing_window_ms = 500
+        # Learning mode configuration (PHASE B: unified)
+        self._learning_config = LearningModeConfig(
+            enabled=False,
+            wait_for_left=False,
+            wait_for_right=False,
+            timing_window_ms=500,
+            queue_max_age=5.0,
+            flash_duration=0.3
+        )
+        
+        # Unified timestamped queue: [QueuedNote(...), ...] - tracks notes with when they were played (PHASE C)
+        # Bounded deque prevents unbounded memory growth (max 5000 notes, FIFO auto-eviction)
+        # QueuedNote contains: note (0-127), hand ('left'/'right'), timestamp (playback time)
+        self._note_queue: deque = deque(maxlen=5000)
         self._expected_notes: Dict[str, set] = {'left': set(), 'right': set()}  # Expected notes for current time window
-        self._last_queue_cleanup = time.time()  # For periodic queue cleanup
-        self._queue_cleanup_interval = 1.0  # Cleanup old notes every 1 second
-        self._queue_max_age_seconds = 5.0  # Keep notes for up to 5 seconds
+        
         # Wrong note flash timing
         self._last_wrong_flash_time = -1.0  # When the wrong note flash was triggered (initialized to expired time)
-        self._wrong_flash_duration = 0.3  # How long wrong notes stay red (seconds)
         self._wrong_flash_triggered_this_window = False  # Flag to prevent rapid timer resets on consecutive wrong notes
         self._last_expected_notes: set = set()  # Track expected notes to detect window changes
         
@@ -184,6 +222,9 @@ class PlaybackService:
         
         # OPTIMIZATION: Pre-build note-to-LED cache (Phase 2A)
         self._prebuild_note_to_leds_cache()
+        
+        # OPTIMIZATION: Build reverse LED-to-notes cache (Phase B)
+        self._prebuild_led_to_notes_cache()
         
         # OPTIMIZATION: Pre-compute expected notes from loaded events (Phase 2A)
         # This will be called after loading MIDI file, but we initialize here
@@ -275,28 +316,30 @@ class PlaybackService:
             self._midi_output_enabled = False
 
     def _load_learning_mode_settings(self) -> None:
-        """Load learning mode configuration from settings service."""
+        """Load learning mode configuration from settings service into unified config (PHASE B)."""
         if not self._settings_service:
-            self._learning_mode_enabled = False
+            self._learning_config.enabled = False
             return
 
         try:
             get_setting = getattr(self._settings_service, 'get_setting', None)
             if callable(get_setting):
-                self._left_hand_wait_for_notes = get_setting('learning_mode', 'left_hand_wait_for_notes', False)
-                self._right_hand_wait_for_notes = get_setting('learning_mode', 'right_hand_wait_for_notes', False)
-                self._timing_window_ms = get_setting('learning_mode', 'timing_window_ms', 500)
+                self._learning_config.wait_for_left = get_setting('learning_mode', 'left_hand_wait_for_notes', False)
+                self._learning_config.wait_for_right = get_setting('learning_mode', 'right_hand_wait_for_notes', False)
+                self._learning_config.timing_window_ms = get_setting('learning_mode', 'timing_window_ms', 500)
+                self._learning_config.queue_max_age = get_setting('learning_mode', 'queue_max_age', 5.0)
+                self._learning_config.flash_duration = get_setting('learning_mode', 'flash_duration', 0.3)
                 
                 # Learning mode is enabled if either hand has wait_for_notes enabled
-                self._learning_mode_enabled = self._left_hand_wait_for_notes or self._right_hand_wait_for_notes
+                self._learning_config.enabled = self._learning_config.wait_for_left or self._learning_config.wait_for_right
                 
-                if self._learning_mode_enabled:
-                    logger.info(f"Learning mode enabled - Left hand: {self._left_hand_wait_for_notes}, Right hand: {self._right_hand_wait_for_notes}, Timing: {self._timing_window_ms}ms")
+                if self._learning_config.enabled:
+                    logger.info(f"Learning mode enabled - Left hand: {self._learning_config.wait_for_left}, Right hand: {self._learning_config.wait_for_right}, Timing: {self._learning_config.timing_window_ms}ms")
             else:
-                self._learning_mode_enabled = False
+                self._learning_config.enabled = False
         except Exception as e:
             logger.error(f"Error loading learning mode settings: {e}")
-            self._learning_mode_enabled = False
+            self._learning_config.enabled = False
 
     def _load_settings_from_config(self, num_leds_override: Optional[int] = None) -> None:
         """Fallback configuration loading from static config values."""
@@ -409,6 +452,27 @@ class PlaybackService:
         except Exception as e:
             logger.error(f"Error building note-to-LED cache: {e}")
     
+    def _prebuild_led_to_notes_cache(self) -> None:
+        """
+        OPTIMIZATION: Build reverse mapping - LED index to notes using that LED (PHASE B).
+        Inverse of _note_to_leds_cache for faster LED-based highlighting.
+        
+        This enables: for each LED, get all notes that use it.
+        """
+        try:
+            self._led_to_notes_cache: Dict[int, List[int]] = {}
+            
+            for note in range(self.min_midi_note, self.max_midi_note + 1):
+                led_indices = self._note_to_leds_cache.get(note, [])
+                for led_idx in led_indices:
+                    if led_idx not in self._led_to_notes_cache:
+                        self._led_to_notes_cache[led_idx] = []
+                    self._led_to_notes_cache[led_idx].append(note)
+            
+            logger.debug(f"Built LED-to-notes reverse cache: {len(self._led_to_notes_cache)} LEDs mapped")
+        except Exception as e:
+            logger.error(f"Error building LED-to-notes cache: {e}")
+    
     def _precompute_expected_notes(self) -> None:
         """
         OPTIMIZATION: Pre-compute expected notes grouped by time windows for O(1) lookup.
@@ -423,7 +487,7 @@ class PlaybackService:
                 return
             
             # Group events by time bins (windows) and hand
-            timing_window_seconds = self._timing_window_ms / 1000.0
+            timing_window_seconds = self._learning_config.timing_window_ms / 1000.0
             
             for event in self._note_events:
                 # Determine hand (left < 60, right >= 60)
@@ -454,7 +518,7 @@ class PlaybackService:
         Returns:
             Tuple of (expected_left_notes, expected_right_notes)
         """
-        timing_window_seconds = self._timing_window_ms / 1000.0
+        timing_window_seconds = self._learning_config.timing_window_ms / 1000.0
         start_bin = int(window_start / timing_window_seconds)
         end_bin = int(window_end / timing_window_seconds) + 1  # Include partial bins
         
@@ -853,8 +917,7 @@ class PlaybackService:
             
             # Load and reset learning mode
             self._load_learning_mode_settings()
-            self._left_hand_notes_queue.clear()
-            self._right_hand_notes_queue.clear()
+            self._note_queue.clear()  # PHASE C: unified queue
             self._last_queue_cleanup = time.time()
             
             # Start performance monitoring
@@ -959,7 +1022,7 @@ class PlaybackService:
             last_led_update = 0
             
             # Reload learning mode settings at start of playback
-            if self._learning_mode_enabled:
+            if self._learning_config.enabled:
                 self._load_learning_mode_settings()
             
             while not self._stop_event.is_set():
@@ -973,7 +1036,7 @@ class PlaybackService:
                 # Handle learning mode pause
                 # OPTIMIZATION: Check frequency reduced from 50Hz to 10Hz (Phase 2B)
                 # User won't notice 100ms latency, but CPU is reduced by 80%
-                if self._learning_mode_enabled:
+                if self._learning_config.enabled:
                     # Re-check pause status only at reduced frequency (every 100ms)
                     if (self._current_time - self._last_learning_mode_check) > self._learning_mode_check_interval:
                         self._is_learning_mode_paused = self._check_learning_mode_pause()
@@ -1095,30 +1158,38 @@ class PlaybackService:
         self._last_queue_cleanup = current_time
         
         # Calculate cutoff time: keep notes from last N seconds
-        cutoff_time = self._current_time - self._queue_max_age_seconds
+        cutoff_time = self._current_time - self._learning_config.queue_max_age
         
-        # Filter out old notes from left hand queue
-        old_left_count = len(self._left_hand_notes_queue)
-        self._left_hand_notes_queue = deque(
-            ((note, ts) for note, ts in self._left_hand_notes_queue
-             if ts >= cutoff_time),
+        # Filter out old notes from unified queue (PHASE C)
+        old_count = len(self._note_queue)
+        self._note_queue = deque(
+            (qn for qn in self._note_queue if qn.timestamp >= cutoff_time),
             maxlen=5000
         )
-        left_removed = old_left_count - len(self._left_hand_notes_queue)
+        removed = old_count - len(self._note_queue)
         
-        # Filter out old notes from right hand queue
-        old_right_count = len(self._right_hand_notes_queue)
-        self._right_hand_notes_queue = deque(
-            ((note, ts) for note, ts in self._right_hand_notes_queue
-             if ts >= cutoff_time),
-            maxlen=5000
-        )
-        right_removed = old_right_count - len(self._right_hand_notes_queue)
-        
-        if left_removed > 0 or right_removed > 0:
+        if removed > 0:
             logger.debug(f"Queue cleanup at {self._current_time:.2f}s: "
-                        f"removed {left_removed} left, {right_removed} right notes "
-                        f"(older than {self._queue_max_age_seconds}s)")
+                        f"removed {removed} notes (older than {self._learning_config.queue_max_age}s)")
+    
+    def _get_queued_notes_in_window(self, start: float, end: float) -> tuple:
+        """
+        Extract notes from unified queue that fall within a timing window (PHASE C).
+        
+        Returns:
+            tuple: (played_left_notes, played_right_notes) - lists of note numbers
+        """
+        played_left_notes = []
+        played_right_notes = []
+        
+        for queued_note in self._note_queue:
+            if start <= queued_note.timestamp <= end:
+                if queued_note.hand == 'left':
+                    played_left_notes.append(queued_note.note)
+                elif queued_note.hand == 'right':
+                    played_right_notes.append(queued_note.note)
+        
+        return played_left_notes, played_right_notes
     
     def record_midi_note_played(self, note: int, hand: str) -> None:
         """
@@ -1132,7 +1203,7 @@ class PlaybackService:
             hand: 'left' or 'right'
         """
         # Only record if learning mode is enabled
-        if not self._learning_mode_enabled:
+        if not self._learning_config.enabled:
             logger.debug(f"Ignoring note {note} - learning mode not enabled")
             return
         
@@ -1140,16 +1211,12 @@ class PlaybackService:
         # This must match self._current_time used in _check_learning_mode_pause()
         playback_time = self._current_time
         
-        logger.info(f"🎵 RECORDING NOTE: {note} ({hand} hand) at playback time {playback_time:.3f}s (enabled={self._learning_mode_enabled})")
+        logger.info(f"🎵 RECORDING NOTE: {note} ({hand} hand) at playback time {playback_time:.3f}s (enabled={self._learning_config.enabled})")
         
-        if hand == 'left':
-            self._left_hand_notes_queue.append((note, playback_time))
-            logger.info(f"   └─ Left queue now has {len(self._left_hand_notes_queue)} notes: {[(n, f'{t:.2f}s') for n, t in list(self._left_hand_notes_queue)[-3:]]}")
-        elif hand == 'right':
-            self._right_hand_notes_queue.append((note, playback_time))
-            logger.info(f"   └─ Right queue now has {len(self._right_hand_notes_queue)} notes: {[(n, f'{t:.2f}s') for n, t in list(self._right_hand_notes_queue)[-3:]]}")
-        else:
-            logger.warning(f"Unknown hand: {hand}")
+        # Append QueuedNote to unified queue (PHASE C)
+        queued_note = QueuedNote(note=note, hand=hand, timestamp=playback_time)
+        self._note_queue.append(queued_note)
+        logger.info(f"   └─ Queue now has {len(self._note_queue)} notes: {[(qn.note, f'{qn.timestamp:.2f}s') for qn in list(self._note_queue)[-3:]]}")
     
     def _check_learning_mode_pause(self) -> bool:
         """
@@ -1166,19 +1233,19 @@ class PlaybackService:
         Returns:
             bool: True if should pause, False if should continue
         """
-        if not self._learning_mode_enabled:
+        if not self._learning_config.enabled:
             return False
         
         # Periodically clean up old notes to prevent unbounded memory growth
         self._cleanup_old_queued_notes()
         
         # If neither hand requires notes, don't pause
-        if not self._left_hand_wait_for_notes and not self._right_hand_wait_for_notes:
+        if not self._learning_config.wait_for_left and not self._learning_config.wait_for_right:
             return False
         
         # Get the current timing window
         # Look at notes that are CURRENTLY ACTIVE (already started, not yet ended)
-        timing_window_seconds = self._timing_window_ms / 1000.0
+        timing_window_seconds = self._learning_config.timing_window_ms / 1000.0
         
         # Find expected notes that are currently playing or about to play
         # Include notes that started up to 1 second ago (for overlap/legato)
@@ -1212,32 +1279,19 @@ class PlaybackService:
             self._wrong_flash_triggered_this_window = False
             self._last_expected_notes = current_expected
         
-        # Extract notes from queues that fall within the EXPECTED timing window
-        # CRITICAL FIX: Use same window as expected notes to avoid dead zones
-        # Notes must be within [window_start, window_end] to be considered "played"
-        # Use LISTS to preserve consecutive identical notes (not sets!)
-        played_left_notes = []
-        played_right_notes = []
-        
+        # Extract notes from unified queue using timing window (PHASE C - single method call)
         # Use the SAME timing window for acceptance as for expected notes
         # This eliminates the "dead zone" where notes are expected but not accepted
         acceptance_start = window_start
         acceptance_end = window_end
-        
-        for note, timestamp in self._left_hand_notes_queue:
-            if acceptance_start <= timestamp <= acceptance_end:
-                played_left_notes.append(note)
-        
-        for note, timestamp in self._right_hand_notes_queue:
-            if acceptance_start <= timestamp <= acceptance_end:
-                played_right_notes.append(note)
+        played_left_notes, played_right_notes = self._get_queued_notes_in_window(acceptance_start, acceptance_end)
         
         # Debug: Show current state every ~500ms (not every frame!)
         if int(self._current_time * 2) != int((self._current_time - 0.01) * 2):  # Every ~500ms
             logger.info(f"📊 Learning mode check at {self._current_time:.2f}s:"
                        f" Expected L:{sorted(expected_left_notes)} R:{sorted(expected_right_notes)} |"
                        f" Played L:{played_left_notes} R:{played_right_notes} |"
-                       f" L.queue:{len(self._left_hand_notes_queue)} R.queue:{len(self._right_hand_notes_queue)}")
+                       f" Queue:{len(self._note_queue)}")
         
         # Convert played note lists to sets for comparison (deduplicates for subset check)
         played_left_set = set(played_left_notes)
@@ -1247,10 +1301,10 @@ class PlaybackService:
         left_satisfied = True
         right_satisfied = True
         
-        if self._left_hand_wait_for_notes and expected_left_notes:
+        if self._learning_config.wait_for_left and expected_left_notes:
             left_satisfied = expected_left_notes.issubset(played_left_set)
         
-        if self._right_hand_wait_for_notes and expected_right_notes:
+        if self._learning_config.wait_for_right and expected_right_notes:
             right_satisfied = expected_right_notes.issubset(played_right_set)
         
         # CRITICAL: Check for WRONG notes first - these take priority over satisfaction!
@@ -1263,7 +1317,20 @@ class PlaybackService:
         if wrong_left_notes or wrong_right_notes:
             all_wrong = wrong_left_notes | wrong_right_notes
             logger.warning(f"❌ Wrong notes played: {sorted(all_wrong)}")
-            self._highlight_wrong_notes(all_wrong)
+            
+            # PHASE A: Create display state and render unified
+            state = LearningDisplayState(
+                expected_left=expected_left_notes,
+                expected_right=expected_right_notes,
+                wrong_notes=all_wrong,
+                current_time=self._current_time,
+                last_flash_time=self._last_wrong_flash_time,
+                flash_duration=self._learning_config.flash_duration,
+                played_left=played_left_notes,
+                played_right=played_right_notes
+            )
+            self._render_learning_mode_leds(state)
+            
             # Record when the wrong flash was triggered, but only once per timing window
             # This prevents rapid timer resets when multiple wrong notes are played in quick succession
             if not self._wrong_flash_triggered_this_window:
@@ -1289,27 +1356,33 @@ class PlaybackService:
             logger.info(f"Learning mode: ✓ All required notes satisfied at {self._current_time:.2f}s. "
                        f"Left: {sorted(expected_left_notes)}, Right: {sorted(expected_right_notes)}")
             
-            # Show satisfied notes on LEDs briefly (bright colors)
-            self._highlight_expected_notes(expected_left_notes, expected_right_notes,
-                                          played_left_notes, played_right_notes)
+            # Show satisfied notes on LEDs briefly (bright colors) - PHASE A: unified render
+            state = LearningDisplayState(
+                expected_left=expected_left_notes,
+                expected_right=expected_right_notes,
+                wrong_notes=set(),
+                current_time=self._current_time,
+                last_flash_time=self._last_wrong_flash_time,
+                flash_duration=self._learning_config.flash_duration,
+                played_left=played_left_notes,
+                played_right=played_right_notes
+            )
+            self._render_learning_mode_leds(state)
             
-            # CLEAR PRESSED KEYS: Remove notes from queues that are now satisfied
+            # CLEAR PRESSED KEYS: Remove notes from unified queue that are now satisfied (PHASE C)
             # This prevents them from carrying over to the next measure
             notes_to_clear = expected_left_notes | expected_right_notes
             
-            # Remove cleared notes from queues
-            self._left_hand_notes_queue = deque(
-                (note, ts) for note, ts in self._left_hand_notes_queue
-                if note not in notes_to_clear
-            )
-            self._right_hand_notes_queue = deque(
-                (note, ts) for note, ts in self._right_hand_notes_queue
-                if note not in notes_to_clear
+            # Remove cleared notes from unified queue
+            old_queue_len = len(self._note_queue)
+            self._note_queue = deque(
+                qn for qn in self._note_queue
+                if qn.note not in notes_to_clear
             )
             
-            logger.info(f"Learning mode: Cleared satisfied notes from queues. "
-                       f"Remaining left queue: {len(self._left_hand_notes_queue)}, "
-                       f"Remaining right queue: {len(self._right_hand_notes_queue)}")
+            logger.info(f"Learning mode: Cleared satisfied notes from queue. "
+                       f"Removed: {old_queue_len - len(self._note_queue)}, "
+                       f"Remaining: {len(self._note_queue)}")
             
             # PROCEED TO PLAYBACK: Return False to allow playback to continue
             # This will advance the playback time to the next note
@@ -1323,9 +1396,18 @@ class PlaybackService:
         # Not all required notes satisfied yet - show guidance and pause
         logger.debug(f"Learning mode PAUSING - waiting for all required notes")
         
-        # Visualize expected notes on LEDs to show user what's needed
-        self._highlight_expected_notes(expected_left_notes, expected_right_notes, 
-                                      played_left_notes, played_right_notes)
+        # Visualize expected notes on LEDs to show user what's needed - PHASE A: unified render
+        state = LearningDisplayState(
+            expected_left=expected_left_notes,
+            expected_right=expected_right_notes,
+            wrong_notes=set(),
+            current_time=self._current_time,
+            last_flash_time=self._last_wrong_flash_time,
+            flash_duration=self._learning_config.flash_duration,
+            played_left=played_left_notes,
+            played_right=played_right_notes
+        )
+        self._render_learning_mode_leds(state)
         
         # Return True: Pause playback until all notes are played correctly
         return True
@@ -1362,6 +1444,66 @@ class PlaybackService:
                 logger.debug(f"Sent MIDI note_off: note={note}")
         except Exception as e:
             logger.error(f"Error sending MIDI note_off: {e}")
+    
+    def _render_learning_mode_leds(self, state: LearningDisplayState) -> None:
+        """
+        Unified LED rendering for learning mode (PHASE A).
+        Handles both expected notes (dim/bright by hand) and wrong notes (red flash).
+        
+        This consolidates _highlight_expected_notes() and _highlight_wrong_notes() into a
+        single, clear rendering pipeline that reduces duplicate code.
+        
+        Args:
+            state: LearningDisplayState with expected notes, wrong notes, and flash timing
+        """
+        if not self._led_controller:
+            return
+        
+        try:
+            led_data = {}
+            
+            # OPTIMIZATION: Use cached colors (Phase 2A) instead of re-computing each time
+            left_color_bright = self._left_color_bright or (255, 107, 107)
+            right_color_bright = self._right_color_bright or (0, 100, 150)
+            left_color_dim = self._left_color_dim or (127, 53, 53)
+            right_color_dim = self._right_color_dim or (0, 50, 75)
+            
+            # Check if wrong note flash is active
+            if state.is_flashing:
+                # Flash is active, show wrong notes in red
+                for note in state.wrong_notes:
+                    led_indices = self._map_note_to_leds_cached(note)
+                    for led_idx in led_indices:
+                        if 0 <= led_idx < self.num_leds:
+                            led_data[led_idx] = (255, 0, 0)  # Bright red
+                logger.debug(f"Wrong note flash active ({state.current_time - state.last_flash_time:.3f}s / {state.flash_duration}s)")
+            else:
+                # Flash expired, show expected notes with brightness indicating if played
+                
+                # Left hand: bright if played, dim if not
+                played_left_set = set(state.played_left) if state.played_left is not None else set()
+                for note in state.expected_left:
+                    led_indices = self._map_note_to_leds_cached(note)
+                    color = left_color_bright if note in played_left_set else left_color_dim
+                    for led_idx in led_indices:
+                        if 0 <= led_idx < self.num_leds:
+                            led_data[led_idx] = color
+                
+                # Right hand: bright if played, dim if not
+                played_right_set = set(state.played_right) if state.played_right is not None else set()
+                for note in state.expected_right:
+                    led_indices = self._map_note_to_leds_cached(note)
+                    color = right_color_bright if note in played_right_set else right_color_dim
+                    for led_idx in led_indices:
+                        if 0 <= led_idx < self.num_leds:
+                            led_data[led_idx] = color
+            
+            # OPTIMIZATION: Use smart LED batching (Phase 2B) instead of updating all LEDs
+            if led_data or self._last_led_state:
+                self._update_leds_smart(led_data)
+        
+        except Exception as e:
+            logger.error(f"Error rendering learning mode LEDs: {e}")
     
     def _highlight_expected_notes(self, expected_left: set, expected_right: set, 
                                   played_left, played_right) -> None:
