@@ -1236,6 +1236,11 @@ class PlaybackService:
         if not self._learning_config.enabled:
             return False
         
+        # Log once at startup to confirm learning mode state
+        if not hasattr(self, '_log_learning_enabled_once'):
+            logger.info(f"✓ Learning mode is ENABLED - waiting for left={self._learning_config.wait_for_left}, right={self._learning_config.wait_for_right}")
+            self._log_learning_enabled_once = True
+        
         # Periodically clean up old notes to prevent unbounded memory growth
         self._cleanup_old_queued_notes()
         
@@ -1278,6 +1283,9 @@ class PlaybackService:
         if current_expected != self._last_expected_notes:
             self._wrong_flash_triggered_this_window = False
             self._last_expected_notes = current_expected
+            # CRITICAL FIX: Clear LED state when expected notes change to force refresh
+            # This prevents smart batching from skipping updates when note mappings appear identical
+            self._last_led_state = {}
         
         # Extract notes from unified queue using timing window (PHASE C - single method call)
         # Use the SAME timing window for acceptance as for expected notes
@@ -1336,11 +1344,6 @@ class PlaybackService:
             if not self._wrong_flash_triggered_this_window:
                 self._last_wrong_flash_time = self._current_time
                 self._wrong_flash_triggered_this_window = True
-            
-            # CRITICAL: Show expected notes on LEDs to guide user
-            if has_expected_notes:
-                self._highlight_expected_notes(expected_left_notes, expected_right_notes,
-                                              played_left_notes, played_right_notes)
             
             logger.debug(f"Learning mode PAUSING - user played wrong notes, must correct before proceeding")
             # RETURN TRUE HERE: Pause playback until wrong notes are corrected
@@ -1462,10 +1465,6 @@ class PlaybackService:
         try:
             led_data = {}
             
-            # CRITICAL FIX: Clear last LED state to force refresh when expected notes change
-            # (Phase 2B smart batching would otherwise skip updates if LED indices appear unchanged)
-            self._last_led_state = {}
-            
             # OPTIMIZATION: Use cached colors (Phase 2A) instead of re-computing each time
             left_color_bright = self._left_color_bright or (255, 107, 107)
             right_color_bright = self._right_color_bright or (0, 100, 150)
@@ -1537,9 +1536,9 @@ class PlaybackService:
         
         # Check if wrong note flash is still active
         flash_elapsed = self._current_time - self._last_wrong_flash_time
-        if flash_elapsed < self._wrong_flash_duration:
+        if flash_elapsed < self._learning_config.flash_duration:
             # Flash is still active, don't update highlights yet
-            logger.debug(f"Wrong note flash active ({flash_elapsed:.3f}s / {self._wrong_flash_duration}s)")
+            logger.debug(f"Wrong note flash active ({flash_elapsed:.3f}s / {self._learning_config.flash_duration}s)")
             return
         
         # Flash has expired, show normal highlighting
