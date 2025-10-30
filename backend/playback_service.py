@@ -1462,6 +1462,10 @@ class PlaybackService:
         try:
             led_data = {}
             
+            # CRITICAL FIX: Clear last LED state to force refresh when expected notes change
+            # (Phase 2B smart batching would otherwise skip updates if LED indices appear unchanged)
+            self._last_led_state = {}
+            
             # OPTIMIZATION: Use cached colors (Phase 2A) instead of re-computing each time
             left_color_bright = self._left_color_bright or (255, 107, 107)
             right_color_bright = self._right_color_bright or (0, 100, 150)
